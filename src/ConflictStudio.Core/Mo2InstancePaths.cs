@@ -13,7 +13,7 @@ public static class Mo2InstancePathResolver
         string iniPath = Path.Combine(root, "ModOrganizer.ini");
         Dictionary<string, string> values = File.Exists(iniPath) ? Values(File.ReadAllText(iniPath)) : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         string baseRoot = ResolveValue(root, root, values.GetValueOrDefault("base_directory"));
-        string mods = ResolveValue(root, baseRoot, values.GetValueOrDefault("mods_directory") ?? "mods");
+        string mods = ResolveValue(root, baseRoot, values.GetValueOrDefault("mod_directory") ?? values.GetValueOrDefault("mods_directory") ?? "mods");
         string profiles = ResolveValue(root, baseRoot, values.GetValueOrDefault("profiles_directory") ?? "profiles");
         string overwrite = ResolveValue(root, baseRoot, values.GetValueOrDefault("overwrite_directory") ?? "overwrite");
         string? game = values.TryGetValue("gamePath", out string? gameValue) ? ResolveValue(root, baseRoot, gameValue) : null;
@@ -24,7 +24,7 @@ public static class Mo2InstancePathResolver
     private static Dictionary<string, string> Values(string text)
     {
         Dictionary<string, string> values = new(StringComparer.OrdinalIgnoreCase);
-        foreach (Match match in Regex.Matches(text, "(?m)^(?<key>selected_profile|base_directory|mods_directory|profiles_directory|overwrite_directory|gamePath|Cyberpunk%202077%20Support%20Plugin\\\\enforce_archive_load_order)=(?<value>.+)$")) values[match.Groups["key"].Value] = Unwrap(match.Groups["value"].Value.Trim());
+        foreach (Match match in Regex.Matches(text, "(?m)^(?<key>selected_profile|base_directory|mod_directory|mods_directory|profiles_directory|overwrite_directory|gamePath|Cyberpunk%202077%20Support%20Plugin\\\\enforce_archive_load_order)=(?<value>.+)$")) values[match.Groups["key"].Value] = Unwrap(match.Groups["value"].Value.Trim());
         return values;
     }
 

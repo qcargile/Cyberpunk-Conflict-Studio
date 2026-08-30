@@ -48,11 +48,11 @@ public static class ProfileInputGuard
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         FileInfo current = new(snapshot.Path);
-        if (!current.Exists || current.Length != snapshot.Length || current.LastWriteTimeUtc != snapshot.LastWriteTimeUtc) throw new ProfileInputChangedException("An active archive or source file changed during the scan. Run the scan again to produce one consistent result.");
+        if (!current.Exists || current.Length != snapshot.Length || current.LastWriteTimeUtc != snapshot.LastWriteTimeUtc) throw new ProfileInputChangedException($"An active file changed during the scan: {snapshot.Path}");
         if (snapshot.Sha256 is not null)
         {
             string hash = HashFile(snapshot.Path);
-            if (!string.Equals(hash, snapshot.Sha256, StringComparison.Ordinal)) throw new ProfileInputChangedException("An active source file changed during the scan. Run the scan again to produce one consistent result.");
+            if (!string.Equals(hash, snapshot.Sha256, StringComparison.Ordinal)) throw new ProfileInputChangedException($"An active source file changed during the scan: {snapshot.Path}");
         }
     }
 

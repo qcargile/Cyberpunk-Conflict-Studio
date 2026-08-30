@@ -305,7 +305,33 @@ public sealed class ArchiveOrderInteractionTests
         if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
-    private static MainWindow CreatePreviewWindow(string root, RdarArchiveFailure[]? failures = null)
+    [TestMethod]
+    public void IncompleteArchiveOrderLoadsReadOnlyInsteadOfAbortingTheWorkspace()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-incomplete-order-window-" + Guid.NewGuid().ToString("N"));
+        Exception? failure = null;
+        Thread thread = new(() =>
+        {
+            try
+            {
+                MainWindow window = CreatePreviewWindow(root, incompleteOrder: true);
+
+                Assert.HasCount(2, window.ProposedArchiveOrderForTesting);
+                Assert.HasCount(2, window.ArchiveTreeForTesting.VisibleArchives);
+                Assert.IsFalse(window.CanApplyArchiveOrderForTesting);
+                StringAssert.Contains(window.ArchiveOrderEvidenceTitleTextBlock.Text, "blocked");
+                window.Close();
+            }
+            catch (Exception exception) { failure = exception; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (Directory.Exists(root)) Directory.Delete(root, true);
+        if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+    }
+
+    private static MainWindow CreatePreviewWindow(string root, RdarArchiveFailure[]? failures = null, bool incompleteOrder = false)
     {
         string archiveRoot = Path.Combine(root, "archive", "pc", "mod");
         Directory.CreateDirectory(archiveRoot);
@@ -318,8 +344,12 @@ public sealed class ArchiveOrderInteractionTests
         string[] order = ["Alpha.archive", "Beta.archive"];
         RdarArchiveFailure[] archiveFailures = failures ?? [];
         ResourceConflict[] conflicts = ResourceConflictAnalyzer.Analyze(resources, order);
-        ArchiveConflictSummary[] summaries = ArchiveResourceIndexBuilder.Build(resources, archives, archiveFailures.Length == 0 ? order : [], archiveFailures);
-        ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.ManagedModlist, "Game directory", Path.Combine(archiveRoot, "modlist.txt"), "managed");
+        ArchiveConflictSummary[] summaries = ArchiveResourceIndexBuilder.Build(resources, archives, archiveFailures.Length == 0 && !incompleteOrder ? order : [], archiveFailures);
+        string orderPath = Path.Combine(archiveRoot, "modlist.txt");
+        if (incompleteOrder) File.WriteAllText(orderPath, "Alpha.archive\r\n");
+        ArchiveOrderEvidence evidence = incompleteOrder
+            ? new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Game directory", orderPath, "Archive order is missing Beta.archive.") { MissingEntries = ["Beta.archive"], ProblemLane = ArchiveOrderProblemLane.Legacy }
+            : new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, "Game directory", orderPath, "managed");
         ProfileScanReceipt receipt = new ProfileScanReceipt(2, "Deployed game", DateTimeOffset.UtcNow, ["Game directory"], order, archiveFailures, conflicts, [], [], [], [], [], [], [], []) with { InstallationId = ProfileInstallationIdentity.Create("Manual", root), ArchiveSummaries = summaries, ArchiveOrderEvidence = evidence, ArchiveInventory = archives, EditableArchiveInventory = archives, EditableArchiveOrder = order, EditableArchiveOrderEvidence = evidence, ManagerKind = ModManagerKind.Manual };
         MainWindow window = new(false);
         window.LoadReceiptForTesting(receipt, root);

@@ -50,6 +50,27 @@ public sealed class VirtualFileShadowScannerTests
         }
     }
 
+    [TestMethod]
+    public void ScanIgnoresMutableRuntimeOutputs()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-mutable-shadows-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Write(root, "Alpha", "red4ext\\plugins\\Tool\\runtime.log", "alpha");
+            Write(root, "Beta", "red4ext\\plugins\\Tool\\runtime.log", "beta");
+            Write(root, "Alpha", "bin\\x64\\plugins\\Tool\\state.sqlite3", "alpha");
+            Write(root, "Beta", "bin\\x64\\plugins\\Tool\\state.sqlite3", "beta");
+
+            VirtualFileShadow[] shadows = VirtualFileShadowScanner.Scan(root, ["Alpha", "Beta"]);
+
+            Assert.HasCount(0, shadows);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     private static void Write(string root, string provider, string relative, string text)
     {
         string path = Path.Combine(root, provider, relative);

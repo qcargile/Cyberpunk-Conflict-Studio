@@ -115,7 +115,7 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         _resourceEvidenceProfileId = null;
         _resourceEvidenceInstallationId = null;
         _resourceProviders = [];
-        _observation = ManagedArchiveOrderObserver.Observe(profile, target);
+        _observation = ManagedArchiveOrderObserver.Observe(profile, target, target.WriteBlockedReason is not null);
         _decisionDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cyberpunk Conflict Studio");
         _baselineOrder = _observation.EffectiveOrder.ToArray();
         _proposedOrder = _baselineOrder.ToArray();

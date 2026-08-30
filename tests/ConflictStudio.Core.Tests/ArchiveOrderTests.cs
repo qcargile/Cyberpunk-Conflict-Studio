@@ -94,6 +94,23 @@ public sealed class ArchiveOrderTests
     }
 
     [TestMethod]
+    public void ReadOnlyObservationKeepsTheScannedOrderWhenTheManagedFileIsIncomplete()
+    {
+        using ArchiveDirectory directory = new();
+        directory.Write("Alpha.archive", "alpha");
+        directory.Write("zeta.archive", "zeta");
+        directory.Write("modlist.txt", "Alpha.archive\r\n");
+        string alphaPath = Path.Combine(directory.Path, "Alpha.archive");
+        string zetaPath = Path.Combine(directory.Path, "zeta.archive");
+        string orderPath = Path.Combine(directory.Path, "modlist.txt");
+        Mo2ArchiveProfile profile = new("Standard", "profile.txt", [new Mo2Archive("Alpha", "Alpha.archive", alphaPath, 5, Fingerprint("Alpha.archive", 'a').Sha256), new Mo2Archive("Zeta", "zeta.archive", zetaPath, 4, Fingerprint("zeta.archive", 'b').Sha256)], Alphabetical);
+
+        ArchiveOrderObservation observation = ManagedArchiveOrderObserver.Observe(profile, new Mo2ArchiveWriteTarget(orderPath, "Vortex", ModManagerKind.Vortex, WriteBlockedReason: "Incomplete order"), true);
+
+        CollectionAssert.AreEqual(Alphabetical, observation.EffectiveOrder);
+    }
+
+    [TestMethod]
     public void ManagedApplyRemovesStaleArchivesAndPreservesManagerOwnedLines()
     {
         using ArchiveDirectory directory = new();

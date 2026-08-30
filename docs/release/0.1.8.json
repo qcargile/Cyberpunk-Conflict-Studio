@@ -1,6 +1,6 @@
 {
   "product": "Cyberpunk Conflict Studio",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "channel": "beta",
   "runtime": "win-x64",
   "selfContained": true,

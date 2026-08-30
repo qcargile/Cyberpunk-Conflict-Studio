@@ -30,7 +30,7 @@ public static class VirtualFileShadowScanner
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 string relative = Path.GetRelativePath(providerRoot, path).Replace('/', '\\');
-                if (relative.Equals("meta.ini", StringComparison.OrdinalIgnoreCase) || relative.StartsWith(".git\\", StringComparison.OrdinalIgnoreCase)) continue;
+                if (relative.Equals("meta.ini", StringComparison.OrdinalIgnoreCase) || relative.StartsWith(".git\\", StringComparison.OrdinalIgnoreCase) || DeploymentFilePolicy.IsMutableOutput(relative)) continue;
                 Candidate file = new(provider.Name, path, position, provider.Mo2Priority, provider.ManagerId);
                 if (!files.TryGetValue(relative, out List<Candidate>? fileProviders)) files[relative] = fileProviders = [];
                 fileProviders.Add(file);
@@ -73,4 +73,15 @@ public static class VirtualFileShadowScanner
     }
 
     private sealed record Candidate(string Provider, string PhysicalPath, int ProfilePosition, int? Mo2Priority, string? ManagerId);
+}
+
+internal static class DeploymentFilePolicy
+{
+    private static readonly HashSet<string> MutableExtensions = new([".log", ".tmp", ".dmp", ".bak", ".old", ".db", ".sqlite", ".sqlite3"], StringComparer.OrdinalIgnoreCase);
+
+    public static bool IsMutableOutput(string relativePath)
+    {
+        string normalized = relativePath.Replace('/', '\\');
+        return MutableExtensions.Contains(Path.GetExtension(normalized)) || normalized.Contains("\\logs\\", StringComparison.OrdinalIgnoreCase);
+    }
 }

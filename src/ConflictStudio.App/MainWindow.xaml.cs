@@ -886,6 +886,10 @@ public partial class MainWindow : Window, IDisposable
             workspaceRoot = manual.GameRoot;
         }
         else throw new InvalidOperationException("The selected manager profile is unsupported.");
+        if (receipt.EditableArchiveOrderEvidence is { Kind: ArchiveOrderEvidenceKind.Unresolved } unresolvedOrder)
+        {
+            target = target with { WriteBlockedReason = unresolvedOrder.Message };
+        }
         Mo2ArchiveProfile editableArchives = new(receipt.ProfileName, profileSource, receipt.EditableArchiveInventory, receipt.EditableArchiveOrder, receipt.EditableArchiveOrderEvidence);
         _workspace.LoadProfile(editableArchives, target, workspaceRoot, refresh, receipt.InstallationId, preserveArchiveUndo);
         _workspace.SetResourceProviders(receipt.InstallationId, receipt.ProfileName, receipt.ResourceConflicts.SelectMany(value => value.Providers).ToArray());

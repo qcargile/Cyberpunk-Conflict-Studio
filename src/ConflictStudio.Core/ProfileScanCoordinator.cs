@@ -95,25 +95,33 @@ public static class ProfileScanCoordinator
         }
         Stopwatch phase = Stopwatch.StartNew();
         cancellationToken.ThrowIfCancellationRequested();
-        progress?.Report(new ScanProgress("deployment", 0, 1));
+        progress?.Report(new ScanProgress("deployment · reading MO2 profile", 0, 4));
         ProfileInputSnapshot profileSnapshot = ProfileInputGuard.Capture(profile.ModlistPath);
         Mo2ActiveProvider[] activeProviderEntries = Mo2ProfileReader.ReadActiveProviderEntries(profileSnapshot.Content);
         string[] activeProviders = activeProviderEntries.Select(value => value.Name).ToArray();
+        progress?.Report(new ScanProgress("deployment · resolving MO2 paths", 1, 4));
+        if (activeProviderEntries.Length > 0 && !Directory.Exists(instancePaths.ModsRoot)) throw new DirectoryNotFoundException($"The configured MO2 mods directory does not exist: {instancePaths.ModsRoot}. Check MO2 Settings > Paths and make sure Conflict Studio starts in the instance folder containing ModOrganizer.ini.");
+        Mo2ActiveProvider[] missingProviders = activeProviderEntries.Where(value => !Directory.Exists(Path.Combine(instancePaths.ModsRoot, value.Name))).ToArray();
+        if (activeProviderEntries.Length > 0 && missingProviders.Length == activeProviderEntries.Length) throw new DirectoryNotFoundException($"None of the {activeProviderEntries.Length:N0} active MO2 mods were found under {instancePaths.ModsRoot}. Check the instance's mod_directory setting.");
+        SourceAnalysisFailure[] pathFailures = missingProviders.Select(value => new SourceAnalysisFailure(value.Name, value.Name, "MO2 path", "The active mod directory was not found under the configured MO2 mods path.")).ToArray();
         DeploymentProvider[] deploymentProviders = Mo2ProviderTopology.Discover(mo2Root, activeProviderEntries);
+        progress?.Report(new ScanProgress("deployment · indexing archives", 2, 4));
         string fingerprintCache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cyberpunk Conflict Studio", "cache", "archive-fingerprints-v1.json");
         Mo2ArchiveProfile legacyArchives = Mo2ArchiveProfileScanner.ScanInstance(mo2Root, profile.ModlistPath, activeProviderEntries, fingerprintCache, false, cancellationToken);
         RedmodArchiveProfile redmods = RedmodArchiveProfileScanner.Scan(deploymentProviders, cancellationToken);
         Mo2ArchiveProfile archives = PackedArchiveTopology.Compose(legacyArchives, redmods);
         ProfileInputSnapshot[] inputs = [profileSnapshot, .. EvidenceSnapshots(archives.OrderEvidence)];
+        progress?.Report(new ScanProgress("deployment · capturing active files", 3, 4));
         EvidenceFileCapture evidenceFiles = EvidenceFileSnapshots(archives, deploymentProviders, instancePaths.GameRoot, cancellationToken);
-        return new PreparedProfileScan(ModManagerKind.Mo2, profile.Name, activeProviders, ProfileInstallationIdentity.Create(mo2Root), instancePaths, deploymentProviders, legacyArchives, redmods, archives, null, inputs, archives.OrderEvidence?.AbsentSources ?? [], evidenceFiles.Files, null, true, phase.ElapsedMilliseconds, evidenceFiles.Failures, null, crossManagerBinding);
+        progress?.Report(new ScanProgress("deployment · ready", 4, 4));
+        return new PreparedProfileScan(ModManagerKind.Mo2, profile.Name, activeProviders, ProfileInstallationIdentity.Create(mo2Root), instancePaths, deploymentProviders, legacyArchives, redmods, archives, null, inputs, archives.OrderEvidence?.AbsentSources ?? [], evidenceFiles.Files, null, true, phase.ElapsedMilliseconds, pathFailures.Concat(evidenceFiles.Failures).ToArray(), null, crossManagerBinding);
     }
 
     private static PreparedProfileScan PrepareVortex(string contextPath, DateTimeOffset scannedAtUtc, IProgress<ScanProgress>? progress, CancellationToken cancellationToken)
     {
         Stopwatch phase = Stopwatch.StartNew();
         cancellationToken.ThrowIfCancellationRequested();
-        progress?.Report(new ScanProgress("deployment", 0, 1));
+        progress?.Report(new ScanProgress("deployment · reading Vortex profile", 0, 4));
         string fullContextPath = Path.GetFullPath(contextPath);
         ProfileInputSnapshot contextSnapshot = ProfileInputGuard.Capture(fullContextPath);
         VortexManagerContext context = VortexManagerContextStore.Read(contextSnapshot.Content);
@@ -122,16 +130,20 @@ public static class ProfileScanCoordinator
         bool managerEvidenceReliable = bridgeLive && context.DeploymentFresh;
         DeploymentProvider[] active = managerEvidenceReliable ? context.Providers.OrderBy(value => value.Order).Select(value => new DeploymentProvider(value.Name, value.RootPath, null, value.Id)).ToArray() : [];
         DeploymentProvider[] providers = [.. active, new DeploymentProvider("Game directory", context.GameRoot, -1, "game-directory")];
+        progress?.Report(new ScanProgress("deployment · indexing archives", 1, 4));
         VortexManagerContext scanContext = managerEvidenceReliable ? context : context with { DeploymentFresh = false, Providers = [], DeployedWinners = [] };
         Mo2ArchiveProfile legacyArchives = VortexArchiveProfileScanner.Scan(scanContext, cancellationToken);
         RedmodArchiveProfile redmods = RedmodArchiveProfileScanner.Scan(providers, cancellationToken);
         Mo2ArchiveProfile archives = PackedArchiveTopology.Compose(legacyArchives, redmods);
+        progress?.Report(new ScanProgress("deployment · resolving active files", 2, 4));
         Mo2InstancePaths paths = new(context.StagingRoot, context.StagingRoot, string.Empty, string.Empty, context.GameRoot, context.ProfileName);
         ProfileInputSnapshot[] inputs = EvidenceSnapshots(archives.OrderEvidence);
         bool deploymentFresh = context.DeploymentFresh && bridgeLive;
         SourceAnalysisFailure[] failures = deploymentFresh ? [] : [new SourceAnalysisFailure("Vortex", Path.GetFileName(fullContextPath), "Deployment", bridgeLive ? "Vortex has pending deployment changes. Deploy the active profile before relying on winners or applying an order." : "The Vortex bridge is offline or stale. Only deployed game files were scanned; open Vortex and refresh before relying on provider losers or applying an order.")];
         VortexContextBinding binding = new(fullContextPath, context.ContextId, context.ProfileId);
+        progress?.Report(new ScanProgress("deployment · capturing active files", 3, 4));
         EvidenceFileCapture evidenceFiles = EvidenceFileSnapshots(archives, providers, context.GameRoot, cancellationToken);
+        progress?.Report(new ScanProgress("deployment · ready", 4, 4));
         return new PreparedProfileScan(ModManagerKind.Vortex, context.ProfileName, active.Select(value => value.Name).ToArray(), ProfileInstallationIdentity.Create("Vortex", context.GameRoot + "|" + context.ProfileId), paths, providers, legacyArchives, redmods, archives, managerEvidenceReliable ? context.DeployedWinners : null, inputs, archives.OrderEvidence?.AbsentSources ?? [], evidenceFiles.Files, fullContextPath, deploymentFresh, phase.ElapsedMilliseconds, failures.Concat(evidenceFiles.Failures).ToArray(), binding);
     }
 
@@ -139,16 +151,19 @@ public static class ProfileScanCoordinator
     {
         Stopwatch phase = Stopwatch.StartNew();
         cancellationToken.ThrowIfCancellationRequested();
-        progress?.Report(new ScanProgress("deployment", 0, 1));
+        progress?.Report(new ScanProgress("deployment · reading deployed game", 0, 3));
         string root = Path.GetFullPath(gameRoot);
         if (!Directory.Exists(Path.Combine(root, "archive", "pc", "content")) && !File.Exists(Path.Combine(root, "bin", "x64", "Cyberpunk2077.exe"))) throw new DirectoryNotFoundException("Choose the Cyberpunk 2077 installation folder.");
         DeploymentProvider[] providers = [new DeploymentProvider("Game directory", root, -1, "game-directory")];
         Mo2ArchiveProfile legacyArchives = ManualArchiveProfileScanner.Scan(root, cancellationToken);
+        progress?.Report(new ScanProgress("deployment · indexing archives", 1, 3));
         RedmodArchiveProfile redmods = RedmodArchiveProfileScanner.Scan(providers, cancellationToken);
         Mo2ArchiveProfile archives = PackedArchiveTopology.Compose(legacyArchives, redmods);
+        progress?.Report(new ScanProgress("deployment · capturing active files", 2, 3));
         Mo2InstancePaths paths = new(root, root, string.Empty, root, root, "Deployed game");
         ProfileInputSnapshot[] inputs = EvidenceSnapshots(archives.OrderEvidence);
         EvidenceFileCapture evidenceFiles = EvidenceFileSnapshots(archives, providers, root, cancellationToken);
+        progress?.Report(new ScanProgress("deployment · ready", 3, 3));
         return new PreparedProfileScan(ModManagerKind.Manual, "Deployed game", ["Game directory"], ProfileInstallationIdentity.Create("Manual", root), paths, providers, legacyArchives, redmods, archives, null, inputs, archives.OrderEvidence?.AbsentSources ?? [], evidenceFiles.Files, null, true, phase.ElapsedMilliseconds, evidenceFiles.Failures);
     }
 
@@ -273,7 +288,7 @@ public static class ProfileScanCoordinator
         string[] relativeRoots = ["archive\\pc\\mod", "bin\\x64\\plugins", "engine\\config", "r6\\input", "r6\\scripts", "r6\\tweaks", "red4ext\\plugins"];
         string[] sourceExtensions = [".reds", ".lua", ".yaml", ".yml", ".xl"];
         Dictionary<string, List<(string Provider, string Path)>> candidates = new(StringComparer.OrdinalIgnoreCase);
-        HashSet<string> required = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, bool> required = new(StringComparer.OrdinalIgnoreCase);
         foreach (DeploymentProvider provider in providers)
         {
             foreach (string relativeRoot in relativeRoots)
@@ -288,10 +303,11 @@ public static class ProfileScanCoordinator
                         cancellationToken.ThrowIfCancellationRequested();
                         if (string.Equals(Path.GetExtension(path), ".archive", StringComparison.OrdinalIgnoreCase)) continue;
                         string relative = Path.GetRelativePath(provider.RootPath, path).Replace('/', '\\');
+                        if (DeploymentFilePolicy.IsMutableOutput(relative)) continue;
                         if (!candidates.TryGetValue(relative, out List<(string Provider, string Path)>? values)) candidates[relative] = values = [];
                         values.Add((provider.Name, path));
-                        if (sourceExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)) required.Add(path);
-                        if (relative.Equals("bin\\x64\\plugins\\cyber_engine_tweaks\\tweakdb\\usedhashes.kark", StringComparison.OrdinalIgnoreCase)) required.Add(path);
+                        if (sourceExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)) required[path] = true;
+                        if (relative.Equals("bin\\x64\\plugins\\cyber_engine_tweaks\\tweakdb\\usedhashes.kark", StringComparison.OrdinalIgnoreCase)) required[path] = true;
                     }
                 }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -300,16 +316,16 @@ public static class ProfileScanCoordinator
                 }
             }
         }
-        foreach (List<(string Provider, string Path)> values in candidates.Values.Where(value => value.Count > 1)) foreach ((string _, string path) in values) required.Add(path);
+        foreach (List<(string Provider, string Path)> values in candidates.Values.Where(value => value.Count > 1)) foreach ((string _, string path) in values) required[path] = true;
         if (gameRoot is not null)
         {
             string oodlePath = Path.Combine(gameRoot, "bin", "x64", "oo2ext_7_win64.dll");
-            if (File.Exists(oodlePath)) required.Add(oodlePath);
+            if (File.Exists(oodlePath)) required.TryAdd(oodlePath, false);
         }
-        foreach (string path in required)
+        foreach ((string path, bool hashContent) in required)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            try { files.Add(ProfileInputGuard.CaptureFile(path, true)); }
+            try { files.Add(ProfileInputGuard.CaptureFile(path, hashContent)); }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ProfileInputChangedException) { failures.Add(new SourceAnalysisFailure("Deployment evidence", Path.GetFileName(path), "Evidence snapshot", exception.Message)); }
         }
         return new EvidenceFileCapture(files.DistinctBy(value => value.Path, StringComparer.OrdinalIgnoreCase).ToArray(), failures.ToArray());

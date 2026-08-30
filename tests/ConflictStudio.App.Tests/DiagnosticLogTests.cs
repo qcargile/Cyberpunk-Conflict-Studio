@@ -9,7 +9,7 @@ public sealed class DiagnosticLogTests
     [TestMethod]
     public void ApplicationAssemblyUsesThePublishedProductVersion()
     {
-        Assert.AreEqual("0.1.7", typeof(MainWindow).Assembly.GetName().Version?.ToString(3));
+        Assert.AreEqual("0.1.8", typeof(MainWindow).Assembly.GetName().Version?.ToString(3));
     }
 
     [TestMethod]

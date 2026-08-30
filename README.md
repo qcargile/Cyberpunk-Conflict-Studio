@@ -31,12 +31,22 @@ Download the release ZIP manually.
 4. Set arguments to `--manager mo2 --profile current`.
 5. Add `ConflictStudio.exe` to **Settings > Workarounds > Executables Blacklist**, restart MO2, and choose **Continue** when launching it.
 
+MO2's program folder, instance folder, profiles, mods, and overwrite may all be on different drives. **Start in** must point to the instance folder containing `ModOrganizer.ini`. Conflict Studio reads MO2's `mod_directory`, `profiles_directory`, and `overwrite_directory` settings from that file.
+
 ### Vortex
 
 1. Open **Extensions** in advanced mode.
 2. Drop the release ZIP onto the extension installer.
 3. Restart Vortex and deploy the active Cyberpunk profile.
 4. Launch Conflict Studio from **Cyberpunk 2077 > Tools**.
+
+## Troubleshooting
+
+- A first scan can take several minutes on very large profiles because archive contents are fingerprinted. Later scans reuse the fingerprint cache when file size and timestamp are unchanged.
+- Conflict Studio is intentionally excluded from MO2's VFS. It reads the physical provider folders and rebuilds the effective order so it can name the winning mod.
+- If the configured MO2 mods directory is missing, the scan stops with the resolved path and points back to **MO2 Settings > Paths**.
+- An incomplete archive `modlist.txt` opens read-only. Conflict results remain available, but archive winners and Apply stay disabled until the order is repaired.
+- ArchiveXL, TweakXL, or source files that cannot be fully parsed are listed under Support as scan limitations; they are not automatically mod conflicts.
 
 ## Antivirus warnings
 
@@ -50,7 +60,7 @@ The repository uses the .NET SDK selected by `global.json`.
 dotnet test --project tests\ConflictStudio.Core.Tests\ConflictStudio.Core.Tests.csproj --configuration Release
 dotnet test --project tests\ConflictStudio.App.Tests\ConflictStudio.App.Tests.csproj --configuration Release
 node --test integrations\vortex\bridge.test.js integrations\vortex\index.test.js
-.\scripts\publish-win-x64.ps1 -Version 0.1.7
+.\scripts\publish-win-x64.ps1 -Version 0.1.8
 ```
 
 The public release contains one self-contained `ConflictStudio.exe`; users do not need to install .NET separately.

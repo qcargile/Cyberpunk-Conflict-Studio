@@ -275,6 +275,42 @@ public sealed class ConflictWorkQueueBuilderTests
     }
 
     [TestMethod]
+    public void BuildKeepsParserCoverageFailuresOutOfTheConflictQueue()
+    {
+        ProfileScanReceipt receipt = Receipt() with
+        {
+            ArchiveXlFailures = [new ArchiveXlSourceFailure("Alpha", "alpha.xl", "ArchiveXL source could not be represented completely: Unsupported shape")],
+            SourceFailures = [new SourceAnalysisFailure("Beta", "beta.yaml", "TweakXL", "TweakXL source could not be represented completely: Unsupported shape")]
+        };
+
+        ConflictWorkItem[] items = ConflictWorkQueueBuilder.Build(receipt, []);
+
+        Assert.IsFalse(items.Any(value => value.Target is "alpha.xl" or "beta.yaml"));
+    }
+
+    [TestMethod]
+    public void BuildKeepsOperationalSourceFailuresVisible()
+    {
+        ProfileScanReceipt receipt = Receipt() with { SourceFailures = [new SourceAnalysisFailure("Beta", "Beta", "MO2 path", "Active mod directory missing")] };
+
+        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == "Beta");
+
+        Assert.AreEqual(ConflictSurface.Diagnostic, item.Surface);
+        Assert.AreEqual(ConflictWorkState.NeedsAttention, item.State);
+    }
+
+    [TestMethod]
+    public void BuildKeepsOperationalArchiveXlFailuresVisible()
+    {
+        ProfileScanReceipt receipt = Receipt() with { ArchiveXlFailures = [new ArchiveXlSourceFailure("Alpha", "missing-root", "The ArchiveXL provider root does not exist.")] };
+
+        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == "missing-root");
+
+        Assert.AreEqual(ConflictSurface.Diagnostic, item.Surface);
+        Assert.AreEqual(ConflictWorkState.NeedsAttention, item.State);
+    }
+
+    [TestMethod]
     public void BuildRoutesARedmodOrderFailureToRedmodDeployment()
     {
         ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.Unresolved, "Overwrite", "MO_REDmod_load_order.txt", "The REDmod order is stale.") { SourcePaths = ["MO_REDmod_load_order.txt"], MissingEntries = ["RedmodA"], ProblemLane = ArchiveOrderProblemLane.Redmod };

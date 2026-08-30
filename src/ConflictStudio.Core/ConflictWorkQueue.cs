@@ -143,6 +143,8 @@ public static class ConflictWorkQueueBuilder
             Add(items, receipt, decisions, ConflictSurface.ArchiveXl, chain.Target, classification, summary, action, null, providers, chain.Operations.Select(value => $"{value.Provider}|{value.FilePath}|{value.Kind}|{value.Target}|{value.Payload}").ToArray());
         }
         foreach (RdarArchiveFailure failure in receipt.ArchiveFailures) Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.ArchiveName, EvidenceClassification.Unresolved, failure.Message, "Repair or remove the unreadable archive, then rescan.", null, [failure.Provider], [failure.ArchiveName, failure.Message]);
+        foreach (ArchiveXlSourceFailure failure in receipt.ArchiveXlFailures.Where(value => !IsArchiveXlCoverageLimitation(value))) Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.FilePath, EvidenceClassification.Unresolved, failure.Message, "The scan could not read this ArchiveXL provider or file. Fix the named problem, then rescan.", null, [failure.Provider], [failure.FilePath, failure.Message]);
+        foreach (SourceAnalysisFailure failure in (receipt.SourceFailures ?? []).Where(value => !IsParserCoverageLimitation(value))) Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.FilePath, EvidenceClassification.Unresolved, failure.Message, "The scan could not use this active file or provider. Fix the named problem, then rescan.", null, [failure.Provider], [failure.Surface, failure.FilePath, failure.Message]);
         if (receipt.ArchiveOrderEvidence is { Kind: ArchiveOrderEvidenceKind.Unresolved } unresolvedOrder)
         {
             int affected = receipt.ResourceConflicts.Count(value => value.Kind == ResourceConflictKind.Unresolved);
@@ -157,10 +159,14 @@ public static class ConflictWorkQueueBuilder
         }
         foreach (RdarArchiveWarning warning in receipt.ArchiveWarnings ?? []) Add(items, receipt, decisions, ConflictSurface.Diagnostic, warning.ArchiveName + " path metadata", EvidenceClassification.Unresolved, warning.Message, "The archive resources remain indexed by hash. Restore the game Oodle DLL or repair the archive footer to recover readable custom paths.", null, [warning.Provider], [warning.ArchiveName, warning.Message]);
         if (receipt.ResourcePathIndexEvidence is { State: not ResourcePathIndexState.Resolved } pathEvidence) Add(items, receipt, decisions, ConflictSurface.Diagnostic, "Global resource path index", EvidenceClassification.Unresolved, pathEvidence.Message, "Restore the active CET usedhashes.kark and Cyberpunk Oodle DLL, then rescan.", null, pathEvidence.Provider is null ? ["Resource path resolver"] : [pathEvidence.Provider], [pathEvidence.State.ToString(), pathEvidence.Message]);
-        foreach (ArchiveXlSourceFailure failure in receipt.ArchiveXlFailures) Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.FilePath, EvidenceClassification.Unresolved, failure.Message, "Correct the manifest or update the parser support, then rescan.", null, [failure.Provider], [failure.FilePath, failure.Message]);
-        foreach (SourceAnalysisFailure failure in receipt.SourceFailures ?? []) Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.FilePath, EvidenceClassification.Unresolved, failure.Message, "Correct or restore the source file, then rescan.", null, [failure.Provider], [failure.Surface, failure.FilePath, failure.Message]);
         return items.OrderBy(value => StateOrder(value.State)).ThenBy(value => value.Classification == EvidenceClassification.Unresolved ? 0 : 1).ThenBy(value => value.Surface).ThenBy(value => value.Target, StringComparer.OrdinalIgnoreCase).ToArray();
     }
+
+    private static bool IsParserCoverageLimitation(SourceAnalysisFailure failure)
+        => failure.Surface == "RedScript condition" || failure.Surface == "TweakXL" && failure.Message.StartsWith("TweakXL source could not be represented completely:", StringComparison.Ordinal);
+
+    private static bool IsArchiveXlCoverageLimitation(ArchiveXlSourceFailure failure)
+        => failure.Message.StartsWith("ArchiveXL ", StringComparison.Ordinal) || failure.Message.StartsWith("Unsupported ArchiveXL ", StringComparison.Ordinal);
 
     private static int StateOrder(ConflictWorkState state) => state switch
     {

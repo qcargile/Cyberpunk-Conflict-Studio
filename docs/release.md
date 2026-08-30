@@ -13,12 +13,12 @@ Cyberpunk Conflict Studio ships as a self-contained Windows x64 desktop package.
 From the repository root:
 
 ```powershell
-.\scripts\publish-win-x64.ps1 -Version 0.1.7
+.\scripts\publish-win-x64.ps1 -Version 0.1.8
 ```
 
 The command performs these checks in order:
 
-1. Reads `docs\release\0.1.7.json`.
+1. Reads `docs\release\0.1.8.json`.
 2. Restores the solution.
 3. Builds the WPF application in Release configuration for `win-x64`.
 4. Runs the Core and App test projects.
@@ -27,9 +27,9 @@ The command performs these checks in order:
 7. Places the Vortex extension entry points beside the single application payload.
 8. Writes `package-manifest.json`, including relative path, byte length, and SHA-256 for each package file.
 9. Rejects PDBs, version drift, missing notices, nested ZIPs, or manager-entry-point drift.
-10. Produces and hash-verifies `Cyberpunk-Conflict-Studio-0.1.7-Nexus.zip` against the complete package directory.
+10. Produces and hash-verifies `Cyberpunk-Conflict-Studio-0.1.8-Nexus.zip` against the complete package directory.
 
-The default output is `%LOCALAPPDATA%\Cyberpunk Conflict Studio\releases\0.1.7\win-x64`, with the complete Nexus archive beside it. The script rejects an output path inside the repository and refuses to delete an existing directory or archive unless `-Force` is supplied.
+The default output is `%LOCALAPPDATA%\Cyberpunk Conflict Studio\releases\0.1.8\win-x64`, with the complete Nexus archive beside it. The script rejects an output path inside the repository and refuses to delete an existing directory or archive unless `-Force` is supplied.
 
 The Nexus archive contains only the public runtime payload:
 
@@ -45,7 +45,7 @@ For MO2, manually extract the package outside the instance's `mods` directory an
 ## Verify
 
 ```powershell
-.\scripts\verify-package.ps1 -PackageRoot '%LOCALAPPDATA%\Cyberpunk Conflict Studio\releases\0.1.7\win-x64' -ArchivePath '%LOCALAPPDATA%\Cyberpunk Conflict Studio\releases\0.1.7\Cyberpunk-Conflict-Studio-0.1.7-Nexus.zip'
+.\scripts\verify-package.ps1 -PackageRoot '%LOCALAPPDATA%\Cyberpunk Conflict Studio\releases\0.1.8\win-x64' -ArchivePath '%LOCALAPPDATA%\Cyberpunk Conflict Studio\releases\0.1.8\Cyberpunk-Conflict-Studio-0.1.8-Nexus.zip'
 ```
 
 Verification uses the manifest beside the unpacked release directory, checks every listed file and hash, and confirms that the downloadable ZIP contains only those public files. The publisher also writes a `.sha256` file beside the ZIP. A successful run prints `PACKAGE PASS`; any mismatch exits non-zero.

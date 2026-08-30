@@ -106,6 +106,12 @@
 [*][font=Arial]Static overlap is not automatically a gameplay conflict.[/font][/*]
 [/list]
 
+[font=Arial][b]Large profiles:[/b] The first scan can take several minutes because Conflict Studio fingerprints archive contents. Later scans reuse cached fingerprints when the files are unchanged. Conflict Studio is intentionally excluded from MO2's VFS so it can read the physical provider folders and identify the winning mod.[/font]
+
+[font=Arial][b]MO2 paths:[/b] The MO2 program, instance, profiles, mods, and overwrite folders may be on different drives. Start in must point to the instance folder containing ModOrganizer.ini. A missing configured mods directory now produces a direct setup error.[/font]
+
+[font=Arial][b]Incomplete archive order:[/b] The scan opens read-only. Conflict results remain available, but winner claims and Apply stay disabled until modlist.txt is repaired.[/font]
+
 [font=Arial]When reporting a problem, reproduce it once and use the Support tab to copy or save the privacy-filtered report.[/font]
 [line]
 

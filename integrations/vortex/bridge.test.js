@@ -149,7 +149,8 @@ test("response publication failure restores the exact previous order", async () 
     const original = Buffer.from("Alpha.archive\nBeta.archive\n");
     fs.writeFileSync(orderPath, original);
     const context = bridge.createContext({ capturedAtUtc: new Date().toISOString(), profileId: "profile", profileName: "Standard", gameRoot, stagingRoot: path.join(root, "staging"), deploymentFresh: true, providers: [], deployedWinners: {}, archiveOrder: ["Alpha.archive", "Beta.archive"], archiveOrderSha256: sha(original) });
-    const request = { schemaVersion: 1, requestId: "d".repeat(32), contextId: context.contextId, profileId: "profile", requestedAtUtc: new Date().toISOString(), expiresAtUtc: new Date(Date.now() + 15000).toISOString(), expectedOrderSha256: context.archiveOrderSha256, inventory: [fingerprint(archiveRoot, "Alpha.archive"), fingerprint(archiveRoot, "Beta.archive")], proposedOrder: ["Beta.archive", "Alpha.archive"] };
+    const requestedAt = Date.now();
+    const request = { schemaVersion: 1, requestId: "d".repeat(32), contextId: context.contextId, profileId: "profile", requestedAtUtc: new Date(requestedAt).toISOString(), expiresAtUtc: new Date(requestedAt + 15000).toISOString(), expectedOrderSha256: context.archiveOrderSha256, inventory: [fingerprint(archiveRoot, "Alpha.archive"), fingerprint(archiveRoot, "Beta.archive")], proposedOrder: ["Beta.archive", "Alpha.archive"] };
     const response = bridge.applyOrderRequest(request, context);
     const contextPath = path.join(root, "context.json");
     const refresh = async () => {

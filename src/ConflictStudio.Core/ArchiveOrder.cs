@@ -103,7 +103,7 @@ public static class ArchiveOrderText
 
 public static class ManagedArchiveOrderObserver
 {
-    public static ArchiveOrderObservation Observe(Mo2ArchiveProfile profile, Mo2ArchiveWriteTarget target)
+    public static ArchiveOrderObservation Observe(Mo2ArchiveProfile profile, Mo2ArchiveWriteTarget target, bool allowIncompleteOrder = false)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(target);
@@ -115,8 +115,16 @@ public static class ManagedArchiveOrderObserver
             byte[] bytes = File.ReadAllBytes(target.ModlistPath);
             hash = Convert.ToHexStringLower(SHA256.HashData(bytes));
             HashSet<string> active = archives.Select(value => value.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            order = ArchiveOrderText.ArchiveEntries(File.ReadAllLines(target.ModlistPath)).Where(active.Contains).ToArray();
-            ArchiveOrderPlanner.RequireComplete(archives, order);
+            string[] managedOrder = ArchiveOrderText.ArchiveEntries(File.ReadAllLines(target.ModlistPath)).Where(active.Contains).ToArray();
+            try
+            {
+                ArchiveOrderPlanner.RequireComplete(archives, managedOrder);
+                order = managedOrder;
+            }
+            catch (ArchiveOrderException) when (allowIncompleteOrder)
+            {
+                order = profile.EffectiveOrder;
+            }
         }
         return new ArchiveOrderObservation(profile.ProfileName, Path.GetDirectoryName(target.ModlistPath)!, hash, archives, order);
     }

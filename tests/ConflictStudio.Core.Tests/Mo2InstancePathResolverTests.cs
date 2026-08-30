@@ -12,15 +12,34 @@ public sealed class Mo2InstancePathResolverTests
         Directory.CreateDirectory(root);
         try
         {
-            File.WriteAllText(Path.Combine(root, "ModOrganizer.ini"), "selected_profile=@ByteArray(Standard Profile)\nbase_directory=instance\nmods_directory=%BASE_DIR%\\custom-mods\nprofiles_directory=%BASE_DIR%\\custom-profiles\noverwrite_directory=%BASE_DIR%\\custom-overwrite\ngamePath=@ByteArray(game)\n");
+            File.WriteAllText(Path.Combine(root, "ModOrganizer.ini"), "selected_profile=@ByteArray(Standard Profile)\nbase_directory=instance\nmod_directory=G:\\Shared MO2 Mods\nprofiles_directory=%BASE_DIR%\\custom-profiles\noverwrite_directory=%BASE_DIR%\\custom-overwrite\ngamePath=@ByteArray(game)\n");
 
             Mo2InstancePaths paths = Mo2InstancePathResolver.Resolve(root);
 
-            Assert.AreEqual(Path.Combine(root, "instance", "custom-mods"), paths.ModsRoot);
+            Assert.AreEqual(Path.GetFullPath("G:\\Shared MO2 Mods"), paths.ModsRoot);
             Assert.AreEqual(Path.Combine(root, "instance", "custom-profiles"), paths.ProfilesRoot);
             Assert.AreEqual(Path.Combine(root, "instance", "custom-overwrite"), paths.OverwriteRoot);
             Assert.AreEqual(Path.Combine(root, "instance", "game"), paths.GameRoot);
             Assert.AreEqual("Standard Profile", paths.SelectedProfile);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void ResolveAcceptsLegacyPluralModsDirectoryKey()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-mo2-legacy-paths-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "ModOrganizer.ini"), "mods_directory=legacy-mods\n");
+
+            Mo2InstancePaths paths = Mo2InstancePathResolver.Resolve(root);
+
+            Assert.AreEqual(Path.Combine(root, "legacy-mods"), paths.ModsRoot);
         }
         finally
         {

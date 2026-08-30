@@ -12,6 +12,8 @@ public sealed class ProfileScanCoordinatorTests
     private static readonly string[] ExpectedMissingArchives = ["Beta.archive"];
     private static readonly string[] ExpectedDuplicateArchives = ["Alpha.archive"];
     private static readonly string[] ExpectedIgnoredArchives = ["stale.archive"];
+    private static readonly int[] ExpectedDeploymentProgress = [0, 1, 2, 3, 4];
+    private static readonly int[] ExpectedManualDeploymentProgress = [0, 1, 2, 3];
 
     [TestMethod]
     public void VortexScanUsesBridgeProfileProvidersAndDeploymentWinners()
@@ -30,8 +32,9 @@ public sealed class ProfileScanCoordinatorTests
             VortexManagerContext context = new(1, new string('a', 64), DateTimeOffset.UtcNow, "profile", "Standard", game, staging, true, [new("alpha", "Alpha", alpha, 0), new("beta", "Beta", beta, 1)], winners, [], null);
             string contextPath = Path.Combine(root, "context.json");
             File.WriteAllText(contextPath, System.Text.Json.JsonSerializer.Serialize(context));
+            RecordingProgress progress = new();
 
-            ProfileScanReceipt receipt = ProfileScanCoordinator.ScanVortex(contextPath, DateTimeOffset.UtcNow, null, CancellationToken.None);
+            ProfileScanReceipt receipt = ProfileScanCoordinator.ScanVortex(contextPath, DateTimeOffset.UtcNow, progress, CancellationToken.None);
 
             Assert.AreEqual(ModManagerKind.Vortex, receipt.ManagerKind);
             Assert.AreEqual("Standard", receipt.ProfileName);
@@ -39,11 +42,18 @@ public sealed class ProfileScanCoordinatorTests
             Assert.AreEqual("Beta", receipt.VirtualFileShadows.Single().WinnerProvider);
             Assert.IsTrue(receipt.RedScriptFlows.All(value => value.Provider == "Beta"));
             Assert.AreEqual(Path.GetFullPath(contextPath), receipt.ManagerContextPath);
+            CollectionAssert.AreEqual(ExpectedDeploymentProgress, progress.Values.Where(value => value.Total == 4 && value.Phase.StartsWith("deployment", StringComparison.Ordinal)).Select(value => value.Completed).ToArray());
         }
         finally
         {
             Directory.Delete(root, true);
         }
+    }
+
+    private sealed class RecordingProgress : IProgress<ScanProgress>
+    {
+        public List<ScanProgress> Values { get; } = [];
+        public void Report(ScanProgress value) => Values.Add(value);
     }
 
     [TestMethod]
@@ -63,6 +73,38 @@ public sealed class ProfileScanCoordinatorTests
             ProfileScanReceipt receipt = ProfileScanCoordinator.ScanVortex(contextPath, DateTimeOffset.UtcNow, null, () => File.WriteAllText(contextPath, System.Text.Json.JsonSerializer.Serialize(context with { CapturedAtUtc = DateTimeOffset.UtcNow.AddSeconds(5) })), CancellationToken.None);
 
             Assert.AreEqual(ModManagerKind.Vortex, receipt.ManagerKind);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void Mo2AndManualScansReportEveryDeploymentStage()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-deployment-progress-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string profileRoot = Path.Combine(root, "profiles", "Standard");
+            Directory.CreateDirectory(profileRoot);
+            Directory.CreateDirectory(Path.Combine(root, "mods", "Alpha"));
+            string modlist = Path.Combine(profileRoot, "modlist.txt");
+            File.WriteAllText(modlist, "+Alpha\n");
+            RecordingProgress mo2Progress = new();
+
+            ProfileScanCoordinator.Scan(root, new Mo2Profile("Standard", modlist), DateTimeOffset.UtcNow, mo2Progress, CancellationToken.None);
+
+            CollectionAssert.AreEqual(ExpectedDeploymentProgress, mo2Progress.Values.Where(value => value.Total == 4 && value.Phase.StartsWith("deployment", StringComparison.Ordinal)).Select(value => value.Completed).ToArray());
+
+            string game = Path.Combine(root, "game");
+            Directory.CreateDirectory(Path.Combine(game, "archive", "pc", "content"));
+            Directory.CreateDirectory(Path.Combine(game, "archive", "pc", "mod"));
+            RecordingProgress manualProgress = new();
+
+            ProfileScanCoordinator.ScanManual(game, DateTimeOffset.UtcNow, manualProgress, CancellationToken.None);
+
+            CollectionAssert.AreEqual(ExpectedManualDeploymentProgress, manualProgress.Values.Where(value => value.Total == 3 && value.Phase.StartsWith("deployment", StringComparison.Ordinal)).Select(value => value.Completed).ToArray());
         }
         finally
         {
@@ -132,6 +174,7 @@ public sealed class ProfileScanCoordinatorTests
             Write(root, "Alpha", "archive\\pc\\mod\\Alpha.archive", "broken archive fixture");
             string profileRoot = Path.Combine(root, "profiles", "Standard");
             Directory.CreateDirectory(profileRoot);
+            Directory.CreateDirectory(Path.Combine(root, "mods", "Alpha"));
             string modlist = Path.Combine(profileRoot, "modlist.txt");
             File.WriteAllText(modlist, "+Alpha\n+Beta\n");
 
@@ -220,10 +263,33 @@ public sealed class ProfileScanCoordinatorTests
         {
             string profileRoot = Path.Combine(root, "profiles", "Standard");
             Directory.CreateDirectory(profileRoot);
+            Directory.CreateDirectory(Path.Combine(root, "mods", "Alpha"));
             string modlist = Path.Combine(profileRoot, "modlist.txt");
             File.WriteAllText(modlist, "+Alpha\n");
 
             Assert.ThrowsExactly<ProfileInputChangedException>(() => ProfileScanCoordinator.Scan(root, new Mo2Profile("Standard", modlist), DateTimeOffset.UtcNow, null, () => File.WriteAllText(modlist, "+Beta\n"), CancellationToken.None));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void ScanNamesAMissingConfiguredMo2ModsDirectory()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-missing-mods-path-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string profileRoot = Path.Combine(root, "profiles", "Standard");
+            Directory.CreateDirectory(profileRoot);
+            string modlist = Path.Combine(profileRoot, "modlist.txt");
+            File.WriteAllText(modlist, "+Alpha\n");
+
+            DirectoryNotFoundException exception = Assert.ThrowsExactly<DirectoryNotFoundException>(() => ProfileScanCoordinator.Scan(root, new Mo2Profile("Standard", modlist), DateTimeOffset.UtcNow));
+
+            StringAssert.Contains(exception.Message, Path.Combine(root, "mods"));
+            StringAssert.Contains(exception.Message, "Settings > Paths");
         }
         finally
         {
@@ -238,13 +304,20 @@ public sealed class ProfileScanCoordinatorTests
         try
         {
             string source = Path.Combine(root, "mods", "Alpha", "r6", "scripts", "active.reds");
-            Write(root, "Alpha", "r6\\scripts\\active.reds", "@addMethod(PlayerPuppet)\npublic func Alpha() -> Bool { return true; }");
+            Write(root, "Alpha", "r6\\scripts\\active.reds", "alpha");
+            DateTime timestamp = File.GetLastWriteTimeUtc(source);
             string profileRoot = Path.Combine(root, "profiles", "Standard");
             Directory.CreateDirectory(profileRoot);
             string modlist = Path.Combine(profileRoot, "modlist.txt");
             File.WriteAllText(modlist, "+Alpha\n");
 
-            Assert.ThrowsExactly<ProfileInputChangedException>(() => ProfileScanCoordinator.Scan(root, new Mo2Profile("Standard", modlist), DateTimeOffset.UtcNow, null, () => File.WriteAllText(source, "@addMethod(PlayerPuppet)\npublic func Beta() -> Bool { return true; }"), CancellationToken.None));
+            ProfileInputChangedException exception = Assert.ThrowsExactly<ProfileInputChangedException>(() => ProfileScanCoordinator.Scan(root, new Mo2Profile("Standard", modlist), DateTimeOffset.UtcNow, null, () =>
+            {
+                File.WriteAllText(source, "omega");
+                File.SetLastWriteTimeUtc(source, timestamp);
+            }, CancellationToken.None));
+
+            StringAssert.Contains(exception.Message, source);
         }
         finally
         {
@@ -294,11 +367,13 @@ public sealed class ProfileScanCoordinatorTests
             string modlist = Path.Combine(profileRoot, "modlist.txt");
             File.WriteAllText(modlist, "+Alpha\n+Beta\n");
 
-            Assert.ThrowsExactly<ProfileInputChangedException>(() => ProfileScanCoordinator.Scan(root, new Mo2Profile("Standard", modlist), DateTimeOffset.UtcNow, null, () =>
+            ProfileInputChangedException exception = Assert.ThrowsExactly<ProfileInputChangedException>(() => ProfileScanCoordinator.Scan(root, new Mo2Profile("Standard", modlist), DateTimeOffset.UtcNow, null, () =>
             {
                 File.WriteAllText(alpha, "omega");
                 File.SetLastWriteTimeUtc(alpha, timestamp);
             }, CancellationToken.None));
+
+            StringAssert.Contains(exception.Message, alpha);
         }
         finally
         {
