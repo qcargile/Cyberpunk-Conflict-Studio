@@ -48,6 +48,17 @@ public static class ArchiveOrderScanner
 
 public static class ArchiveOrderPlanner
 {
+    public static string[] CreateRepairOrder(IReadOnlyList<string> discovered, IReadOnlyList<string> current)
+    {
+        ArgumentNullException.ThrowIfNull(discovered);
+        ArgumentNullException.ThrowIfNull(current);
+        HashSet<string> active = discovered.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> included = new(StringComparer.OrdinalIgnoreCase);
+        List<string> repaired = current.Where(value => active.Contains(value) && included.Add(value)).ToList();
+        repaired.AddRange(discovered.Where(included.Add));
+        return repaired.ToArray();
+    }
+
     public static ArchiveOrderPreview CreatePreview(ArchiveOrderObservation observation, IReadOnlyList<string> proposedOrder)
     {
         ArgumentNullException.ThrowIfNull(observation);

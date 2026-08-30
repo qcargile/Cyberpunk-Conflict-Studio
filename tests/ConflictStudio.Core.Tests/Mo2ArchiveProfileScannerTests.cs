@@ -129,7 +129,7 @@ public sealed class Mo2ArchiveProfileScannerTests
             WriteArchive(modsRoot, "High", "Alpha.archive", "alpha");
             WriteArchive(modsRoot, "Low", "Beta.archive", "beta");
             string orderRoot = Path.Combine(modsRoot, "High", "archive", "pc", "mod");
-            File.WriteAllLines(Path.Combine(orderRoot, "modlist.txt"), ["Alpha.archive"]);
+            File.WriteAllLines(Path.Combine(orderRoot, "modlist.txt"), ["Beta.archive", "Beta.archive"]);
             string profile = Path.Combine(root, "profiles", "Standard", "modlist.txt");
             Directory.CreateDirectory(Path.GetDirectoryName(profile)!);
             File.WriteAllText(profile, "+High\n+Low\n");
@@ -137,8 +137,12 @@ public sealed class Mo2ArchiveProfileScannerTests
             Mo2ArchiveProfile result = Mo2ArchiveProfileScanner.ScanInstance(root, profile);
 
             Assert.AreEqual(ArchiveOrderEvidenceKind.Unresolved, result.OrderEvidence!.Kind);
-            string[] missing = ["Beta.archive"];
+            string[] repaired = ["Beta.archive", "Alpha.archive"];
+            string[] missing = ["Alpha.archive"];
+            string[] duplicates = ["Beta.archive"];
+            CollectionAssert.AreEqual(repaired, result.EffectiveOrder);
             CollectionAssert.AreEqual(missing, result.OrderEvidence.MissingEntries);
+            CollectionAssert.AreEqual(duplicates, result.OrderEvidence.DuplicateEntries);
             Assert.IsTrue(result.OrderEvidence.Message.Contains("Beta.archive", StringComparison.Ordinal));
         }
         finally

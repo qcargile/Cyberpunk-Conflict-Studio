@@ -23,6 +23,12 @@ public sealed record ArchiveOrderEvidence(ArchiveOrderEvidenceKind Kind, string?
     public ArchiveOrderProblemLane ProblemLane { get; init; }
     [JsonIgnore]
     public bool IsRedmodOrder => ProblemLane == ArchiveOrderProblemLane.Redmod;
+    [JsonIgnore]
+    public bool IsRepairableLegacyOrder => Kind == ArchiveOrderEvidenceKind.Unresolved
+        && ProblemLane == ArchiveOrderProblemLane.Legacy
+        && SourcePath is not null
+        && SourceFingerprints.Count > 0
+        && (MissingEntries.Length > 0 || DuplicateEntries.Length > 0);
 }
 
 public sealed record Mo2ArchiveProfile(string ProfileName, string ProfileModlistPath, Mo2Archive[] Archives, string[] EffectiveOrder, ArchiveOrderEvidence? OrderEvidence = null);
@@ -116,7 +122,8 @@ public static class Mo2ArchiveProfileScanner
                 if (duplicates.Length > 0) reasons.Add($"duplicate active archives: {string.Join(", ", duplicates)}");
                 if (ignored.Length > 0) reasons.Add($"inactive entries ignored: {string.Join(", ", ignored)}");
                 if (reasons.Count == 0) reasons.Add(exception.Message);
-                return (discovered, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, provider.Provider, path, $"Archive winners cannot be determined because the active modlist.txt has {string.Join("; ", reasons)}.") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, AbsentSources = absentSources.ToArray(), ProblemLane = ArchiveOrderProblemLane.Legacy });
+                string[] repaired = ArchiveOrderPlanner.CreateRepairOrder(discovered, activeOrder);
+                return (repaired, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, provider.Provider, path, $"Archive winners cannot be determined because the active modlist.txt has {string.Join("; ", reasons)}.") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, AbsentSources = absentSources.ToArray(), ProblemLane = ArchiveOrderProblemLane.Legacy });
             }
         }
         return (discovered, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.FilenameFallback, null, null, "No active archive modlist.txt exists. Cyberpunk filename order is used.") { AbsentSources = absentSources.ToArray() });

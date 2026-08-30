@@ -8,6 +8,7 @@ public static class ArchiveOrderGuidance
     {
         ArgumentNullException.ThrowIfNull(evidence);
         if (evidence.Kind != ArchiveOrderEvidenceKind.Unresolved) return evidence.IgnoredEntries.Length > 0 ? "Clean inactive entry" : "View load order";
+        if (evidence.IsRepairableLegacyOrder) return "Review repair draft";
         return evidence.ProblemLane switch
         {
             ArchiveOrderProblemLane.Redmod => evidence.SourcePath is null ? "REDmod repair help" : "Open REDmod order file",
@@ -19,6 +20,7 @@ public static class ArchiveOrderGuidance
     public static string Instruction(ArchiveOrderEvidence evidence, ModManagerKind managerKind = ModManagerKind.Mo2)
     {
         ArgumentNullException.ThrowIfNull(evidence);
+        if (evidence.IsRepairableLegacyOrder) return "Review the complete repair draft, adjust it if needed, then apply and verify it.";
         if (managerKind == ModManagerKind.Vortex && evidence.ProblemLane is ArchiveOrderProblemLane.Redmod or ArchiveOrderProblemLane.Combined) return evidence.ProblemLane == ArchiveOrderProblemLane.Combined ? "Repair the named legacy archive-order entries, deploy the active Vortex profile, then re-check conflicts." : "Deploy the active Vortex profile, then re-check conflicts.";
         return evidence.ProblemLane switch
         {

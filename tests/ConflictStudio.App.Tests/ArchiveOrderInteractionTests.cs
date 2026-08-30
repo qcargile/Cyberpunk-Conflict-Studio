@@ -306,7 +306,7 @@ public sealed class ArchiveOrderInteractionTests
     }
 
     [TestMethod]
-    public void IncompleteArchiveOrderLoadsReadOnlyInsteadOfAbortingTheWorkspace()
+    public void IncompleteArchiveOrderLoadsAnEditableRepairDraft()
     {
         string root = Path.Combine(Path.GetTempPath(), "conflict-studio-incomplete-order-window-" + Guid.NewGuid().ToString("N"));
         Exception? failure = null;
@@ -318,8 +318,14 @@ public sealed class ArchiveOrderInteractionTests
 
                 Assert.HasCount(2, window.ProposedArchiveOrderForTesting);
                 Assert.HasCount(2, window.ArchiveTreeForTesting.VisibleArchives);
-                Assert.IsFalse(window.CanApplyArchiveOrderForTesting);
-                StringAssert.Contains(window.ArchiveOrderEvidenceTitleTextBlock.Text, "blocked");
+                Assert.IsTrue(window.CanApplyArchiveOrderForTesting);
+                Assert.IsTrue(window.IsPreviewingArchiveOrderForTesting);
+                StringAssert.Contains(window.ArchiveOrderEvidenceTitleTextBlock.Text, "repair draft");
+                window.MoveArchiveOrderForTesting(["Beta.archive"], "Alpha.archive");
+                window.ResetArchiveOrderForTesting();
+                Assert.IsTrue(window.CanApplyArchiveOrderForTesting);
+                Assert.IsTrue(window.IsPreviewingArchiveOrderForTesting);
+                window.PendingArchiveClosePromptForTesting = _ => ArchiveOrderCloseAction.DiscardAndClose;
                 window.Close();
             }
             catch (Exception exception) { failure = exception; }
@@ -348,7 +354,7 @@ public sealed class ArchiveOrderInteractionTests
         string orderPath = Path.Combine(archiveRoot, "modlist.txt");
         if (incompleteOrder) File.WriteAllText(orderPath, "Alpha.archive\r\n");
         ArchiveOrderEvidence evidence = incompleteOrder
-            ? new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Game directory", orderPath, "Archive order is missing Beta.archive.") { MissingEntries = ["Beta.archive"], ProblemLane = ArchiveOrderProblemLane.Legacy }
+            ? new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Game directory", orderPath, "Archive order is missing Beta.archive.") { MissingEntries = ["Beta.archive"], SourceFingerprints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [orderPath] = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(orderPath))) }, ProblemLane = ArchiveOrderProblemLane.Legacy }
             : new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, "Game directory", orderPath, "managed");
         ProfileScanReceipt receipt = new ProfileScanReceipt(2, "Deployed game", DateTimeOffset.UtcNow, ["Game directory"], order, archiveFailures, conflicts, [], [], [], [], [], [], [], []) with { InstallationId = ProfileInstallationIdentity.Create("Manual", root), ArchiveSummaries = summaries, ArchiveOrderEvidence = evidence, ArchiveInventory = archives, EditableArchiveInventory = archives, EditableArchiveOrder = order, EditableArchiveOrderEvidence = evidence, ManagerKind = ModManagerKind.Manual };
         MainWindow window = new(false);

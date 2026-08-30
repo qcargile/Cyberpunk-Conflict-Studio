@@ -559,8 +559,12 @@ public partial class MainWindow : Window, IDisposable
             _archivePreviewUnavailable = false;
             if (_receipt is not null)
             {
-                _archiveTree.Load(_receipt.ArchiveSummaries ?? []);
-                PresentArchiveOrderEvidence(_receipt.ArchiveOrderEvidence ?? new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, null, null, "Archive order evidence is unavailable."));
+                if (_workspace.CanApply) RefreshArchiveConflictPreview();
+                else
+                {
+                    _archiveTree.Load(_receipt.ArchiveSummaries ?? []);
+                    PresentArchiveOrderEvidence(_receipt.ArchiveOrderEvidence ?? new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, null, null, "Archive order evidence is unavailable."));
+                }
             }
             RefreshArchiveRail();
             ApplyArchiveTreeFilter();
@@ -886,7 +890,7 @@ public partial class MainWindow : Window, IDisposable
             workspaceRoot = manual.GameRoot;
         }
         else throw new InvalidOperationException("The selected manager profile is unsupported.");
-        if (receipt.EditableArchiveOrderEvidence is { Kind: ArchiveOrderEvidenceKind.Unresolved } unresolvedOrder)
+        if (receipt.EditableArchiveOrderEvidence is { Kind: ArchiveOrderEvidenceKind.Unresolved } unresolvedOrder && !unresolvedOrder.IsRepairableLegacyOrder)
         {
             target = target with { WriteBlockedReason = unresolvedOrder.Message };
         }
@@ -903,6 +907,11 @@ public partial class MainWindow : Window, IDisposable
         _archivePreviewUnavailable = false;
         ArchiveOrderEvidence evidence = receipt.ArchiveOrderEvidence ?? new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, null, null, "Archive order evidence is unavailable.");
         PresentArchiveOrderEvidence(evidence);
+        if (evidence.IsRepairableLegacyOrder && receipt.ArchiveFailures.Length == 0)
+        {
+            _workspace.PreviewOrder();
+            RefreshArchiveConflictPreview();
+        }
         ArchiveConflictCountTextBlock.Text = _archiveTree.ResultSummary + " Non-conflicting files are hidden by default.";
         ConflictWorkItem[] codeItems = CodeWorkItems();
         UpdateCodeCaseCounts(codeItems);
@@ -930,17 +939,18 @@ public partial class MainWindow : Window, IDisposable
     private void PresentArchiveOrderEvidence(ArchiveOrderEvidence evidence)
     {
         ArchiveOrderEvidenceTextBlock.Text = evidence.Message;
-        bool orderBlocked = evidence.Kind == ArchiveOrderEvidenceKind.Unresolved;
+        bool repairDraft = evidence.IsRepairableLegacyOrder;
+        bool orderBlocked = evidence.Kind == ArchiveOrderEvidenceKind.Unresolved && !repairDraft;
         bool maintenance = evidence.IgnoredEntries.Length > 0;
-        _orderProblemLane = orderBlocked ? evidence.ProblemLane : ArchiveOrderProblemLane.None;
-        ArchiveOrderEvidenceTitleTextBlock.Text = orderBlocked ? "Archive winners are blocked by one order problem" : maintenance ? "Order verified; inactive entries can be cleaned" : $"Order verified · {evidence.Provider ?? "filename order"}";
+        _orderProblemLane = orderBlocked || repairDraft ? evidence.ProblemLane : ArchiveOrderProblemLane.None;
+        ArchiveOrderEvidenceTitleTextBlock.Text = repairDraft ? "Archive-order repair draft ready" : orderBlocked ? "Archive winners are blocked by one order problem" : maintenance ? "Order verified; inactive entries can be cleaned" : $"Order verified · {evidence.Provider ?? "filename order"}";
         ArchiveOrderActionButton.Content = ArchiveOrderGuidance.ActionLabel(evidence);
-        ArchiveOrderEvidenceTextBlock.Visibility = orderBlocked || maintenance ? Visibility.Visible : Visibility.Collapsed;
-        ArchiveOrderActionButton.Visibility = orderBlocked || maintenance ? Visibility.Visible : Visibility.Collapsed;
+        ArchiveOrderEvidenceTextBlock.Visibility = orderBlocked || repairDraft || maintenance ? Visibility.Visible : Visibility.Collapsed;
+        ArchiveOrderActionButton.Visibility = orderBlocked || repairDraft || maintenance ? Visibility.Visible : Visibility.Collapsed;
         ArchiveOrderEvidenceBorder.ToolTip = evidence.Message;
-        ArchiveOrderEvidenceTitleTextBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked ? "#FCEE0A" : maintenance ? "#FFB15A" : "#7EF0B2"));
-        ArchiveOrderEvidenceBorder.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked ? "#292600" : maintenance ? "#321701" : "#08251B"));
-        ArchiveOrderEvidenceBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked ? "#8C8500" : maintenance ? "#8A4200" : "#1F6E4C"));
+        ArchiveOrderEvidenceTitleTextBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked || repairDraft ? "#FCEE0A" : maintenance ? "#FFB15A" : "#7EF0B2"));
+        ArchiveOrderEvidenceBorder.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked || repairDraft ? "#292600" : maintenance ? "#321701" : "#08251B"));
+        ArchiveOrderEvidenceBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked || repairDraft ? "#8C8500" : maintenance ? "#8A4200" : "#1F6E4C"));
     }
 
     private void ApplyQueueFilter()
@@ -1446,7 +1456,7 @@ public partial class MainWindow : Window, IDisposable
         try
         {
             _workspace.PreviewOrder();
-            if (_workspace.CanReset) RefreshArchiveConflictPreview();
+            if (_workspace.CanApply) RefreshArchiveConflictPreview();
             else RestoreScannedArchiveConflictPresentation();
             return true;
         }
@@ -1460,9 +1470,11 @@ public partial class MainWindow : Window, IDisposable
     private void RefreshArchiveConflictPreview()
     {
         if (_receipt?.ArchiveInventory is null) return;
-        if (_receipt.ArchiveOrderEvidence?.Kind == ArchiveOrderEvidenceKind.Unresolved || _receipt.ArchiveFailures.Length > 0)
+        ArchiveOrderEvidence? evidence = _receipt.ArchiveOrderEvidence;
+        if (evidence?.Kind == ArchiveOrderEvidenceKind.Unresolved && !evidence.IsRepairableLegacyOrder || _receipt.ArchiveFailures.Length > 0)
         {
-            _workspace.BlockPreview("Conflict preview is unavailable because an archive could not be read. Fix that archive or reset the proposed order.");
+            string reason = _receipt.ArchiveFailures.Length > 0 ? "Conflict preview is unavailable because an archive could not be read. Fix that archive or reset the proposed order." : evidence?.Message ?? "Conflict preview is unavailable because archive order evidence is unresolved.";
+            _workspace.BlockPreview(reason);
             _previewingArchiveOrder = false;
             _archivePreviewUnavailable = true;
             ApplyArchiveTreeFilter();
@@ -1480,8 +1492,9 @@ public partial class MainWindow : Window, IDisposable
         _archivePreviewUnavailable = false;
         _archiveTree.Load(summaries);
         ApplyArchiveTreeFilter();
-        ArchiveOrderEvidenceTitleTextBlock.Text = "Previewing unapplied order";
-        ArchiveOrderEvidenceTextBlock.Text = "The conflict pane is showing the proposed order. Apply it to save the change.";
+        bool repairDraft = evidence?.IsRepairableLegacyOrder == true;
+        ArchiveOrderEvidenceTitleTextBlock.Text = repairDraft ? "Previewing archive-order repair draft" : "Previewing unapplied order";
+        ArchiveOrderEvidenceTextBlock.Text = repairDraft ? "The conflict pane is showing the complete repair draft. Review it, then apply to save and verify the repaired order." : "The conflict pane is showing the proposed order. Apply it to save the change.";
         ArchiveOrderEvidenceTextBlock.Visibility = Visibility.Visible;
         ArchiveOrderEvidenceTitleTextBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FCEE0A"));
         ArchiveOrderEvidenceBorder.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#292600"));
@@ -1510,7 +1523,7 @@ public partial class MainWindow : Window, IDisposable
         string[] effectiveOrder = ArchiveOverviewProjection.ComposeCombinedOrder(_workspace.ProposedOrder, _receipt.ArchiveOrder);
         string[] visibleOrder = _archiveTree.VisibleArchives.Select(value => value.ArchiveName).ToArray();
         ArchiveOrderEvidence? evidence = _receipt.ArchiveOrderEvidence;
-        ArchiveOrderProblemLane unresolvedLane = evidence?.Kind == ArchiveOrderEvidenceKind.Unresolved ? evidence.ProblemLane : ArchiveOrderProblemLane.None;
+        ArchiveOrderProblemLane unresolvedLane = evidence?.Kind == ArchiveOrderEvidenceKind.Unresolved && !(_previewingArchiveOrder && evidence.IsRepairableLegacyOrder) ? evidence.ProblemLane : ArchiveOrderProblemLane.None;
         ArchiveOverviewEntry[] loadOrderEntries = ArchiveOverviewProjection.BuildRelationships(effectiveOrder, effectiveOrder, _archiveRelationshipResources, selected, unresolvedLane);
         ArchiveOverviewEntry[] conflictEntries = ArchiveOverviewProjection.BuildRelationships(effectiveOrder, visibleOrder, _archiveRelationshipResources, selected, unresolvedLane);
         LoadOrderOverviewBar.Entries = loadOrderEntries;

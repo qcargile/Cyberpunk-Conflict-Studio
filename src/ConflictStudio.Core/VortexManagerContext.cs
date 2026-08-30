@@ -61,7 +61,7 @@ public static class VortexManagerContextStore
         {
             if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath) || !providerIds.Contains(providerId)) throw new InvalidDataException("The Vortex deployment winner context is invalid.");
         }
-        if (context.ArchiveOrder.Any(string.IsNullOrWhiteSpace) || context.ArchiveOrder.Distinct(StringComparer.OrdinalIgnoreCase).Count() != context.ArchiveOrder.Length || context.ArchiveOrderSha256 is not null && !IsSha256(context.ArchiveOrderSha256)) throw new InvalidDataException("The Vortex archive order context is invalid.");
+        if (context.ArchiveOrder.Any(string.IsNullOrWhiteSpace) || context.ArchiveOrderSha256 is not null && !IsSha256(context.ArchiveOrderSha256)) throw new InvalidDataException("The Vortex archive order context is invalid.");
     }
 
     private static bool IsWithin(string root, string path)

@@ -28,35 +28,41 @@ function applyOrderRequest(request, context, now = new Date()) {
   const orderPath = path.join(archiveRoot, "modlist.txt");
   const inventory = archiveInventory(archiveRoot);
   if (!sameInventory(inventory, request.inventory)) throw new Error("The deployed archive inventory changed after Conflict Studio previewed it.");
-  const expectedNames = new Set(inventory.map((entry) => entry.name.toLowerCase()));
-  const proposedNames = new Set(request.proposedOrder.map((entry) => entry.toLowerCase()));
-  if (expectedNames.size !== request.proposedOrder.length || proposedNames.size !== request.proposedOrder.length || [...expectedNames].some((name) => !proposedNames.has(name))) throw new Error("The proposed archive order does not contain every deployed archive exactly once.");
+  if (request.restorePrevious !== true) {
+    const expectedNames = new Set(inventory.map((entry) => entry.name.toLowerCase()));
+    const proposedNames = new Set(request.proposedOrder.map((entry) => entry.toLowerCase()));
+    if (expectedNames.size !== request.proposedOrder.length || proposedNames.size !== request.proposedOrder.length || [...expectedNames].some((name) => !proposedNames.has(name))) throw new Error("The proposed archive order does not contain every deployed archive exactly once.");
+  }
   const current = fs.existsSync(orderPath) ? fs.readFileSync(orderPath) : null;
   const currentSha = current === null ? null : sha(current);
   if (currentSha !== request.expectedOrderSha256) throw new Error("The deployed archive order changed after Conflict Studio previewed it.");
   fs.mkdirSync(archiveRoot, { recursive: true });
+  const output = request.restorePrevious === true ? restoreBytes(request.restoreBackupPath, orderPath) : mergeOrder(current, request.proposedOrder);
   const backupPath = current === null ? null : `${orderPath}.${request.requestId}.bak`;
   if (backupPath !== null) fs.writeFileSync(backupPath, current);
-  const output = mergeOrder(current, request.proposedOrder);
   const temporary = `${orderPath}.${request.requestId}.tmp`;
   try {
-    const handle = fs.openSync(temporary, "wx");
-    try {
-      fs.writeFileSync(handle, output);
-      fs.fsyncSync(handle);
-    } finally {
-      fs.closeSync(handle);
+    if (output === null) {
+      if (fs.existsSync(orderPath)) fs.unlinkSync(orderPath);
+    } else {
+      const handle = fs.openSync(temporary, "wx");
+      try {
+        fs.writeFileSync(handle, output);
+        fs.fsyncSync(handle);
+      } finally {
+        fs.closeSync(handle);
+      }
+      fs.renameSync(temporary, orderPath);
     }
-    fs.renameSync(temporary, orderPath);
-    const verified = fs.readFileSync(orderPath);
-    if (!verified.equals(output)) throw new Error("The Vortex archive order did not verify after writing.");
+    const verified = fs.existsSync(orderPath) ? fs.readFileSync(orderPath) : null;
+    if (output === null ? verified !== null : verified === null || !verified.equals(output)) throw new Error("The Vortex archive order did not verify after writing.");
     return {
       schemaVersion: 1,
       requestId: request.requestId,
       applied: true,
-      message: "Vortex applied and verified the archive order.",
+      message: request.restorePrevious === true ? "Vortex restored and verified the previous archive order." : "Vortex applied and verified the archive order.",
       backupPath,
-      writtenSha256: sha(verified),
+      writtenSha256: verified === null ? null : sha(verified),
       completedAtUtc: new Date().toISOString(),
     };
   } catch (error) {
@@ -72,6 +78,16 @@ function applyOrderRequest(request, context, now = new Date()) {
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }
+}
+
+function restoreBytes(backupPath, orderPath) {
+  if (backupPath === null || backupPath === undefined) return null;
+  const resolvedBackup = path.resolve(backupPath);
+  const prefix = `${path.resolve(orderPath)}.`;
+  const token = resolvedBackup.slice(prefix.length, -4);
+  if (!resolvedBackup.toLowerCase().startsWith(prefix.toLowerCase()) || !resolvedBackup.toLowerCase().endsWith(".bak") || !/^[0-9a-f]{32}$/.test(token)) throw new Error("The previous Vortex archive order backup is invalid.");
+  if (!fs.existsSync(resolvedBackup)) throw new Error("The previous Vortex archive order backup is missing.");
+  return fs.readFileSync(resolvedBackup);
 }
 
 function rollbackOrder(response, context) {

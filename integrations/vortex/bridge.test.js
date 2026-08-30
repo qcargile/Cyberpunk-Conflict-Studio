@@ -72,6 +72,82 @@ test("order request validates inventory and atomically replaces the manager file
   }
 });
 
+test("repair undo restores the exact incomplete order backup", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "conflict-studio-vortex-repair-undo-"));
+  try {
+    const gameRoot = path.join(root, "game");
+    const archiveRoot = path.join(gameRoot, "archive", "pc", "mod");
+    fs.mkdirSync(archiveRoot, { recursive: true });
+    fs.writeFileSync(path.join(archiveRoot, "Alpha.archive"), "alpha");
+    fs.writeFileSync(path.join(archiveRoot, "Beta.archive"), "beta");
+    const orderPath = path.join(archiveRoot, "modlist.txt");
+    const original = Buffer.from("Beta.archive\nBeta.archive\nstale.archive\n");
+    fs.writeFileSync(orderPath, original);
+    const input = { capturedAtUtc: new Date().toISOString(), profileId: "profile", profileName: "Standard", gameRoot, stagingRoot: path.join(root, "staging"), deploymentFresh: true, providers: [], deployedWinners: {} };
+    const context = bridge.createContext({ ...input, archiveOrder: ["Beta.archive", "Alpha.archive"], archiveOrderSha256: sha(original) });
+    const requestedAt = new Date();
+    const inventory = [fingerprint(archiveRoot, "Alpha.archive"), fingerprint(archiveRoot, "Beta.archive")];
+    const repair = { schemaVersion: 1, requestId: "a".repeat(32), contextId: context.contextId, profileId: "profile", requestedAtUtc: requestedAt.toISOString(), expiresAtUtc: new Date(requestedAt.getTime() + 15000).toISOString(), expectedOrderSha256: context.archiveOrderSha256, inventory, proposedOrder: ["Beta.archive", "Alpha.archive"] };
+    const applied = bridge.applyOrderRequest(repair, context);
+    const repaired = fs.readFileSync(orderPath);
+    const updated = bridge.createContext({ ...input, archiveOrder: ["Beta.archive", "Alpha.archive"], archiveOrderSha256: sha(repaired) });
+    const restore = { ...repair, requestId: "b".repeat(32), contextId: updated.contextId, expectedOrderSha256: applied.writtenSha256, restorePrevious: true, restoreBackupPath: applied.backupPath };
+
+    bridge.applyOrderRequest(restore, updated);
+
+    assert.deepEqual(fs.readFileSync(orderPath), original);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("undo removes an order created from filename fallback", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "conflict-studio-vortex-created-order-undo-"));
+  try {
+    const gameRoot = path.join(root, "game");
+    const archiveRoot = path.join(gameRoot, "archive", "pc", "mod");
+    fs.mkdirSync(archiveRoot, { recursive: true });
+    fs.writeFileSync(path.join(archiveRoot, "Alpha.archive"), "alpha");
+    const orderPath = path.join(archiveRoot, "modlist.txt");
+    const input = { capturedAtUtc: new Date().toISOString(), profileId: "profile", profileName: "Standard", gameRoot, stagingRoot: path.join(root, "staging"), deploymentFresh: true, providers: [], deployedWinners: {} };
+    const context = bridge.createContext({ ...input, archiveOrder: ["Alpha.archive"], archiveOrderSha256: null });
+    const requestedAt = new Date();
+    const inventory = [fingerprint(archiveRoot, "Alpha.archive")];
+    const create = { schemaVersion: 1, requestId: "c".repeat(32), contextId: context.contextId, profileId: "profile", requestedAtUtc: requestedAt.toISOString(), expiresAtUtc: new Date(requestedAt.getTime() + 15000).toISOString(), expectedOrderSha256: null, inventory, proposedOrder: ["Alpha.archive"] };
+    const applied = bridge.applyOrderRequest(create, context);
+    const updated = bridge.createContext({ ...input, archiveOrder: ["Alpha.archive"], archiveOrderSha256: applied.writtenSha256 });
+    const restore = { ...create, requestId: "d".repeat(32), contextId: updated.contextId, expectedOrderSha256: applied.writtenSha256, proposedOrder: [], restorePrevious: true, restoreBackupPath: null };
+
+    const restored = bridge.applyOrderRequest(restore, updated);
+
+    assert.equal(fs.existsSync(orderPath), false);
+    assert.equal(restored.writtenSha256, null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("undo rejects a backup outside the archive-order backup namespace", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "conflict-studio-vortex-invalid-backup-"));
+  try {
+    const gameRoot = path.join(root, "game");
+    const archiveRoot = path.join(gameRoot, "archive", "pc", "mod");
+    fs.mkdirSync(archiveRoot, { recursive: true });
+    fs.writeFileSync(path.join(archiveRoot, "Alpha.archive"), "alpha");
+    const orderPath = path.join(archiveRoot, "modlist.txt");
+    fs.writeFileSync(orderPath, "Alpha.archive\n");
+    const context = bridge.createContext({ capturedAtUtc: new Date().toISOString(), profileId: "profile", profileName: "Standard", gameRoot, stagingRoot: path.join(root, "staging"), deploymentFresh: true, providers: [], deployedWinners: {}, archiveOrder: ["Alpha.archive"], archiveOrderSha256: sha(fs.readFileSync(orderPath)) });
+    const requestedAt = new Date();
+    const request = { schemaVersion: 1, requestId: "e".repeat(32), contextId: context.contextId, profileId: "profile", requestedAtUtc: requestedAt.toISOString(), expiresAtUtc: new Date(requestedAt.getTime() + 15000).toISOString(), expectedOrderSha256: context.archiveOrderSha256, inventory: [fingerprint(archiveRoot, "Alpha.archive")], proposedOrder: [], restorePrevious: true, restoreBackupPath: path.join(root, "outside.bak") };
+
+    assert.throws(() => bridge.applyOrderRequest(request, context), /backup is invalid/i);
+    assert.equal(fs.readFileSync(orderPath, "utf8"), "Alpha.archive\n");
+    assert.equal(fs.readdirSync(archiveRoot).filter((name) => name.endsWith(".bak")).length, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("order request expires instead of applying after a later Vortex restart", () => {
   const context = bridge.createContext({
     capturedAtUtc: "2026-08-29T18:00:00.000Z",

@@ -70,6 +70,42 @@ public sealed class VortexArchiveProfileScannerTests
         }
     }
 
+    [TestMethod]
+    public void ScanBuildsARepairDraftFromAnIncompleteDeployedOrder()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-vortex-repair-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string game = Path.Combine(root, "game");
+            string staging = Path.Combine(root, "staging");
+            string provider = Path.Combine(staging, "Provider");
+            WriteArchive(provider, "Alpha.archive", "alpha");
+            WriteArchive(provider, "Beta.archive", "beta");
+            WriteArchive(provider, "Gamma.archive", "gamma");
+            string orderPath = Path.Combine(game, "archive", "pc", "mod", "modlist.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(orderPath)!);
+            File.WriteAllText(orderPath, "Beta.archive\nstale.archive\nBeta.archive\nAlpha.archive\n");
+            string orderHash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(orderPath)));
+            VortexManagerContext context = new(1, new string('a', 64), DateTimeOffset.UtcNow, "profile", "Standard", game, staging, true, [new("provider", "Provider", provider, 0)], [], [], orderHash);
+
+            Mo2ArchiveProfile profile = VortexArchiveProfileScanner.Scan(context);
+            string[] repaired = ["Beta.archive", "Alpha.archive", "Gamma.archive"];
+            string[] missing = ["Gamma.archive"];
+            string[] duplicates = ["Beta.archive"];
+            string[] ignored = ["stale.archive"];
+
+            CollectionAssert.AreEqual(repaired, profile.EffectiveOrder);
+            CollectionAssert.AreEqual(missing, profile.OrderEvidence!.MissingEntries);
+            CollectionAssert.AreEqual(duplicates, profile.OrderEvidence.DuplicateEntries);
+            CollectionAssert.AreEqual(ignored, profile.OrderEvidence.IgnoredEntries);
+            Assert.AreEqual(ArchiveOrderEvidenceKind.Unresolved, profile.OrderEvidence.Kind);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     private static void WriteArchive(string root, string name, string text)
     {
         string directory = Path.Combine(root, "archive", "pc", "mod");

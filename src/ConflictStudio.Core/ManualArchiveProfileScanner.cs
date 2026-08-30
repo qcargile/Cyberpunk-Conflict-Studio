@@ -38,7 +38,8 @@ public static class ManualArchiveProfileScanner
             if (missing.Length > 0) reasons.Add($"missing active archives: {string.Join(", ", missing)}");
             if (duplicates.Length > 0) reasons.Add($"duplicate active archives: {string.Join(", ", duplicates)}");
             if (ignored.Length > 0) reasons.Add($"inactive entries ignored: {string.Join(", ", ignored)}");
-            return new Mo2ArchiveProfile("Deployed game", orderPath, archives, discovered, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Game directory", orderPath, $"Archive winners cannot be determined because the deployed modlist.txt has {string.Join("; ", reasons)}.") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, ProblemLane = ArchiveOrderProblemLane.Legacy });
+            string[] repaired = ArchiveOrderPlanner.CreateRepairOrder(discovered, order);
+            return new Mo2ArchiveProfile("Deployed game", orderPath, archives, repaired, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Game directory", orderPath, $"Archive winners cannot be determined because the deployed modlist.txt has {string.Join("; ", reasons)}.") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, ProblemLane = ArchiveOrderProblemLane.Legacy });
         }
     }
 }

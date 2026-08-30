@@ -135,7 +135,7 @@ public sealed class VortexArchiveOrderWriterTests
     }
 
     [TestMethod]
-    public void RestorePreviousSendsTheOrderObservedBeforeApply()
+    public void RestorePreviousRequestsTheExactBridgeBackup()
     {
         ArchiveOrderObservation observation = new("Standard", "C:\\Vortex", new string('c', 64), Inventory, CurrentOrder);
         ArchiveOrderPreview preview = ArchiveOrderPlanner.CreatePreview(observation, ProposedOrder);
@@ -143,7 +143,7 @@ public sealed class VortexArchiveOrderWriterTests
         VortexArchiveOrderWriter writer = new(Context(true), request =>
         {
             requests.Add(request);
-            return new VortexOrderResponse(1, request.RequestId, true, "Applied", null, new string(requests.Count == 1 ? 'd' : 'e', 64), DateTimeOffset.UtcNow, requests.Count == 1 ? new string('f', 64) : null);
+            return new VortexOrderResponse(1, request.RequestId, true, "Applied", requests.Count == 1 ? "C:\\Game\\archive\\pc\\mod\\modlist.txt.backup.bak" : null, new string(requests.Count == 1 ? 'd' : 'e', 64), DateTimeOffset.UtcNow, requests.Count == 1 ? new string('f', 64) : null);
         }, () => DateTimeOffset.UtcNow);
         ArchiveOrderApplyResult result = writer.Apply(preview, Inventory);
 
@@ -152,7 +152,28 @@ public sealed class VortexArchiveOrderWriterTests
         Assert.AreEqual(2, requests.Count);
         Assert.IsTrue(string.Equals(result.WrittenSha256, requests[1].ExpectedOrderSha256, StringComparison.Ordinal));
         Assert.AreEqual(new string('f', 64), requests[1].ContextId);
-        CollectionAssert.AreEqual(CurrentOrder, requests[1].ProposedOrder);
+        Assert.IsTrue(requests[1].RestorePrevious);
+        Assert.AreEqual(result.BackupPath, requests[1].RestoreBackupPath);
+        Assert.HasCount(0, requests[1].ProposedOrder);
+    }
+
+    [TestMethod]
+    public void RepairUndoRequestsTheExactBridgeBackup()
+    {
+        ArchiveOrderObservation observation = new("Standard", "C:\\Vortex", new string('c', 64), Inventory, CurrentOrder);
+        ArchiveOrderPreview preview = ArchiveOrderPlanner.CreatePreview(observation, CurrentOrder);
+        List<VortexOrderRequest> requests = [];
+        VortexArchiveOrderWriter writer = new(Context(true), request =>
+        {
+            requests.Add(request);
+            return new VortexOrderResponse(1, request.RequestId, true, "Applied", "C:\\Game\\archive\\pc\\mod\\modlist.txt.backup.bak", new string(requests.Count == 1 ? 'd' : 'e', 64), DateTimeOffset.UtcNow, requests.Count == 1 ? new string('f', 64) : null);
+        }, () => DateTimeOffset.UtcNow);
+        ArchiveOrderApplyResult result = writer.Apply(preview, Inventory);
+
+        writer.RestorePrevious(result, "C:\\Game\\archive\\pc\\mod\\modlist.txt");
+
+        Assert.IsTrue(requests[1].RestorePrevious);
+        Assert.AreEqual(result.BackupPath, requests[1].RestoreBackupPath);
     }
 
     [TestMethod]

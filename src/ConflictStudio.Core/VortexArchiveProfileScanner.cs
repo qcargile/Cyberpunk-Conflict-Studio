@@ -43,15 +43,21 @@ public static class VortexArchiveProfileScanner
         string sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes));
         Dictionary<string, string> source = new(StringComparer.OrdinalIgnoreCase) { [Path.GetFullPath(orderPath)] = sha256 };
         if (context.ArchiveOrderSha256 is not null && !string.Equals(context.ArchiveOrderSha256, sha256, StringComparison.OrdinalIgnoreCase)) return (discovered, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Vortex", orderPath, "The archive order changed after Vortex exported this profile context. Refresh the Vortex bridge before scanning.") { SourceFingerprints = source, ProblemLane = ArchiveOrderProblemLane.Legacy });
-        string[] order = ArchiveOrderText.ArchiveEntries(Encoding.UTF8.GetString(bytes).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+        string[] allEntries = ArchiveOrderText.ArchiveEntries(Encoding.UTF8.GetString(bytes).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+        HashSet<string> active = discovered.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        string[] order = allEntries.Where(active.Contains).ToArray();
+        string[] ignored = allEntries.Where(value => !active.Contains(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        string[] missing = discovered.Where(value => !order.Contains(value, StringComparer.OrdinalIgnoreCase)).ToArray();
+        string[] duplicates = order.GroupBy(value => value, StringComparer.OrdinalIgnoreCase).Where(value => value.Count() > 1).Select(value => value.Key).ToArray();
         try
         {
             ArchiveOrderPlanner.RequireComplete(archives.Select(value => new ArchiveFingerprint(value.ArchiveName, value.Size, value.Sha256)).ToArray(), order);
-            return (order, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, "Vortex", orderPath, "Archive winners use the active Vortex archive load order.") { SourceFingerprints = source });
+            return (order, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, "Vortex", orderPath, "Archive winners use the active Vortex archive load order.") { IgnoredEntries = ignored, SourceFingerprints = source });
         }
         catch (ArchiveOrderException exception)
         {
-            return (discovered, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Vortex", orderPath, $"The deployed Vortex archive order is incomplete: {exception.Message}") { SourceFingerprints = source, ProblemLane = ArchiveOrderProblemLane.Legacy });
+            string[] repaired = ArchiveOrderPlanner.CreateRepairOrder(discovered, order);
+            return (repaired, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Vortex", orderPath, $"The deployed Vortex archive order is incomplete: {exception.Message}") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, ProblemLane = ArchiveOrderProblemLane.Legacy });
         }
     }
 

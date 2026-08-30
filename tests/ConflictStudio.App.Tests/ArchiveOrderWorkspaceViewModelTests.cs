@@ -147,6 +147,139 @@ public sealed class ArchiveOrderWorkspaceViewModelTests
     }
 
     [TestMethod]
+    public void ManualApplyWritesAndVerifiesAnIncompleteRepairDraft()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-manual-repair-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string archiveRoot = Path.Combine(root, "archive", "pc", "mod");
+            Directory.CreateDirectory(archiveRoot);
+            File.WriteAllText(Path.Combine(archiveRoot, "Alpha.archive"), "alpha");
+            File.WriteAllText(Path.Combine(archiveRoot, "Beta.archive"), "beta");
+            string orderPath = Path.Combine(archiveRoot, "modlist.txt");
+            File.WriteAllText(orderPath, "Beta.archive\r\nBeta.archive\r\nstale.archive\r\n");
+            Mo2ArchiveProfile profile = ManualArchiveProfileScanner.Scan(root);
+            Mo2ArchiveWriteTarget target = new(orderPath, "Game directory", ModManagerKind.Manual);
+            ArchiveOrderWorkspaceViewModel viewModel = new(() => new ArchiveOrderWriter(() => DateTimeOffset.UtcNow, () => []));
+            viewModel.LoadProfile(profile, target, root, () => ManualArchiveProfileScanner.Scan(root), ProfileInstallationIdentity.Create("Manual", root));
+            viewModel.SetResourceProviders(ProfileInstallationIdentity.Create("Manual", root), profile.ProfileName, []);
+
+            viewModel.PreviewOrder();
+            Assert.IsTrue(viewModel.CanApply);
+            viewModel.ApplyOrder();
+
+            Assert.AreEqual("Beta.archive\r\nAlpha.archive\r\n", File.ReadAllText(orderPath));
+            Assert.IsFalse(viewModel.CanApply);
+            StringAssert.Contains(viewModel.PreviewStatus, "written and verified");
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void Mo2ApplyWritesAndVerifiesAnIncompleteRepairDraftInOverwrite()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-mo2-repair-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string modsRoot = Path.Combine(root, "mods");
+            string highRoot = Path.Combine(modsRoot, "High", "archive", "pc", "mod");
+            string lowRoot = Path.Combine(modsRoot, "Low", "archive", "pc", "mod");
+            Directory.CreateDirectory(highRoot);
+            Directory.CreateDirectory(lowRoot);
+            File.WriteAllText(Path.Combine(highRoot, "Alpha.archive"), "alpha");
+            File.WriteAllText(Path.Combine(lowRoot, "Beta.archive"), "beta");
+            string originalOrderPath = Path.Combine(highRoot, "modlist.txt");
+            File.WriteAllText(originalOrderPath, "Beta.archive\r\nBeta.archive\r\nstale.archive\r\n");
+            string profilePath = Path.Combine(root, "profiles", "Standard", "modlist.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+            File.WriteAllText(profilePath, "+High\r\n+Low\r\n");
+            Mo2ArchiveProfile profile = Mo2ArchiveProfileScanner.ScanInstance(root, profilePath);
+            Mo2ArchiveWriteTarget target = Mo2ArchiveWriteTargetResolver.Resolve(root, profile.OrderEvidence);
+            ArchiveOrderWorkspaceViewModel viewModel = new(() => new ArchiveOrderWriter(() => DateTimeOffset.UtcNow, () => []));
+            viewModel.LoadProfile(profile, target, root, () => Mo2ArchiveProfileScanner.ScanInstance(root, profilePath, null, true), ProfileInstallationIdentity.Create(root));
+            viewModel.SetResourceProviders(ProfileInstallationIdentity.Create(root), profile.ProfileName, []);
+
+            viewModel.PreviewOrder();
+            Assert.IsTrue(viewModel.CanApply);
+            viewModel.ApplyOrder();
+
+            Assert.AreEqual("Beta.archive\r\nAlpha.archive\r\n", File.ReadAllText(target.ModlistPath));
+            Assert.AreEqual("Beta.archive\r\nBeta.archive\r\nstale.archive\r\n", File.ReadAllText(originalOrderPath));
+            Assert.IsFalse(viewModel.CanApply);
+            StringAssert.Contains(viewModel.PreviewStatus, "written and verified");
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void VortexApplyWritesAndVerifiesAnIncompleteRepairDraftThroughTheBridge()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-vortex-repair-apply-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string game = Path.Combine(root, "game");
+            string staging = Path.Combine(root, "staging");
+            string providerRoot = Path.Combine(staging, "Provider");
+            string providerArchiveRoot = Path.Combine(providerRoot, "archive", "pc", "mod");
+            string gameArchiveRoot = Path.Combine(game, "archive", "pc", "mod");
+            Directory.CreateDirectory(providerArchiveRoot);
+            Directory.CreateDirectory(gameArchiveRoot);
+            File.WriteAllText(Path.Combine(providerArchiveRoot, "Alpha.archive"), "alpha");
+            File.WriteAllText(Path.Combine(providerArchiveRoot, "Beta.archive"), "beta");
+            string orderPath = Path.Combine(gameArchiveRoot, "modlist.txt");
+            File.WriteAllText(orderPath, "Beta.archive\r\nBeta.archive\r\nstale.archive\r\n");
+            string contextPath = Path.Combine(root, "context.json");
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            byte[] originalOrder = File.ReadAllBytes(orderPath);
+            string orderHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(orderPath)));
+            VortexManagerContext context = new(1, new string('a', 64), now, "profile", "Standard", game, staging, true, [new("provider", "Provider", providerRoot, 0)], [], [], orderHash);
+            File.WriteAllText(contextPath, System.Text.Json.JsonSerializer.Serialize(context));
+            Mo2ArchiveProfile profile = VortexArchiveProfileScanner.Scan(context);
+            Mo2ArchiveWriteTarget target = VortexArchiveWriteTargetResolver.Resolve(contextPath, context);
+            int exchanges = 0;
+            ArchiveOrderWorkspaceViewModel viewModel = new(_ => new VortexArchiveOrderWriter(context, request =>
+            {
+                exchanges++;
+                string backupPath = orderPath + "." + request.RequestId + ".bak";
+                File.Copy(orderPath, backupPath);
+                if (request.RestorePrevious) File.Copy(request.RestoreBackupPath!, orderPath, true);
+                else File.WriteAllBytes(orderPath, ArchiveOrderText.Merge(File.ReadAllBytes(orderPath), request.ProposedOrder));
+                byte[] written = File.ReadAllBytes(orderPath);
+                string writtenHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(written));
+                string[] writtenOrder = ArchiveOrderText.ArchiveEntries(File.ReadAllLines(orderPath));
+                string contextId = new string(exchanges == 1 ? 'b' : 'c', 64);
+                VortexManagerContext refreshed = context with { ContextId = contextId, CapturedAtUtc = now, ArchiveOrder = writtenOrder, ArchiveOrderSha256 = writtenHash };
+                File.WriteAllText(contextPath, System.Text.Json.JsonSerializer.Serialize(refreshed));
+                return new VortexOrderResponse(1, request.RequestId, true, "Applied", backupPath, writtenHash, now, contextId);
+            }, () => now, () => []), (_, _) => profile);
+            string installationId = ProfileInstallationIdentity.Create("Vortex", game + "|profile");
+            viewModel.LoadProfile(profile, target, staging, () => VortexArchiveProfileScanner.Scan(VortexManagerContextStore.Read(contextPath)), installationId);
+            viewModel.SetResourceProviders(installationId, profile.ProfileName, []);
+
+            viewModel.PreviewOrder();
+            Assert.IsTrue(viewModel.CanApply);
+            viewModel.ApplyOrder();
+
+            Assert.AreEqual("Beta.archive\r\nAlpha.archive\r\n", File.ReadAllText(orderPath));
+            Assert.IsFalse(viewModel.CanApply);
+            StringAssert.Contains(viewModel.PreviewStatus, "written and verified");
+            viewModel.UndoLastApply();
+            CollectionAssert.AreEqual(originalOrder, File.ReadAllBytes(orderPath));
+            Assert.AreEqual(2, exchanges);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
     public void ManagedApplyRefreshesArchiveFingerprintsOnlyOnce()
     {
         string root = Path.Combine(Path.GetTempPath(), "conflict-studio-profile-rollback-" + Guid.NewGuid().ToString("N"));

@@ -115,7 +115,7 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         _resourceEvidenceProfileId = null;
         _resourceEvidenceInstallationId = null;
         _resourceProviders = [];
-        _observation = ManagedArchiveOrderObserver.Observe(profile, target, target.WriteBlockedReason is not null);
+        _observation = Observe(profile, target);
         _decisionDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cyberpunk Conflict Studio");
         _baselineOrder = _observation.EffectiveOrder.ToArray();
         _proposedOrder = _baselineOrder.ToArray();
@@ -135,7 +135,7 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         _winnerDeltas = [];
         CanApply = false;
         CanReset = _baselineOrder.Length > 0 && !_proposedOrder.SequenceEqual(_baselineOrder, StringComparer.OrdinalIgnoreCase);
-        PreviewStatus = CanReset ? "Order changed. Preview it before applying." : "The proposed order matches the scanned order.";
+        PreviewStatus = CanReset ? "Order changed. Preview it before applying." : _profile?.OrderEvidence?.IsRepairableLegacyOrder == true ? "A complete repair draft is ready to preview and apply." : "The proposed order matches the scanned order.";
         OnPropertyChanged(nameof(ProposedOrder));
         OnPropertyChanged(nameof(WinnerDeltas));
     }
@@ -151,6 +151,7 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         PreviewStatus = "Proposed changes were reset to the scanned order.";
         OnPropertyChanged(nameof(ProposedOrder));
         OnPropertyChanged(nameof(WinnerDeltas));
+        if (_profile?.OrderEvidence?.IsRepairableLegacyOrder == true) PreviewOrder();
     }
 
     public void SetResourceProviders(string profileId, IReadOnlyList<ResourceProvider> providers) => SetResourceProviders(null, profileId, providers);
@@ -218,7 +219,8 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         _preview = ArchiveOrderPlanner.CreatePreview(_observation, _proposedOrder);
         _winnerDeltas = ArchiveOrderImpactAnalyzer.Analyze(_resourceProviders, _observation.EffectiveOrder, _proposedOrder);
         OnPropertyChanged(nameof(WinnerDeltas));
-        if (_preview.ChangedArchives.Length == 0)
+        bool repairRequired = _profile?.OrderEvidence?.IsRepairableLegacyOrder == true;
+        if (_preview.ChangedArchives.Length == 0 && !repairRequired)
         {
             _preview = null;
             _winnerDeltas = [];
@@ -232,6 +234,12 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         {
             CanApply = false;
             PreviewStatus = _profileTarget.WriteBlockedReason;
+            return;
+        }
+        if (repairRequired)
+        {
+            PreviewStatus = _winnerDeltas.Length == 0 ? "This repair completes the archive order without changing the proposed winners." : $"This repair completes the archive order and changes {_winnerDeltas.Length:N0} contested resource winners.";
+            CanApply = true;
             return;
         }
         int changed = _preview.ChangedArchives.Length;
@@ -277,8 +285,9 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
                 {
                     if (_profileRefresh is null) throw new ArchiveOrderException("The manager profile refresh is unavailable for post-write verification.");
                     _profile = _profileRefresh();
+                    _profileTarget = RefreshVortexWriteTarget(_profileTarget);
                 }
-                _observation = ManagedArchiveOrderObserver.Observe(_profile, _profileTarget);
+                _observation = Observe(_profile, _profileTarget);
                 if (!_observation.EffectiveOrder.SequenceEqual(_proposedOrder, StringComparer.OrdinalIgnoreCase)) throw new ArchiveOrderException("The managed archive order changed during post-write verification.");
             }
             catch (Exception exception)
@@ -288,7 +297,8 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
                 if (_profileRefresh is not null)
                 {
                     _profile = _profileRefresh();
-                    _observation = ManagedArchiveOrderObserver.Observe(_profile, _profileTarget);
+                    if (_profileTarget.ManagerKind == ModManagerKind.Vortex) _profileTarget = RefreshVortexWriteTarget(_profileTarget);
+                    _observation = Observe(_profile, _profileTarget);
                     _proposedOrder = _observation.EffectiveOrder.ToArray();
                     _baselineOrder = _proposedOrder.ToArray();
                     _preview = null;
@@ -332,8 +342,9 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
             {
                 if (_profileRefresh is null) throw new ArchiveOrderException("The manager profile refresh is unavailable after undo.");
                 _profile = _profileRefresh();
+                _profileTarget = RefreshVortexWriteTarget(_profileTarget);
             }
-            _observation = ManagedArchiveOrderObserver.Observe(_profile, _profileTarget);
+            _observation = Observe(_profile, _profileTarget);
             _proposedOrder = _observation.EffectiveOrder.ToArray();
             _baselineOrder = _proposedOrder.ToArray();
             OnPropertyChanged(nameof(ProposedOrder));
@@ -407,6 +418,23 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         if (!sameOwner) throw new ArchiveOrderException("The active archive-order owner changed after the preview. Scan again before applying or undoing an order.");
         if (currentTarget.WriteBlockedReason is not null) throw new ArchiveOrderException(currentTarget.WriteBlockedReason);
     }
+
+    private static Mo2ArchiveWriteTarget RefreshVortexWriteTarget(Mo2ArchiveWriteTarget expectedTarget)
+    {
+        if (expectedTarget.ContextPath is null) throw new ArchiveOrderException("The Vortex manager context is unavailable.");
+        VortexManagerContext context = VortexManagerContextStore.Read(expectedTarget.ContextPath);
+        Mo2ArchiveWriteTarget currentTarget = VortexArchiveWriteTargetResolver.Resolve(expectedTarget.ContextPath, context);
+        bool sameOwner = currentTarget.ManagerKind == expectedTarget.ManagerKind
+            && string.Equals(Path.GetFullPath(currentTarget.ModlistPath), Path.GetFullPath(expectedTarget.ModlistPath), StringComparison.OrdinalIgnoreCase)
+            && string.Equals(currentTarget.Provider, expectedTarget.Provider, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(currentTarget.ExpectedProfileId, expectedTarget.ExpectedProfileId, StringComparison.Ordinal);
+        if (!sameOwner) throw new ArchiveOrderException("The active archive-order owner changed during the Vortex write.");
+        if (currentTarget.WriteBlockedReason is not null) throw new ArchiveOrderException(currentTarget.WriteBlockedReason);
+        return currentTarget;
+    }
+
+    private static ArchiveOrderObservation Observe(Mo2ArchiveProfile profile, Mo2ArchiveWriteTarget target)
+        => ManagedArchiveOrderObserver.Observe(profile, target, target.WriteBlockedReason is not null || profile.OrderEvidence?.IsRepairableLegacyOrder == true);
 
     private void ClearUndo()
     {

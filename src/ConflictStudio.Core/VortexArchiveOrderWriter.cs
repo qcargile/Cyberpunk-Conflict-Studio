@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace ConflictStudio.Core;
 
-public sealed record VortexOrderRequest(int SchemaVersion, string RequestId, string ContextId, string ProfileId, DateTimeOffset RequestedAtUtc, DateTimeOffset ExpiresAtUtc, string? ExpectedOrderSha256, ArchiveFingerprint[] Inventory, string[] ProposedOrder);
+public sealed record VortexOrderRequest(int SchemaVersion, string RequestId, string ContextId, string ProfileId, DateTimeOffset RequestedAtUtc, DateTimeOffset ExpiresAtUtc, string? ExpectedOrderSha256, ArchiveFingerprint[] Inventory, string[] ProposedOrder, bool RestorePrevious = false, string? RestoreBackupPath = null);
 
 public sealed record VortexOrderResponse(int SchemaVersion, string RequestId, bool Applied, string Message, string? BackupPath, string? WrittenSha256, DateTimeOffset CompletedAtUtc, string? ContextId = null);
 
@@ -84,7 +84,6 @@ public sealed class VortexArchiveOrderWriter : IArchiveOrderWriter
     private readonly Func<VortexOrderRequest, VortexOrderResponse> _exchange;
     private readonly Func<DateTimeOffset> _clock;
     private readonly Func<IReadOnlyList<string>> _runningProcesses;
-    private string[]? _previousOrder;
     private ArchiveFingerprint[]? _inventory;
 
     public VortexArchiveOrderWriter(VortexManagerContext context, Func<VortexOrderRequest, VortexOrderResponse> exchange, Func<DateTimeOffset> clock) : this(context, exchange, clock, RunningProcesses) { }
@@ -111,7 +110,6 @@ public sealed class VortexArchiveOrderWriter : IArchiveOrderWriter
         VortexOrderRequest request = new(1, requestId, _context.ContextId, _context.ProfileId, now, now.AddSeconds(15), preview.Observation.OrderFileSha256, currentArchives.ToArray(), preview.ProposedOrder);
         VortexOrderResponse response = _exchange(request);
         if (response.SchemaVersion != 1 || !string.Equals(response.RequestId, requestId, StringComparison.Ordinal) || !response.Applied || response.WrittenSha256 is null) throw new ArchiveOrderException(string.IsNullOrWhiteSpace(response.Message) ? "Vortex rejected the archive order." : response.Message);
-        _previousOrder = preview.Observation.EffectiveOrder.ToArray();
         _inventory = currentArchives.ToArray();
         if (response.ContextId is not null) _context = _context with { ContextId = response.ContextId };
         return new ArchiveOrderApplyResult(response.BackupPath, true, preview.Observation.OrderFileSha256 is not null, response.WrittenSha256);
@@ -122,13 +120,12 @@ public sealed class VortexArchiveOrderWriter : IArchiveOrderWriter
         ArgumentNullException.ThrowIfNull(result);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
         if (_runningProcesses().Contains("Cyberpunk2077", StringComparer.OrdinalIgnoreCase)) throw new ArchiveOrderException("Archive order cannot be written while Cyberpunk2077 is running.");
-        if (_previousOrder is null || _inventory is null) throw new ArchiveOrderException("There is no Vortex archive order change to undo.");
+        if (_inventory is null) throw new ArchiveOrderException("There is no Vortex archive order change to undo.");
         string requestId = Guid.NewGuid().ToString("N");
         DateTimeOffset now = _clock().ToUniversalTime();
-        VortexOrderRequest request = new(1, requestId, _context.ContextId, _context.ProfileId, now, now.AddSeconds(15), result.WrittenSha256, _inventory, _previousOrder);
+        VortexOrderRequest request = new(1, requestId, _context.ContextId, _context.ProfileId, now, now.AddSeconds(15), result.WrittenSha256, _inventory, [], true, result.BackupPath);
         VortexOrderResponse response = _exchange(request);
-        if (response.SchemaVersion != 1 || !string.Equals(response.RequestId, requestId, StringComparison.Ordinal) || !response.Applied || response.WrittenSha256 is null) throw new ArchiveOrderException(string.IsNullOrWhiteSpace(response.Message) ? "Vortex rejected the archive order restore." : response.Message);
-        _previousOrder = null;
+        if (response.SchemaVersion != 1 || !string.Equals(response.RequestId, requestId, StringComparison.Ordinal) || !response.Applied) throw new ArchiveOrderException(string.IsNullOrWhiteSpace(response.Message) ? "Vortex rejected the archive order restore." : response.Message);
         _inventory = null;
     }
 

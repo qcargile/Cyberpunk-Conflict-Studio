@@ -38,6 +38,30 @@ public sealed class VortexManagerContextTests
     }
 
     [TestMethod]
+    public void ReadAcceptsDuplicateArchiveEntriesForRepair()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-vortex-context-repair-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string game = Path.Combine(root, "game");
+            string staging = Path.Combine(root, "staging");
+            Directory.CreateDirectory(game);
+            Directory.CreateDirectory(staging);
+            VortexManagerContext context = Context(game, staging, [], new Dictionary<string, string>()) with { ArchiveOrder = ["Alpha.archive", "Alpha.archive"] };
+            string path = Path.Combine(root, "context.json");
+            File.WriteAllText(path, JsonSerializer.Serialize(context));
+
+            VortexManagerContext actual = VortexManagerContextStore.Read(path);
+
+            Assert.HasCount(2, actual.ArchiveOrder);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
     public void ReadRejectsProviderOutsideTheDeclaredStagingRoot()
     {
         string root = Path.Combine(Path.GetTempPath(), "conflict-studio-vortex-escape-" + Guid.NewGuid().ToString("N"));
