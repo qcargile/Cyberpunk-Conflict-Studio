@@ -6,7 +6,7 @@ namespace ConflictStudio.Core;
 
 public sealed record ScanPhaseMetric(string Name, long ElapsedMilliseconds, int ItemCount);
 
-public sealed record ProfileScanMetrics(long TotalElapsedMilliseconds, ScanPhaseMetric[] Phases);
+public sealed record ProfileScanMetrics(long TotalElapsedMilliseconds, ScanPhaseMetric[] Phases, int RefreshedArchiveFingerprints = 0);
 
 public sealed record ScanProgress(string Phase, int Completed, int Total);
 
@@ -58,8 +58,17 @@ public static class ProfileScanCoordinator
         ArgumentNullException.ThrowIfNull(profile);
         if (scannedAtUtc.Offset != TimeSpan.Zero) throw new ArgumentException("Scan timestamps must use UTC.", nameof(scannedAtUtc));
         Stopwatch total = Stopwatch.StartNew();
-        PreparedProfileScan prepared = PrepareMo2(mo2Root, profile, progress, vortexContextPath, cancellationToken);
-        return ScanPrepared(prepared, scannedAtUtc, progress, beforeFinalValidation, total, cancellationToken);
+        string fingerprintCache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cyberpunk Conflict Studio", "cache", "archive-fingerprints-v1.json");
+        PreparedProfileScan prepared = PrepareMo2(mo2Root, profile, progress, vortexContextPath, fingerprintCache, false, cancellationToken);
+        try { return ScanPrepared(prepared, scannedAtUtc, progress, beforeFinalValidation, total, cancellationToken); }
+        catch (CachedFingerprintMismatchException)
+        {
+            progress?.Report(new ScanProgress("deployment · refreshing cached archive fingerprints", 0, 1));
+            prepared = PrepareMo2(mo2Root, profile, progress, vortexContextPath, fingerprintCache, true, cancellationToken);
+            ProfileScanReceipt receipt = ScanPrepared(prepared, scannedAtUtc, progress, beforeFinalValidation, total, cancellationToken);
+            if (receipt.Metrics is null) return receipt;
+            return receipt with { Metrics = receipt.Metrics with { RefreshedArchiveFingerprints = 1 } };
+        }
     }
 
     public static ProfileScanReceipt ScanVortex(string contextPath, DateTimeOffset scannedAtUtc, IProgress<ScanProgress>? progress, CancellationToken cancellationToken)
@@ -83,7 +92,7 @@ public static class ProfileScanCoordinator
         return ScanPrepared(prepared, scannedAtUtc, progress, null, total, cancellationToken);
     }
 
-    private static PreparedProfileScan PrepareMo2(string mo2Root, Mo2Profile profile, IProgress<ScanProgress>? progress, string? vortexContextPath, CancellationToken cancellationToken)
+    private static PreparedProfileScan PrepareMo2(string mo2Root, Mo2Profile profile, IProgress<ScanProgress>? progress, string? vortexContextPath, string fingerprintCache, bool forceFingerprint, CancellationToken cancellationToken)
     {
         Mo2InstancePaths instancePaths = Mo2InstancePathResolver.Resolve(mo2Root);
         CrossManagerGuardBinding? crossManagerBinding = null;
@@ -106,8 +115,7 @@ public static class ProfileScanCoordinator
         SourceAnalysisFailure[] pathFailures = missingProviders.Select(value => new SourceAnalysisFailure(value.Name, value.Name, "MO2 path", "The active mod directory was not found under the configured MO2 mods path.")).ToArray();
         DeploymentProvider[] deploymentProviders = Mo2ProviderTopology.Discover(mo2Root, activeProviderEntries);
         progress?.Report(new ScanProgress("deployment · indexing archives", 2, 4));
-        string fingerprintCache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cyberpunk Conflict Studio", "cache", "archive-fingerprints-v1.json");
-        Mo2ArchiveProfile legacyArchives = Mo2ArchiveProfileScanner.ScanInstance(mo2Root, profile.ModlistPath, activeProviderEntries, fingerprintCache, false, cancellationToken);
+        Mo2ArchiveProfile legacyArchives = Mo2ArchiveProfileScanner.ScanInstance(mo2Root, profile.ModlistPath, activeProviderEntries, fingerprintCache, forceFingerprint, cancellationToken);
         RedmodArchiveProfile redmods = RedmodArchiveProfileScanner.Scan(deploymentProviders, cancellationToken);
         Mo2ArchiveProfile archives = PackedArchiveTopology.Compose(legacyArchives, redmods);
         ProfileInputSnapshot[] inputs = [profileSnapshot, .. EvidenceSnapshots(archives.OrderEvidence)];
@@ -281,7 +289,7 @@ public static class ProfileScanCoordinator
         foreach (Mo2Archive archive in archives.Archives)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            try { files.Add(ProfileInputGuard.CaptureFile(archive.PhysicalPath, archive.Sha256)); }
+            try { files.Add(ProfileInputGuard.CaptureFile(archive.PhysicalPath, archive.Sha256, archive.FingerprintSource)); }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ProfileInputChangedException) { failures.Add(new SourceAnalysisFailure(archive.Provider, archive.ArchiveName, "Packed archive", exception.Message)); }
         }
 

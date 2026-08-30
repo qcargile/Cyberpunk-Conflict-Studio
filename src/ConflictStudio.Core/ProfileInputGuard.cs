@@ -4,7 +4,8 @@ using System.Runtime.ExceptionServices;
 namespace ConflictStudio.Core;
 
 public sealed record ProfileInputSnapshot(string Path, string Sha256, byte[] Content);
-public sealed record ProfileFileSnapshot(string Path, long Length, DateTime LastWriteTimeUtc, string? Sha256);
+public enum FingerprintSource { None, Fresh, MemoryCache, PersistentCache }
+public sealed record ProfileFileSnapshot(string Path, long Length, DateTime LastWriteTimeUtc, string? Sha256, FingerprintSource FingerprintSource = FingerprintSource.None);
 
 public static class ProfileInputGuard
 {
@@ -33,7 +34,7 @@ public static class ProfileInputGuard
         FileInfo info = new(Path.GetFullPath(path));
         if (!info.Exists) throw new ProfileInputChangedException("An active evidence file disappeared during the scan.");
         string? hash = hashContent ? HashFile(info.FullName) : null;
-        return new ProfileFileSnapshot(info.FullName, info.Length, info.LastWriteTimeUtc, hash);
+        return new ProfileFileSnapshot(info.FullName, info.Length, info.LastWriteTimeUtc, hash, hashContent ? FingerprintSource.Fresh : FingerprintSource.None);
     }
 
     public static ProfileFileSnapshot CaptureFile(string path, string expectedSha256)
@@ -41,18 +42,36 @@ public static class ProfileInputGuard
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedSha256);
         FileInfo info = new(Path.GetFullPath(path));
         if (!info.Exists) throw new ProfileInputChangedException("An active evidence file disappeared during the scan.");
-        return new ProfileFileSnapshot(info.FullName, info.Length, info.LastWriteTimeUtc, expectedSha256);
+        return CaptureFile(path, expectedSha256, FingerprintSource.PersistentCache);
+    }
+
+    public static ProfileFileSnapshot CaptureFile(string path, string expectedSha256, FingerprintSource fingerprintSource)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedSha256);
+        FileInfo info = new(Path.GetFullPath(path));
+        if (!info.Exists) throw new ProfileInputChangedException("An active evidence file disappeared during the scan.");
+        return new ProfileFileSnapshot(info.FullName, info.Length, info.LastWriteTimeUtc, expectedSha256, fingerprintSource);
     }
 
     public static void RequireUnchanged(ProfileFileSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         FileInfo current = new(snapshot.Path);
-        if (!current.Exists || current.Length != snapshot.Length || current.LastWriteTimeUtc != snapshot.LastWriteTimeUtc) throw new ProfileInputChangedException($"An active file changed during the scan: {snapshot.Path}");
-        if (snapshot.Sha256 is not null)
+        if (!current.Exists) throw new ProfileInputChangedException($"An active file disappeared during the scan: {snapshot.Path}");
+        bool metadataChanged = current.Length != snapshot.Length || current.LastWriteTimeUtc != snapshot.LastWriteTimeUtc;
+        if (snapshot.Sha256 is null)
         {
-            string hash = HashFile(snapshot.Path);
-            if (!string.Equals(hash, snapshot.Sha256, StringComparison.Ordinal)) throw new ProfileInputChangedException($"An active source file changed during the scan: {snapshot.Path}");
+            if (metadataChanged) throw new ProfileInputChangedException($"An active file's metadata changed during the scan: {snapshot.Path}. Start length={snapshot.Length}, last write UTC={snapshot.LastWriteTimeUtc:O}; final length={current.Length}, last write UTC={current.LastWriteTimeUtc:O}.");
+            return;
+        }
+        string hash = HashFile(snapshot.Path);
+        if (!string.Equals(hash, snapshot.Sha256, StringComparison.Ordinal))
+        {
+            string evidence = metadataChanged
+                ? $"{snapshot.Path}. Expected SHA-256={snapshot.Sha256}; actual SHA-256={hash}. Start length={snapshot.Length}, last write UTC={snapshot.LastWriteTimeUtc:O}; final length={current.Length}, last write UTC={current.LastWriteTimeUtc:O}."
+                : $"{snapshot.Path}. Expected SHA-256={snapshot.Sha256}; actual SHA-256={hash}; length={current.Length}; last write UTC={current.LastWriteTimeUtc:O}.";
+            if (snapshot.FingerprintSource is FingerprintSource.MemoryCache or FingerprintSource.PersistentCache) throw new CachedFingerprintMismatchException($"The cached fingerprint no longer matches the active file: {evidence}", snapshot.Path, snapshot.FingerprintSource);
+            throw new ProfileInputChangedException($"An active file no longer matches the fresh fingerprint captured at scan start: {evidence}");
         }
     }
 
@@ -78,4 +97,9 @@ public static class ProfileInputGuard
     }
 }
 
-public sealed class ProfileInputChangedException(string message) : Exception(message);
+public class ProfileInputChangedException(string message) : Exception(message);
+public sealed class CachedFingerprintMismatchException(string message, string path, FingerprintSource fingerprintSource) : ProfileInputChangedException(message)
+{
+    public string Path { get; } = path;
+    public FingerprintSource FingerprintSource { get; } = fingerprintSource;
+}

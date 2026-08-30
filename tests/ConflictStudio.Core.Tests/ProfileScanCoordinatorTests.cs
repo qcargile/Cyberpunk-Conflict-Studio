@@ -353,6 +353,71 @@ public sealed class ProfileScanCoordinatorTests
     }
 
     [TestMethod]
+    public void ScanRefreshesAStaleInMemoryArchiveFingerprint()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-stale-archive-cache-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string archive = Path.Combine(root, "mods", "Alpha", "archive", "pc", "mod", "Alpha.archive");
+            Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
+            File.WriteAllBytes(archive, Enumerable.Repeat((byte)1, 32).ToArray());
+            DateTime timestamp = File.GetLastWriteTimeUtc(archive);
+            string profileRoot = Path.Combine(root, "profiles", "Standard");
+            Directory.CreateDirectory(profileRoot);
+            string modlist = Path.Combine(profileRoot, "modlist.txt");
+            File.WriteAllText(modlist, "+Alpha\n");
+            Mo2ArchiveProfileScanner.ScanInstance(root, modlist);
+            File.WriteAllBytes(archive, Enumerable.Repeat((byte)2, 32).ToArray());
+            File.SetLastWriteTimeUtc(archive, timestamp);
+
+            ProfileScanReceipt receipt = ProfileScanCoordinator.Scan(root, new Mo2Profile("Standard", modlist), DateTimeOffset.UtcNow);
+
+            string currentHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(archive)));
+            Assert.AreEqual(currentHash, receipt.EditableArchiveInventory!.Single().Sha256);
+            Assert.AreEqual(1, receipt.Metrics!.RefreshedArchiveFingerprints);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void ScanRejectsAFileThatChangesAgainDuringTheFreshRetry()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-fresh-retry-mutation-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string archive = Path.Combine(root, "mods", "Alpha", "archive", "pc", "mod", "Alpha.archive");
+            Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
+            File.WriteAllBytes(archive, Enumerable.Repeat((byte)1, 32).ToArray());
+            DateTime timestamp = File.GetLastWriteTimeUtc(archive);
+            string profileRoot = Path.Combine(root, "profiles", "Standard");
+            Directory.CreateDirectory(profileRoot);
+            string modlist = Path.Combine(profileRoot, "modlist.txt");
+            File.WriteAllText(modlist, "+Alpha\n");
+            Mo2ArchiveProfileScanner.ScanInstance(root, modlist);
+            File.WriteAllBytes(archive, Enumerable.Repeat((byte)2, 32).ToArray());
+            File.SetLastWriteTimeUtc(archive, timestamp);
+            int validations = 0;
+
+            ProfileInputChangedException exception = Assert.ThrowsExactly<ProfileInputChangedException>(() => ProfileScanCoordinator.Scan(root, new Mo2Profile("Standard", modlist), DateTimeOffset.UtcNow, null, () =>
+            {
+                validations++;
+                File.WriteAllBytes(archive, Enumerable.Repeat((byte)(validations + 2), 32).ToArray());
+                File.SetLastWriteTimeUtc(archive, timestamp);
+            }, CancellationToken.None));
+
+            Assert.AreEqual(2, validations);
+            StringAssert.Contains(exception.Message, "fresh fingerprint", StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
     public void ScanRejectsAConflictingDeploymentFileChangedBeforeFinalValidation()
     {
         string root = Path.Combine(Path.GetTempPath(), "conflict-studio-virtual-file-mutation-" + Guid.NewGuid().ToString("N"));

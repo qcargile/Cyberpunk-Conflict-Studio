@@ -42,7 +42,7 @@ MO2's program folder, instance folder, profiles, mods, and overwrite may all be 
 
 ## Troubleshooting
 
-- A first scan can take several minutes on very large profiles because archive contents are fingerprinted. Later scans reuse the fingerprint cache when file size and timestamp are unchanged.
+- A first scan can take several minutes on very large profiles because archive contents are fingerprinted. Later scans reuse cached fingerprints. If a cached fingerprint no longer matches, Conflict Studio rebuilds the archive fingerprints once and repeats the scan. A second mismatch is reported with the fresh expected and final hashes.
 - Conflict Studio is intentionally excluded from MO2's VFS. It reads the physical provider folders and rebuilds the effective order so it can name the winning mod.
 - If the configured MO2 mods directory is missing, the scan stops with the resolved path and points back to **MO2 Settings > Paths**.
 - An incomplete archive `modlist.txt` opens as a repair draft. Valid listed entries keep their order, duplicate or inactive entries are removed, and missing active archives are added for review before Apply.

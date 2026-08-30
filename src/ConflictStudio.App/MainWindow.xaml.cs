@@ -923,6 +923,7 @@ public partial class MainWindow : Window, IDisposable
         CodeCaseCounts codeCounts = CodeCaseWorkspace.Counts(codeItems);
         WorkspaceStatusTextBlock.Text = $"Scan complete: {receipt.ResourceConflicts.Length:N0} archive conflicts; {codeCounts.ProvenConflicts} proven code conflicts; {codeCounts.NeedsDecision} code cases need a decision.";
         FooterStatusTextBlock.Text = receipt.Metrics is null ? "Scan complete" : $"Scan complete in {receipt.Metrics.TotalElapsedMilliseconds:N0} ms";
+        if (receipt.Metrics?.RefreshedArchiveFingerprints > 0) FooterStatusTextBlock.Text += " · archive fingerprint cache refreshed";
         int failureCount = receipt.ArchiveFailures.Length + (receipt.SourceFailures ?? []).Length + receipt.ArchiveXlFailures.Length;
         DiagnosticsSummaryTextBlock.Text = failureCount == 0 ? "No scan failures. If an action misbehaves, reproduce it once and copy the report." : $"{failureCount} scan issue{(failureCount == 1 ? string.Empty : "s")} recorded. Copy the report when requesting support.";
         UpdateSupportSurface();
@@ -1065,6 +1066,7 @@ public partial class MainWindow : Window, IDisposable
         List<string> lines = [];
         if (receipt.ArchiveOrderEvidence is not null) lines.Add("archive order: " + receipt.ArchiveOrderEvidence.Message);
         if (receipt.Metrics is not null) lines.AddRange(receipt.Metrics.Phases.Select(value => $"{value.Name}: {value.ElapsedMilliseconds:N0} ms, {value.ItemCount:N0} items"));
+        if (receipt.Metrics?.RefreshedArchiveFingerprints > 0) lines.Add($"archive fingerprint cache: {receipt.Metrics.RefreshedArchiveFingerprints:N0} mismatch detected; archive fingerprints were rebuilt once before the completed scan");
         lines.AddRange(receipt.ArchiveFailures.Select(value => $"ARCHIVE · {value.Provider} · {value.ArchiveName} · {value.Message}"));
         lines.AddRange((receipt.ArchiveWarnings ?? []).Select(value => $"ARCHIVE PATHS · {value.Provider} · {value.ArchiveName} · {value.Message}"));
         if (receipt.ResourcePathIndexEvidence is { State: not ResourcePathIndexState.Resolved } pathEvidence) lines.Add($"RESOURCE PATH INDEX · {pathEvidence.State} · {pathEvidence.Message}");

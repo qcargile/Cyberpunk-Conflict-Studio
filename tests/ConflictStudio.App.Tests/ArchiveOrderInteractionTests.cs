@@ -337,7 +337,32 @@ public sealed class ArchiveOrderInteractionTests
         if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
-    private static MainWindow CreatePreviewWindow(string root, RdarArchiveFailure[]? failures = null, bool incompleteOrder = false)
+    [TestMethod]
+    public void CacheRecoveryIsVisibleInTheFooterAndSupportReport()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-cache-recovery-window-" + Guid.NewGuid().ToString("N"));
+        Exception? failure = null;
+        Thread thread = new(() =>
+        {
+            try
+            {
+                ProfileScanMetrics metrics = new(1250, [], 1);
+                MainWindow window = CreatePreviewWindow(root, metrics: metrics);
+
+                StringAssert.Contains(window.FooterStatusTextBlock.Text, "archive fingerprint cache refreshed", StringComparison.OrdinalIgnoreCase);
+                StringAssert.Contains(window.DiagnosticsTextBox.Text, "archive fingerprint cache: 1 mismatch detected", StringComparison.OrdinalIgnoreCase);
+                window.Close();
+            }
+            catch (Exception exception) { failure = exception; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (Directory.Exists(root)) Directory.Delete(root, true);
+        if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+    }
+
+    private static MainWindow CreatePreviewWindow(string root, RdarArchiveFailure[]? failures = null, bool incompleteOrder = false, ProfileScanMetrics? metrics = null)
     {
         string archiveRoot = Path.Combine(root, "archive", "pc", "mod");
         Directory.CreateDirectory(archiveRoot);
@@ -356,7 +381,7 @@ public sealed class ArchiveOrderInteractionTests
         ArchiveOrderEvidence evidence = incompleteOrder
             ? new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Game directory", orderPath, "Archive order is missing Beta.archive.") { MissingEntries = ["Beta.archive"], SourceFingerprints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [orderPath] = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(orderPath))) }, ProblemLane = ArchiveOrderProblemLane.Legacy }
             : new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, "Game directory", orderPath, "managed");
-        ProfileScanReceipt receipt = new ProfileScanReceipt(2, "Deployed game", DateTimeOffset.UtcNow, ["Game directory"], order, archiveFailures, conflicts, [], [], [], [], [], [], [], []) with { InstallationId = ProfileInstallationIdentity.Create("Manual", root), ArchiveSummaries = summaries, ArchiveOrderEvidence = evidence, ArchiveInventory = archives, EditableArchiveInventory = archives, EditableArchiveOrder = order, EditableArchiveOrderEvidence = evidence, ManagerKind = ModManagerKind.Manual };
+        ProfileScanReceipt receipt = new ProfileScanReceipt(2, "Deployed game", DateTimeOffset.UtcNow, ["Game directory"], order, archiveFailures, conflicts, [], [], [], [], [], [], [], []) with { InstallationId = ProfileInstallationIdentity.Create("Manual", root), Metrics = metrics, ArchiveSummaries = summaries, ArchiveOrderEvidence = evidence, ArchiveInventory = archives, EditableArchiveInventory = archives, EditableArchiveOrder = order, EditableArchiveOrderEvidence = evidence, ManagerKind = ModManagerKind.Manual };
         MainWindow window = new(false);
         window.LoadReceiptForTesting(receipt, root);
         window.Show();

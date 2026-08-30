@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace ConflictStudio.Core;
 
-public sealed record Mo2Archive(string Provider, string ArchiveName, string PhysicalPath, long Size, string Sha256);
+public sealed record Mo2Archive(string Provider, string ArchiveName, string PhysicalPath, long Size, string Sha256, [property: JsonIgnore] FingerprintSource FingerprintSource = FingerprintSource.Fresh);
 
 public enum ArchiveOrderEvidenceKind { ManagedModlist, FilenameFallback, Unresolved }
 
@@ -132,11 +132,11 @@ public static class Mo2ArchiveProfileScanner
     private static Mo2Archive Fingerprint(string provider, string path, Dictionary<string, CachedFingerprint> persistent, bool forceFingerprint, ref bool cacheChanged)
     {
         FileInfo file = new(path);
-        if (!forceFingerprint && Cache.TryGetValue(path, out CachedFingerprint? cached) && cached.Size == file.Length && cached.LastWriteUtc == file.LastWriteTimeUtc) return new Mo2Archive(provider, Path.GetFileName(path), path, cached.Size, cached.Sha256);
+        if (!forceFingerprint && Cache.TryGetValue(path, out CachedFingerprint? cached) && cached.Size == file.Length && cached.LastWriteUtc == file.LastWriteTimeUtc) return new Mo2Archive(provider, Path.GetFileName(path), path, cached.Size, cached.Sha256, FingerprintSource.MemoryCache);
         if (!forceFingerprint && persistent.TryGetValue(path, out cached) && cached.Size == file.Length && cached.LastWriteUtc == file.LastWriteTimeUtc && IsSha256(cached.Sha256))
         {
             Cache[path] = cached;
-            return new Mo2Archive(provider, Path.GetFileName(path), path, cached.Size, cached.Sha256);
+            return new Mo2Archive(provider, Path.GetFileName(path), path, cached.Size, cached.Sha256, FingerprintSource.PersistentCache);
         }
         using FileStream stream = File.OpenRead(path);
         string sha256 = Convert.ToHexStringLower(SHA256.HashData(stream));

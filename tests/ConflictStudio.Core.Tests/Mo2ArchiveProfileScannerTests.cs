@@ -224,6 +224,48 @@ public sealed class Mo2ArchiveProfileScannerTests
         }
     }
 
+    [TestMethod]
+    public void ScanIdentifiesAPersistentFingerprint()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-profile-persistent-source-" + Guid.NewGuid().ToString("N"));
+        string cache = Path.Combine(root, "cache", "fingerprints.json");
+        Directory.CreateDirectory(root);
+        try
+        {
+            WriteArchive(root, "Alpha", "Alpha.archive", "alpha");
+            string profile = Path.Combine(root, "modlist.txt");
+            File.WriteAllText(profile, "+Alpha\n");
+            string archive = Path.Combine(root, "Alpha", "archive", "pc", "mod", "Alpha.archive");
+            Directory.CreateDirectory(Path.GetDirectoryName(cache)!);
+            object document = new
+            {
+                SchemaVersion = 1,
+                Entries = new Dictionary<string, object>
+                {
+                    [archive] = new { Size = new FileInfo(archive).Length, LastWriteUtc = File.GetLastWriteTimeUtc(archive), Sha256 = new string('a', 64) }
+                }
+            };
+            File.WriteAllText(cache, System.Text.Json.JsonSerializer.Serialize(document));
+
+            Mo2ArchiveProfile result = Mo2ArchiveProfileScanner.Scan(root, profile, cache);
+
+            Assert.AreEqual(FingerprintSource.PersistentCache, result.Archives.Single().FingerprintSource);
+            Assert.AreEqual(new string('a', 64), result.Archives.Single().Sha256);
+            ProfileFileSnapshot snapshot = ProfileInputGuard.CaptureFile(archive, result.Archives.Single().Sha256, result.Archives.Single().FingerprintSource);
+            Assert.ThrowsExactly<CachedFingerprintMismatchException>(() => ProfileInputGuard.RequireUnchanged(snapshot));
+
+            Mo2ArchiveProfile refreshed = Mo2ArchiveProfileScanner.Scan(root, profile, cache, true);
+            string currentHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(archive)));
+            Assert.AreEqual(FingerprintSource.Fresh, refreshed.Archives.Single().FingerprintSource);
+            Assert.AreEqual(currentHash, refreshed.Archives.Single().Sha256);
+            StringAssert.Contains(File.ReadAllText(cache), currentHash, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     private static void WriteArchive(string root, string provider, string name, string text)
     {
         string directory = Path.Combine(root, provider, "archive", "pc", "mod");
