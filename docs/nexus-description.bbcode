@@ -1,0 +1,117 @@
+[center][font=Arial][size=6][color=#FCEE0A][b]CONFLICT STUDIO[/b][/color][/size][/font]
+[color=#00F0FF]Profile-aware archive and code conflict management for Cyberpunk 2077[/color]
+
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/00-overview.gif[/img]
+[/center]
+[line]
+
+[font=Arial][size=5][color=#FCEE0A][b]▍ CREDIT FIRST[/b][/color][/size][/font]
+
+[font=Arial]Conflict Studio exists because [b]rfuzzo[/b] built the original [url=https://www.nexusmods.com/cyberpunk2077/mods/11126]Archive Conflict Checker[/url]. Its archive browser, conflict dots, inline file groups, and load-order workflow were the starting point for this project. Please [b]endorse rfuzzo's original tool instead of this one[/b]. You can also view rfuzzo's [url=https://github.com/rfuzzo/Cyberpunk-utility]source code on GitHub[/url].[/font]
+
+[font=Arial]Conflict Studio is a separate implementation with no copied code or assets from the original tool.[/font]
+[line]
+
+[font=Arial][size=5][color=#FCEE0A][b]▍ BETA[/b][/color][/size][/font]
+
+[font=Arial][color=#FCEE0A][b]This is a beta.[/b][/color] Archive inspection, profile discovery, live previews, verified writes, backups, undo, and code checks have been tested. Some code interactions still require an in-game check. Export a support report when something looks wrong instead of treating every warning as a compatibility verdict.[/font]
+
+[font=Arial][b]Quick antivirus note:[/b] Conflict Studio is an unsigned self-contained Windows application, so SmartScreen or antivirus software may warn about a new executable. The complete source is public at [url=https://github.com/qcargile/Cyberpunk-Conflict-Studio]GitHub[/url], and every release includes a SHA-256 checksum. Do not download it from mirrors.[/font]
+[line]
+
+[font=Arial][size=5][color=#FCEE0A][b]▍ OVERVIEW[/b][/color][/size][/font]
+
+[font=Arial]Conflict Studio checks the active profile and shows which files, archives, methods, and values win. It understands MO2 priority, Vortex deployment, REDmods, modlist.txt, RedScript, CET Lua, TweakXL, and ArchiveXL.[/font]
+
+[font=Arial]The goal is not to label every overlap as broken. It separates proven conflicts, file replacements, order-sensitive values, cases that need one runtime check, and overlaps that the framework can compose safely.[/font]
+
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/01-overview.png[/img]
+[line]
+
+[font=Arial][size=5][color=#FCEE0A][b]▍ ARCHIVE CONFLICTS[/b][/color][/size][/font]
+[list]
+[*][font=Arial]Shows every active archive in actual load order.[/font][/*]
+[*][font=Arial]Separates files an archive wins, loses, shares identically, or cannot determine.[/font][/*]
+[*][font=Arial]Selecting an archive highlights only the archives it overrides and the archives that override it.[/font][/*]
+[*][font=Arial]Drag one archive or a multi-selection. Edge scrolling accelerates with pointer depth, and the mouse wheel works during the drag.[/font][/*]
+[*][font=Arial]The conflict pane updates before Apply, with an explicit unapplied state.[/font][/*]
+[*][font=Arial]Apply creates a backup, verifies the write, rescans the profile, and supports Undo.[/font][/*]
+[/list]
+
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/02-archive-win.png[/img]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/03-archive-loss.png[/img]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/04-archive-expanded.png[/img]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/07-unapplied-warning.png[/img]
+[line]
+
+[font=Arial][size=5][color=#FCEE0A][b]▍ CODE INTERACTIONS[/b][/color][/size][/font]
+
+[font=Arial]Conflict Studio also inspects active RedScript, CET Lua, TweakXL, ArchiveXL, and loose-file ownership. Proven exclusive replacements are separated from values where the last assignment wins, file overrides, compatible composition, and cases that need one specific runtime check.[/font]
+
+[font=Arial]Each row explains what happens, which mods are involved, why it matters, and what to do next. Saved reviews reset when the relevant files or profile change.[/font]
+
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/05-code-overview.png[/img]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/06-code-conflict.png[/img]
+[line]
+
+[font=Arial][size=5][color=#FCEE0A][b]▍ REQUIREMENTS[/b][/color][/size][/font]
+
+[list]
+[*][font=Arial]Windows 10 version 2004 or newer, 64-bit.[/font][/*]
+[*][font=Arial]A Cyberpunk 2077 installation or an active MO2/Vortex profile.[/font][/*]
+[/list]
+
+[font=Arial]No Cyberpunk framework dependency and no separate .NET installation are required. The runtime is bundled into ConflictStudio.exe.[/font]
+[line]
+
+[font=Arial][size=5][color=#FCEE0A][b]▍ MO2 SETUP[/b][/color][/size][/font]
+
+[spoiler=Show MO2 setup]
+[list=1]
+[*][font=Arial]Download the ZIP manually. [b]Do not install it as an MO2 mod.[/b][/font][/*]
+[*][font=Arial]Extract it anywhere outside the MO2 instance's mods folder. [b]<MO2 instance>\tools\Conflict Studio[/b] works.[/font][/*]
+[*][font=Arial]Add [b]Conflict Studio\ConflictStudio.exe[/b] to MO2's executable list.[/font][/*]
+[*][font=Arial]Set Start in to the MO2 instance folder containing ModOrganizer.ini.[/font][/*]
+[*][font=Arial]Use arguments: [b]--manager mo2 --profile current[/b].[/font][/*]
+[*][font=Arial]Under Settings → Workarounds → Executables Blacklist, add [b]ConflictStudio.exe[/b], restart MO2, and choose Continue when MO2 warns that the tool is blacklisted.[/font][/*]
+[/list]
+
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/08-mo2-tool-setup.png[/img]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/09-mo2-settings-navigation.png[/img]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/10-mo2-blacklist.png[/img]
+[/spoiler]
+[line]
+
+[font=Arial][size=5][color=#FCEE0A][b]▍ VORTEX SETUP[/b][/color][/size][/font]
+
+[spoiler=Show Vortex setup]
+[list=1]
+[*][font=Arial]Download the same ZIP manually.[/font][/*]
+[*][font=Arial]Open Extensions in Vortex's advanced mode and drop the ZIP onto the extension installer.[/font][/*]
+[*][font=Arial]Restart Vortex, activate the Cyberpunk profile, and deploy it.[/font][/*]
+[*][font=Arial]Open Cyberpunk 2077 → Tools and launch Conflict Studio.[/font][/*]
+[/list]
+
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/11-vortex-extensions-navigation.png[/img]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/12-vortex-extension-enabled.png[/img]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/13-vortex-tool-launch.png[/img]
+[/spoiler]
+[line]
+
+[font=Arial][size=5][color=#FCEE0A][b]▍ IMPORTANT[/b][/color][/size][/font]
+[list]
+[*][font=Arial]Do not scan the same game installation as MO2 while Vortex files remain deployed. Conflict Studio blocks mixed-manager scans.[/font][/*]
+[*][font=Arial]Cyberpunk must be closed before archive-order writes. MO2 or Vortex may remain open.[/font][/*]
+[*][font=Arial]Conflict Studio does not merge archives or automatically write compatibility patches.[/font][/*]
+[*][font=Arial]Static overlap is not automatically a gameplay conflict.[/font][/*]
+[/list]
+
+[font=Arial]When reporting a problem, reproduce it once and use the Support tab to copy or save the privacy-filtered report.[/font]
+[line]
+
+[font=Arial][size=5][color=#FCEE0A][b]▍ CREDITS[/b][/color][/size][/font]
+[list]
+[*][font=Arial][b]rfuzzo[/b] — [url=https://www.nexusmods.com/cyberpunk2077/mods/11126]Archive Conflict Checker[/url] and the original archive-conflict workflow. Please endorse rfuzzo's tool rather than this one.[/font][/*]
+[*][font=Arial][b]CD Projekt Red[/b] — Cyberpunk 2077.[/font][/*]
+[*][font=Arial][b]psiberx and the Cyberpunk modding community[/b] — framework source, documentation, and tooling that make accurate interaction analysis possible.[/font][/*]
+[/list]
