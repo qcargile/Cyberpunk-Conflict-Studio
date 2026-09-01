@@ -1,0 +1,42 @@
+Cyberpunk Conflict Studio - manager setup
+
+Conflict Studio is a portable external tool. Keep the complete extracted package together.
+
+Nexus package
+
+Download the same ZIP manually for MO2 or Vortex. It contains one `ConflictStudio.exe` under Conflict Studio and the Vortex bridge at the archive root. The current developer preview is unsigned, so Windows may show its normal unknown-publisher warning on first launch.
+
+MO2
+
+1. Do not install the ZIP as an MO2 mod. Extract it anywhere outside the MO2 instance's `mods` directory. A folder such as `<MO2 instance>\tools\Conflict Studio` works.
+2. Open Settings > Workarounds > Executables Blacklist and add ConflictStudio.exe. Conflict Studio reads MO2's physical profile and provider files, so it must not receive USVFS hooks.
+3. Open the executable list beside Run and choose Edit.
+4. Add the extracted Conflict Studio\ConflictStudio.exe as a custom executable.
+5. Set Start in to the MO2 instance root containing ModOrganizer.ini.
+6. Use arguments: --manager mo2 --profile current
+7. Leave Force load libraries and Create files in mod instead of overwrite unchecked.
+8. Run Conflict Studio from MO2. On MO2's blacklist warning choose Continue; the tool does not need virtualized files. Use MO2's Shortcut menu if you want to pin it to the toolbar.
+
+Conflict Studio updates the physical provider that owns the active archive\pc\mod\modlist.txt. If no active order file exists, it creates one in MO2 Overwrite. MO2 may remain open. Cyberpunk must be closed. If the Cyberpunk MO2 plugin setting "enforce archive load order" is enabled, disable it before applying a custom order because MO2 will regenerate the file before launch.
+
+Do not scan or change archive order in an MO2 profile while Vortex files are still deployed into the same Cyberpunk installation. Purge Vortex first or use Conflict Studio in Vortex mode. Conflict Studio rechecks manager ownership during scans and writes instead of accepting a mixed-manager result.
+
+Vortex
+
+1. Download the Nexus ZIP manually. Open Extensions in advanced mode, drop the ZIP onto the extension install area, then restart Vortex.
+2. Activate the Cyberpunk 2077 profile and deploy it.
+3. Open Cyberpunk 2077 > Tools. The extension adds Conflict Studio automatically with the correct executable, working directory, and Vortex arguments.
+4. Launch Conflict Studio from that Tools entry. The bridge supplies the active profile, staging providers, deployed winners, game path, deployment freshness, and archive order.
+
+Conflict Studio sends a profile-bound request to the running bridge, which validates the current deployment and archive inventory, backs up and writes the deployed archive modlist.txt, verifies the result, and refreshes the bridge context. Current Vortex Cyberpunk archive support reads that deployed file; the bridge does not modify Vortex's separate REDmod load-order state. Deploy pending changes before scanning or applying.
+
+Manual installation
+
+1. Extract the downloaded Nexus ZIP anywhere you prefer and run Conflict Studio\ConflictStudio.exe.
+2. Choose Manual in the manager selector.
+3. Browse to the Cyberpunk 2077 installation folder containing bin and archive.
+4. Scan the deployed game. Archive order writes go directly to archive\pc\mod\modlist.txt with the same preview, backup, game-process guard, verification, and undo protections.
+
+Manual mode also refuses to scan or write a game directory that contains byte-matched files from the active Vortex bridge context. Purge Vortex first or use that profile in Vortex mode.
+
+Settings, decisions, receipts, logs, bridge context, and support reports are stored outside the application folder. Updating or moving the published application does not remove them.

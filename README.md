@@ -1,0 +1,57 @@
+# Cyberpunk Conflict Studio
+
+Conflict Studio shows what is happening inside one Cyberpunk 2077 mod profile. It reads MO2, Vortex, or the deployed game folder and traces archive order, loose files, REDmods, RedScript, CET hooks, TweakXL changes, and ArchiveXL manifests.
+
+This is a beta. Keep a backup and read the preview before changing archive order.
+
+## What it does
+
+- Shows which archive wins each packed file.
+- Finds loose files installed by more than one active mod.
+- Separates replaced methods, wrappers, CET callbacks, and TweakXL changes instead of calling every shared target a conflict.
+- Previews archive-order changes before writing anything.
+- Backs up and verifies `modlist.txt`, then offers Undo.
+- Exports a privacy-filtered support report when something goes wrong.
+
+Conflict Studio does not decide that two mods are compatible or incompatible. A shared method or record is only a place to inspect. Compile results, the loaded game state, and an in-game reproduction still matter.
+
+## Install
+
+Download `Cyberpunk-Conflict-Studio-0.2.0-Nexus.zip` from Nexus Mods.
+
+### Vortex
+
+1. Switch Vortex to advanced mode and open Extensions.
+2. Drop the ZIP onto the extension installer.
+3. Restart Vortex, activate your Cyberpunk profile, and deploy it.
+4. Launch Conflict Studio from Cyberpunk 2077 > Tools.
+
+### Mod Organizer 2
+
+1. Extract the ZIP outside the instance's `mods` folder.
+2. Add `Conflict Studio\ConflictStudio.exe` as an MO2 executable.
+3. Set **Start in** to the folder containing `ModOrganizer.ini`.
+4. Use `--manager mo2 --profile current` as the arguments.
+5. Add `ConflictStudio.exe` to MO2's executable blacklist so it reads the real files instead of the virtual filesystem.
+
+Do not scan the same game through MO2 while Vortex files are still deployed. Purge Vortex first or use the Vortex profile.
+
+### Manual
+
+Run `Conflict Studio\ConflictStudio.exe`, choose Manual, and select the Cyberpunk 2077 folder.
+
+## Build
+
+The public package is a self-contained Windows x64 executable:
+
+```powershell
+.\scripts\publish-win-x64.ps1 -Version 0.2.0
+```
+
+The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/0.2.0.json`.
+
+## Credits
+
+Conflict Studio was inspired by [rfuzzo's Archive Conflict Checker](https://www.nexusmods.com/cyberpunk2077/mods/11126). Please endorse the original tool. Conflict Studio is a separate implementation and does not copy its code or assets.
+
+Cyberpunk 2077 belongs to CD Projekt Red. Thanks to psiberx and the Cyberpunk modding community for the frameworks and documentation that make tools like this possible.

@@ -1,0 +1,6 @@
+bin/
+obj/
+TestResults/
+.vs/
+modlist.txt
+red4-conflicts.log

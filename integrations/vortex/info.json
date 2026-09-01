@@ -1,0 +1,7 @@
+{
+  "name": "Conflict Studio Bridge",
+  "id": "conflict-studio-bridge",
+  "author": "qcargile",
+  "version": "0.2.0",
+  "description": "Connects Conflict Studio to the active Vortex profile and adds it to Cyberpunk 2077 Tools."
+}
