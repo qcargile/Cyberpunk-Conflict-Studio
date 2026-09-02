@@ -438,7 +438,7 @@ public static class SharedStateWriteAnalyzer
 
 public enum LuaCallbackEvidenceKind { Observe, ObserveBefore, ObserveAfter, Override, Lifecycle }
 
-public enum LuaContinuationEvidence { Continues, Missing, NotApplicable, Unknown }
+public enum LuaContinuationEvidence { Continues, Missing, NotApplicable, Unknown, Conditional }
 
 public sealed record LuaSourceCopy(string Provider, string FilePath);
 

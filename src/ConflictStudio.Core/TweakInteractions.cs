@@ -5,7 +5,7 @@ namespace ConflictStudio.Core;
 
 public sealed record TweakSource(string Provider, string FilePath, string Text);
 
-public enum TweakOverlapKind { Redundant, ScalarOverwrite, ComposableMutation, AssignmentThenMutation, MixedArrayOperations, DuplicateMutation, RecordDefinitionCollision, SourceArrayDependency, BaseRecordDependency }
+public enum TweakOverlapKind { Redundant, ScalarOverwrite, ComposableMutation, AssignmentThenMutation, MixedArrayOperations, DuplicateMutation, RecordDefinitionCollision, SourceArrayDependency, BaseRecordDependency, InternalContext }
 
 public enum TweakOperationKind
 {
@@ -70,13 +70,17 @@ public static class TweakInteractionAnalyzer
 
     private static bool ShouldReport(TweakOverlap overlap)
         => overlap.Operations.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1
-            || overlap.Kind is TweakOverlapKind.ScalarOverwrite or TweakOverlapKind.MixedArrayOperations or TweakOverlapKind.DuplicateMutation or TweakOverlapKind.RecordDefinitionCollision;
+            || overlap.Kind is TweakOverlapKind.ScalarOverwrite or TweakOverlapKind.MixedArrayOperations or TweakOverlapKind.DuplicateMutation or TweakOverlapKind.RecordDefinitionCollision or TweakOverlapKind.InternalContext;
 
     private static TweakOverlap InternalOverlap(IGrouping<string, TweakOperation> group)
     {
         TweakOperation[] assignments = group.Where(value => !value.IsMutation).ToArray();
         if (assignments.Select(OperationIdentity).Distinct(StringComparer.Ordinal).Count() > 1)
         {
+            if (assignments.Select(value => value.FilePath).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1
+                || assignments.All(value => value.Kind == TweakOperationKind.ScalarAssignment)
+                && assignments.Select(value => value.Value).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1)
+                return new TweakOverlap(group.Key, TweakOverlapKind.InternalContext, assignments);
             TweakOverlapKind kind = assignments.Any(value => value.Kind is TweakOperationKind.TypeDeclaration or TweakOperationKind.BaseDeclaration)
                 ? TweakOverlapKind.RecordDefinitionCollision
                 : assignments.Any(value => value.Kind == TweakOperationKind.ArrayReplacement)
@@ -84,14 +88,7 @@ public static class TweakInteractionAnalyzer
                     : TweakOverlapKind.ScalarOverwrite;
             return new TweakOverlap(group.Key, kind, assignments);
         }
-        TweakOperation[] duplicateAdds = group.Where(value => value.Kind is TweakOperationKind.ArrayAppend or TweakOperationKind.ArrayPrepend)
-            .GroupBy(value => value.Value, StringComparer.Ordinal)
-            .Where(values => values.Count() > 1)
-            .SelectMany(values => values)
-            .ToArray();
-        return duplicateAdds.Length > 0
-            ? new TweakOverlap(group.Key, TweakOverlapKind.DuplicateMutation, duplicateAdds)
-            : new TweakOverlap(group.Key, TweakOverlapKind.ComposableMutation, group.ToArray());
+        return new TweakOverlap(group.Key, TweakOverlapKind.ComposableMutation, group.ToArray());
     }
 
     private static void TryRead(TweakSource source, List<TweakOperation> operations, List<SourceAnalysisFailure> failures)
@@ -219,8 +216,23 @@ public static class TweakInteractionAnalyzer
     {
         LooseYamlNode? construction = mapping.Children.FirstOrDefault(value => value.Key is LooseYamlScalar { Value: "$base" }).Key
             ?? mapping.Children.FirstOrDefault(value => value.Key is LooseYamlScalar { Value: "$type" }).Key;
-        return mapping.Children.Where(value => value.Key is not LooseYamlScalar { Value: "$type" or "$base" } || ReferenceEquals(value.Key, construction));
+        Dictionary<string, LooseYamlNode> assignments = new(StringComparer.Ordinal);
+        foreach ((LooseYamlNode key, LooseYamlNode value) in mapping.Children)
+        {
+            if (key is LooseYamlScalar scalar && IsPropertyAssignment(value)) assignments[scalar.Value] = key;
+        }
+        return mapping.Children.Where(value => value.Key is LooseYamlScalar { Value: "$type" or "$base" }
+            ? ReferenceEquals(value.Key, construction)
+            : value.Key is not LooseYamlScalar scalar || !IsPropertyAssignment(value.Value) || ReferenceEquals(assignments[scalar.Value], value.Key));
     }
+
+    private static bool IsPropertyAssignment(LooseYamlNode value)
+        => value switch
+        {
+            LooseYamlSequence sequence => !sequence.Children.Any(item => LooseMutationKind(item) is not null),
+            LooseYamlMapping mapping => !TryGetLoose(mapping, "$type", out _) && !TryGetLoose(mapping, "$base", out _),
+            _ => true
+        };
 
     private static Dictionary<string, string> Variables(LooseYamlMapping mapping)
     {
@@ -321,7 +333,8 @@ public static class TweakInteractionAnalyzer
     private static string Substitute(string value, IReadOnlyDictionary<string, string> variables)
     {
         string result = value;
-        foreach ((string name, string replacement) in variables) result = result.Replace("$(" + name + ")", replacement, StringComparison.Ordinal);
+        foreach ((string name, string replacement) in variables)
+            result = result.Replace("$(" + name + ")", replacement, StringComparison.Ordinal).Replace("${" + name + "}", replacement, StringComparison.Ordinal);
         return result;
     }
 
@@ -366,7 +379,7 @@ public static class TweakInteractionAnalyzer
     }
 
     private static void AddMixedDefinitionFailure(TweakSource source, string target, List<SourceAnalysisFailure> failures)
-        => failures.Add(new SourceAnalysisFailure(source.Provider, source.FilePath, "TweakXL", $"{target}: Mixed definition of array replacement and mutations. Only mutations will take effect."));
+        => failures.Add(new SourceAnalysisFailure(source.Provider, source.FilePath, "TweakXL interpretation", $"{target}: Mixed definition of array replacement and mutations. Only mutations will take effect."));
 
     private static TweakOperation Create(TweakSource source, string target, YamlNode value, TweakOperationKind kind, bool mutation, int? line = null)
         => new(source.Provider, source.FilePath, target, mutation ? NormalizeWithoutMutationTag(value) : Normalize(value), mutation, kind, line ?? checked((int)value.Start.Line));

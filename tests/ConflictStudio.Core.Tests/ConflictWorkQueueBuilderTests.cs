@@ -191,11 +191,10 @@ public sealed class ConflictWorkQueueBuilderTests
     }
 
     [TestMethod]
-    [DataRow("Items.Test.value: 1\nItems.Test.value: 2", EvidenceClassification.CompetingDeclaration)]
-    [DataRow("Items.Test.tags: [Items.A]\nItems.Test.tags: [Items.B]", EvidenceClassification.CompetingDeclaration)]
-    [DataRow("Items.Test:\n  $base: Items.A\nItems.Test:\n  $base: Items.B", EvidenceClassification.Review)]
-    [DataRow("Items.Test.tags: [!append Items.A, !append Items.A]", EvidenceClassification.Review)]
-    public void SameProviderTweakFindingsReachQueueWithDeclarationWording(string text, EvidenceClassification expected)
+    [DataRow("Items.Test.value: 1\nItems.Test.value: 2")]
+    [DataRow("Items.Test.tags: [Items.A]\nItems.Test.tags: [Items.B]")]
+    [DataRow("Items.Test:\n  $base: Items.A\nItems.Test:\n  $base: Items.B")]
+    public void SameFileDefinitionsRemainNonActionableContext(string text)
     {
         ModSourceInventory inventory = new([], [], [new("Alpha", "one.yaml", text)], []);
         TweakOverlap[] overlaps = TweakInteractionAnalyzer.Analyze(inventory.TweakSources);
@@ -204,14 +203,14 @@ public sealed class ConflictWorkQueueBuilderTests
 
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
 
-        Assert.AreEqual(expected, item.Classification);
-        Assert.IsTrue(item.IsActionable);
+        Assert.AreEqual(EvidenceClassification.Informational, item.Classification);
+        Assert.IsFalse(item.IsActionable);
         Assert.AreEqual("Alpha", item.Providers.Single());
         AssertSingleProviderWording(finding, item);
     }
 
     [TestMethod]
-    public void SameProviderCetOverridesReachQueueForReview()
+    public void ForwardingInternalOverridesReachQueueAsContext()
     {
         string registration = "Override('PlayerPuppet', 'Value', function(self, wrapped) return wrapped() end)";
         ModSourceInventory inventory = new([], [new("Alpha", "one.lua", registration + "\n" + registration)], [], []);
@@ -220,7 +219,7 @@ public sealed class ConflictWorkQueueBuilderTests
 
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
 
-        Assert.AreEqual(EvidenceClassification.Review, item.Classification);
+        Assert.AreEqual(EvidenceClassification.Informational, item.Classification);
         Assert.AreEqual("Alpha", item.Providers.Single());
         AssertSingleProviderWording(finding, item);
     }
@@ -397,10 +396,10 @@ public sealed class ConflictWorkQueueBuilderTests
     }
 
     [TestMethod]
-    public void AddedMethodAndCetOverrideNeedRuntimeEvidenceNotCompilerOnly()
+    public void NonForwardingCetOverrideOfAnAddedMethodRemainsAConflictRisk()
     {
         ModSourceInventory inventory = new([new("Alpha", "method.reds", "@addMethod(PlayerPuppet)\npublic func Value() -> Int32 { return 1; }")],
-            [new("Beta", "init.lua", "Override('PlayerPuppet', 'Value', function() return 2 end)")], [], []);
+            [new("Beta", "init.lua", "Override('PlayerPuppet', 'Value', function(self, wrapped) return 2 end)")], [], []);
         ProfileScanReceipt receipt = Receipt() with
         {
             InteractionFindings = InteractionReportBuilder.Build(inventory),
@@ -412,8 +411,8 @@ public sealed class ConflictWorkQueueBuilderTests
 
         Assert.AreEqual(EvidenceClassification.Review, item.Classification);
         Assert.AreEqual(ConflictCaseKind.RuntimeCheck, item.CaseKind);
-        StringAssert.Contains(item.NextAction, "CET");
-        StringAssert.Contains(item.BoundaryLabel, "compiler alone");
+        Assert.IsTrue(item.IsActionable);
+        Assert.HasCount(2, item.Providers);
     }
 
     [TestMethod]

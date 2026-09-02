@@ -70,6 +70,66 @@ public sealed class ScriptInteractionAnalyzerTests
     }
 
     [TestMethod]
+    [DataRow("settings.transparentSlotBg")]
+    [DataRow("true")]
+    [DataRow("false")]
+    [DataRow("nil")]
+    [DataRow("1")]
+    [DataRow("-0.5")]
+    [DataRow("'custom'")]
+    public void SameProviderIdenticalReturnOnlyOverridesAreRedundant(string result)
+    {
+        string registration = "Override('HotkeyItemController', 'TransparentSlotBackgrounds', function(_) return " + result + " end)";
+        LuaSource[] sources = [new("Quickslots", "init.lua", registration + "\n" + registration)];
+
+        LuaOverlap overlap = LuaInteractionAnalyzer.Analyze(sources).Single();
+
+        Assert.AreEqual("RedundantOverride", overlap.Kind.ToString());
+        Assert.HasCount(2, overlap.Hooks);
+        Assert.HasCount(2, LuaCallbackEvidenceAnalyzer.Analyze(sources));
+    }
+
+    [TestMethod]
+    [DataRow("counter = counter + 1 return settings.transparentSlotBg")]
+    [DataRow("return readSetting()")]
+    [DataRow("return settings.transparentSlotBg + 1")]
+    [DataRow("return settings['transparentSlotBg']")]
+    [DataRow("if enabled then return settings.transparentSlotBg end return false")]
+    public void SameProviderMatchingNontrivialCallbacksRemainReview(string body)
+    {
+        string registration = "Override('HotkeyItemController', 'TransparentSlotBackgrounds', function(_) " + body + " end)";
+
+        LuaOverlap overlap = LuaInteractionAnalyzer.Analyze([new("Alpha", "init.lua", registration + "\n" + registration)]).Single();
+
+        Assert.AreEqual(LuaOverlapKind.OverrideReview, overlap.Kind);
+        Assert.HasCount(2, overlap.Hooks);
+    }
+
+    [TestMethod]
+    [DataRow("settings.transparentSlotBg", "settings.smallSlots")]
+    [DataRow("true", "false")]
+    [DataRow("'a b'", "'a  b'")]
+    public void DifferentReturnOnlyOverridesRemainReview(string first, string second)
+    {
+        string text = "Override('PlayerPuppet', 'Value', function(_) return " + first + " end)\nOverride('PlayerPuppet', 'Value', function(_) return " + second + " end)";
+
+        Assert.AreEqual(LuaOverlapKind.OverrideReview, LuaInteractionAnalyzer.Analyze([new("Alpha", "init.lua", text)]).Single().Kind);
+    }
+
+    [TestMethod]
+    [DataRow("settings.transparentSlotBg")]
+    [DataRow("true")]
+    public void MatchingReturnOnlyOverridesAcrossProvidersRemainReview(string result)
+    {
+        string registration = "Override('PlayerPuppet', 'Value', function(_) return " + result + " end)";
+
+        LuaOverlap overlap = LuaInteractionAnalyzer.Analyze([new("Alpha", "alpha.lua", registration), new("Beta", "beta.lua", registration)]).Single();
+
+        Assert.AreEqual(LuaOverlapKind.OverrideReview, overlap.Kind);
+        Assert.HasCount(2, overlap.Hooks);
+    }
+
+    [TestMethod]
     [DataRow("Observe")]
     [DataRow("Override")]
     public void SameProviderObserversAndOneOverrideStayOutOfReport(string firstKind)

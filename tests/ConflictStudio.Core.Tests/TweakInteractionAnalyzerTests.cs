@@ -75,7 +75,7 @@ public sealed class TweakInteractionAnalyzerTests
 
         TweakOverlap overlap = TweakInteractionAnalyzer.Analyze(sources).Single();
 
-        Assert.AreEqual(TweakOverlapKind.RecordDefinitionCollision, overlap.Kind);
+        Assert.AreEqual(loose ? "InternalContext" : "RecordDefinitionCollision", overlap.Kind.ToString());
         Assert.AreEqual(2, overlap.Operations.Length);
         string[] expectedValues = ["Items.First", "Items.Second"];
         CollectionAssert.AreEqual(expectedValues, overlap.Operations.Select(value => value.Value).ToArray());
@@ -100,23 +100,19 @@ public sealed class TweakInteractionAnalyzerTests
     }
 
     [TestMethod]
-    [DataRow("Items.Test.value: 1\nItems.Test.value: 2\n", "Items.Test.value", TweakOverlapKind.ScalarOverwrite)]
-    [DataRow("Items.Test:\n  value: 1\n  value: 2\n", "Items.Test.value", TweakOverlapKind.ScalarOverwrite)]
-    [DataRow("Items.Test.tags: [Items.A]\nItems.Test.tags: [Items.B]\n", "Items.Test.tags", TweakOverlapKind.MixedArrayOperations)]
-    [DataRow("Items.Test.tags: [Items.A]\nItems.Test.tags: [Items.B]\nItems.Test.tags: [!append Items.C]\n", "Items.Test.tags", TweakOverlapKind.MixedArrayOperations)]
-    [DataRow("Items.Test:\n  $base: Items.A\nItems.Test:\n  $base: Items.B\n", "Items.Test.$definition", TweakOverlapKind.RecordDefinitionCollision)]
-    [DataRow("Items.Test:\n  $type: Clothing\nItems.Test:\n  $base: Items.B\n", "Items.Test.$definition", TweakOverlapKind.RecordDefinitionCollision)]
-    [DataRow("Items.Test:\n  tags:\n    - !append Items.A\n    - !append Items.A\n", "Items.Test.tags", TweakOverlapKind.DuplicateMutation)]
-    [DataRow("Items.Test:\n  tags:\n    - !append Items.A\n    - !prepend Items.A\n    - !append Items.B\n", "Items.Test.tags", TweakOverlapKind.DuplicateMutation)]
-    [DataRow("Items.Test:\n  tags:\n    - !remove Items.A\n    - !append Items.A\n    - !append Items.A\n", "Items.Test.tags", TweakOverlapKind.DuplicateMutation)]
-    public void SameProviderCompetingDeclarationsAreReported(string text, string target, TweakOverlapKind kind)
+    [DataRow("Items.Test.value: 1\nItems.Test.value: 2\n", "Items.Test.value")]
+    [DataRow("Items.Test.tags: [Items.A]\nItems.Test.tags: [Items.B]\n", "Items.Test.tags")]
+    [DataRow("Items.Test.tags: [Items.A]\nItems.Test.tags: [Items.B]\nItems.Test.tags: [!append Items.C]\n", "Items.Test.tags")]
+    [DataRow("Items.Test:\n  $base: Items.A\nItems.Test:\n  $base: Items.B\n", "Items.Test.$definition")]
+    [DataRow("Items.Test:\n  $type: Clothing\nItems.Test:\n  $base: Items.B\n", "Items.Test.$definition")]
+    public void SameFileSeparateDeclarationsAreContext(string text, string target)
     {
         TweakAnalysisResult result = TweakInteractionAnalyzer.AnalyzeDetailed([new("Alpha", "one.yaml", text)]);
 
         Assert.AreEqual(0, result.Failures.Length);
         TweakOverlap overlap = result.Overlaps.Single();
         Assert.AreEqual(target, overlap.Target);
-        Assert.AreEqual(kind, overlap.Kind);
+        Assert.AreEqual("InternalContext", overlap.Kind.ToString());
         Assert.AreEqual(2, overlap.Operations.Length);
         Assert.IsTrue(overlap.Operations.All(value => value.Provider == "Alpha" && value.FilePath == "one.yaml" && value.LineNumber > 0));
     }
@@ -131,6 +127,10 @@ public sealed class TweakInteractionAnalyzerTests
     [DataRow("Items.Test:\n  tags:\n    - !remove Items.A\n    - !append Items.A\n")]
     [DataRow("Items.Test.tags: [Items.A]\nItems.Test.tags: [!append Items.B]\n")]
     [DataRow("Items.Test:\n  tags:\n    - !append Items.A\n    - !append-once Items.A\n")]
+    [DataRow("Items.Test:\n  value: 1\n  value: 2\n")]
+    [DataRow("Items.Test:\n  tags:\n    - !append Items.A\n    - !append Items.A\n")]
+    [DataRow("Items.Test:\n  tags:\n    - !append Items.A\n    - !prepend Items.A\n    - !append Items.B\n")]
+    [DataRow("Items.Test:\n  tags:\n    - !remove Items.A\n    - !append Items.A\n    - !append Items.A\n")]
     public void SameProviderIntentionalTweakChainsStayOutOfReport(string text)
     {
         TweakAnalysisResult result = TweakInteractionAnalyzer.AnalyzeDetailed([new("Alpha", "one.yaml", text)]);
@@ -212,7 +212,7 @@ public sealed class TweakInteractionAnalyzerTests
         Assert.AreEqual(1, alphaOperations.Length);
         Assert.AreEqual(TweakOperationKind.ArrayAppend, alphaOperations[0].Kind);
         SourceAnalysisFailure failure = result.Failures.Single();
-        Assert.AreEqual("TweakXL", failure.Surface);
+        Assert.AreEqual("TweakXL interpretation", failure.Surface);
         Assert.AreEqual("Items.Test.packages: Mixed definition of array replacement and mutations. Only mutations will take effect.", failure.Message);
     }
 
@@ -238,7 +238,7 @@ public sealed class TweakInteractionAnalyzerTests
         Assert.IsTrue(result.Failures.Skip(2).All(value => value.Provider == "Repeated" && value.FilePath == "repeated.yaml"));
         TweakOperation[] normalOperations = result.Overlaps.SelectMany(value => value.Operations).Where(value => value.Provider == "Normal").ToArray();
         TweakOperation[] repeatedOperations = result.Overlaps.Where(value => value.Target.StartsWith("Items.Loose", StringComparison.Ordinal)).SelectMany(value => value.Operations).Where(value => value.Provider == "Repeated").ToArray();
-        Assert.AreEqual(TweakOverlapKind.ScalarOverwrite, result.Overlaps.Single(value => value.Target == "Items.Repeated.value").Kind);
+        Assert.AreEqual("InternalContext", result.Overlaps.Single(value => value.Target == "Items.Repeated.value").Kind.ToString());
         Assert.AreEqual(2, normalOperations.Length);
         Assert.AreEqual(2, repeatedOperations.Length);
         Assert.IsTrue(normalOperations.All(value => value.LineNumber == 7));
@@ -351,7 +351,7 @@ public sealed class TweakInteractionAnalyzerTests
     }
 
     [TestMethod]
-    public void AnalyzerPreservesRepeatedTopLevelAndRecordProperties()
+    public void AnalyzerPreservesTopLevelDeclarationsButResolvesRepeatedRecordProperties()
     {
         TweakSource source = new("Alpha", "alpha.yaml", "Items.Test.value: 1\nItems.Test.value: 2\nItems.Other:\n  value: 3\n  value: 4\n");
         TweakSource comparison = new("Beta", "beta.yaml", "Items.Test.value: 5\nItems.Other:\n  value: 6\n");
@@ -360,7 +360,10 @@ public sealed class TweakInteractionAnalyzerTests
 
         Assert.AreEqual(0, result.Failures.Length);
         Assert.AreEqual(2, result.Overlaps.Length);
-        Assert.IsTrue(result.Overlaps.All(value => value.Operations.Length == 3));
+        Assert.AreEqual(3, result.Overlaps.Single(value => value.Target == "Items.Test.value").Operations.Length);
+        TweakOperation[] properties = result.Overlaps.Single(value => value.Target == "Items.Other.value").Operations;
+        string[] expected = ["4", "6"];
+        CollectionAssert.AreEqual(expected, properties.Select(value => value.Value).ToArray());
     }
 
     [TestMethod]

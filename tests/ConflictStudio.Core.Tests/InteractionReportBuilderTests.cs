@@ -85,7 +85,7 @@ public sealed class InteractionReportBuilderTests
 
         InteractionFinding finding = InteractionReportBuilder.Build(inventory).Single();
 
-        Assert.AreEqual(InteractionFindingKind.Review, finding.Kind);
+        Assert.AreEqual(InteractionFindingKind.Informational, finding.Kind);
         Assert.AreEqual("InventoryItemModeLogicController.OnReplacePartNotificationClosed(ref<inkGameNotificationData>)", finding.Target);
         CollectionAssert.AreEquivalent(CrossLanguageProviders, finding.Providers);
     }

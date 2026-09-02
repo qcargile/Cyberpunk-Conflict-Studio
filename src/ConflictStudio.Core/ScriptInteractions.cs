@@ -146,7 +146,7 @@ public sealed record LuaSource(string Provider, string FilePath, string Text);
 
 public enum LuaHookKind { Observe, Override }
 
-public enum LuaOverlapKind { ObserverComposition, OverrideWithObservers, OverrideReview }
+public enum LuaOverlapKind { ObserverComposition, OverrideWithObservers, OverrideReview, RedundantOverride }
 
 public sealed record LuaHook(string Provider, string FilePath, LuaHookKind Kind, string Target);
 
@@ -154,25 +154,33 @@ public sealed record LuaOverlap(string Target, LuaOverlapKind Kind, LuaHook[] Ho
 
 public static class LuaInteractionAnalyzer
 {
+    private static readonly Regex ReturnOnlyCallback = new("""\Afunction\s*\([^()]*\)\s*return\s+(?:true|false|nil|-?[0-9]+(?:\.[0-9]+)?|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s*;?\s*end\z""", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     public static LuaOverlap[] Analyze(IReadOnlyList<LuaSource> sources)
     {
         ArgumentNullException.ThrowIfNull(sources);
-        List<LuaHook> hooks = [];
+        List<(LuaHook Hook, string? CallbackEvidence)> hooks = [];
         foreach (LuaSource source in sources)
         {
             foreach (LuaHookRegistration registration in LuaHookRegistrationAnalyzer.Analyze(source.Text).Where(value => value.Confidence == EvidenceConfidence.Literal))
             {
                 LuaHookKind kind = registration.Kind == LuaCallbackEvidenceKind.Override ? LuaHookKind.Override : LuaHookKind.Observe;
-                hooks.Add(new LuaHook(source.Provider, source.FilePath, kind, registration.Target));
+                hooks.Add((new LuaHook(source.Provider, source.FilePath, kind, registration.Target), registration.CallbackEvidence));
             }
         }
 
-        return hooks.GroupBy(value => value.Target, StringComparer.Ordinal)
+        return hooks.GroupBy(value => value.Hook.Target, StringComparer.Ordinal)
             .Select(group =>
             {
-                int overrides = group.Count(value => value.Kind == LuaHookKind.Override);
+                int overrides = group.Count(value => value.Hook.Kind == LuaHookKind.Override);
                 LuaOverlapKind kind = overrides > 1 ? LuaOverlapKind.OverrideReview : overrides == 1 ? LuaOverlapKind.OverrideWithObservers : LuaOverlapKind.ObserverComposition;
-                return new LuaOverlap(group.Key, kind, group.ToArray());
+                if (overrides > 1 && overrides == group.Count()
+                    && group.Select(value => value.Hook.Provider).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1
+                    && group.Select(value => value.Hook.FilePath).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1
+                    && group.Select(value => value.CallbackEvidence).Distinct(StringComparer.Ordinal).Count() == 1
+                    && ReturnOnlyCallback.IsMatch(group.First().CallbackEvidence ?? string.Empty))
+                    kind = LuaOverlapKind.RedundantOverride;
+                return new LuaOverlap(group.Key, kind, group.Select(value => value.Hook).ToArray());
             })
             .Where(ShouldReport)
             .OrderBy(value => value.Target, StringComparer.Ordinal)
@@ -181,5 +189,5 @@ public static class LuaInteractionAnalyzer
 
     private static bool ShouldReport(LuaOverlap overlap)
         => overlap.Hooks.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1
-            || overlap.Kind == LuaOverlapKind.OverrideReview;
+            || overlap.Kind is LuaOverlapKind.OverrideReview or LuaOverlapKind.RedundantOverride;
 }
