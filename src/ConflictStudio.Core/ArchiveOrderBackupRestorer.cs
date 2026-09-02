@@ -4,7 +4,7 @@ namespace ConflictStudio.Core;
 
 public static class ArchiveOrderBackupRestorer
 {
-    public static void Restore(string backupPath, string targetPath, string expectedCurrentSha256)
+    public static void Restore(string backupPath, string targetPath, string expectedCurrentSha256, Action? authorizeCommit = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(backupPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
@@ -22,6 +22,10 @@ public static class ArchiveOrderBackupRestorer
                 stream.Write(backup);
                 stream.Flush(true);
             }
+            byte[] commitCurrent = File.ReadAllBytes(targetPath);
+            string commitHash = Convert.ToHexStringLower(SHA256.HashData(commitCurrent));
+            if (!string.Equals(commitHash, expectedCurrentSha256, StringComparison.Ordinal)) throw new ArchiveOrderException("The current archive order changed during restore preparation. The concurrent edit was preserved.");
+            authorizeCommit?.Invoke();
             File.Move(temporary, targetPath, true);
             if (!File.ReadAllBytes(targetPath).AsSpan().SequenceEqual(backup)) throw new ArchiveOrderException("The restored archive order did not verify.");
         }
@@ -34,7 +38,7 @@ public static class ArchiveOrderBackupRestorer
 
 public static class ArchiveOrderRollback
 {
-    public static void RestorePrevious(ArchiveOrderApplyResult result, string targetPath)
+    public static void RestorePrevious(ArchiveOrderApplyResult result, string targetPath, Action? authorizeCommit = null)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
@@ -44,9 +48,10 @@ public static class ArchiveOrderRollback
         if (result.TargetPreviouslyExisted)
         {
             if (result.BackupPath is null) throw new ArchiveOrderException("The previous archive order backup is missing.");
-            ArchiveOrderBackupRestorer.Restore(result.BackupPath, targetPath, result.WrittenSha256);
+            ArchiveOrderBackupRestorer.Restore(result.BackupPath, targetPath, result.WrittenSha256, authorizeCommit);
             return;
         }
+        authorizeCommit?.Invoke();
         File.Delete(targetPath);
         if (File.Exists(targetPath)) throw new ArchiveOrderException("The newly created archive order could not be removed during rollback.");
     }

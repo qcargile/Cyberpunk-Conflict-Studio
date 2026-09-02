@@ -4,7 +4,7 @@ Conflict Studio is a portable external tool. Keep the complete extracted package
 
 Nexus package
 
-Download the same ZIP manually for MO2 or Vortex. It contains one `ConflictStudio.exe` under Conflict Studio and the Vortex bridge at the archive root. The current developer preview is unsigned, so Windows may show its normal unknown-publisher warning on first launch.
+Download the same ZIP manually for MO2 or Vortex. It contains one `ConflictStudio.exe` under Conflict Studio and the Vortex bridge at the archive root. The beta release is unsigned, so Windows may show its normal unknown-publisher warning on first launch.
 
 MO2
 

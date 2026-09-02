@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Security.Cryptography;
+using System.Text.Encodings.Web;
 
 namespace ConflictStudio.Core;
 
@@ -65,7 +66,7 @@ public static class VortexBridgeHeartbeatStore
         File.WriteAllBytes(fullPath, JsonSerializer.SerializeToUtf8Bytes(heartbeat));
     }
 
-    private static bool IsSha256(string value) => value.Length == 64 && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+    private static bool IsSha256(string? value) => value is not null && value.Length == 64 && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 }
 
 public static class VortexDeploymentFiles
@@ -116,6 +117,7 @@ public static class VortexManagerContextStore
         if (context.HeartbeatAtUtc is DateTimeOffset heartbeat && (heartbeat == default || heartbeat.Offset != TimeSpan.Zero)) throw new InvalidDataException("The Vortex heartbeat timestamp is invalid.");
         if (!Path.IsPathRooted(context.GameRoot) || !Path.IsPathRooted(context.StagingRoot) || !Directory.Exists(context.GameRoot) || !Directory.Exists(context.StagingRoot)) throw new InvalidDataException("The Vortex context paths are invalid.");
         if (context.Providers is null || context.DeployedWinners is null || context.ArchiveOrder is null) throw new InvalidDataException("The Vortex context is incomplete.");
+        if (!string.Equals(context.ContextId, ComputeContextId(context), StringComparison.Ordinal)) throw new InvalidDataException("The Vortex context identity does not match its contents.");
         if (context.DeploymentFileCount < 0 || context.RelevantDeploymentFileCount < 0 || context.UnmappedRelevantFileCount < 0 || context.BridgeRefreshMilliseconds < 0 || context.TargetRelocatedFileCount < 0) throw new InvalidDataException("The Vortex deployment metrics are invalid.");
         if (context.DeploymentInventoryComplete && (context.RelevantDeploymentFileCount > context.DeploymentFileCount || context.UnmappedRelevantFileCount > context.RelevantDeploymentFileCount || context.DeployedWinners.Count > context.RelevantDeploymentFileCount || context.TargetRelocatedFileCount > context.UnmappedRelevantFileCount)) throw new InvalidDataException("The Vortex deployment counts are inconsistent.");
         HashSet<string> providerIds = new(StringComparer.OrdinalIgnoreCase);
@@ -137,6 +139,45 @@ public static class VortexManagerContextStore
         if (context.ArchiveOrder.Any(string.IsNullOrWhiteSpace) || context.ArchiveOrderSha256 is not null && !IsSha256(context.ArchiveOrderSha256)) throw new InvalidDataException("The Vortex archive order context is invalid.");
     }
 
+    private static string ComputeContextId(VortexManagerContext context)
+    {
+        using MemoryStream content = new();
+        using (Utf8JsonWriter writer = new(content, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("profileId", context.ProfileId);
+            writer.WriteString("profileName", context.ProfileName);
+            writer.WriteString("gameRoot", Path.GetFullPath(context.GameRoot));
+            writer.WriteString("stagingRoot", Path.GetFullPath(context.StagingRoot));
+            writer.WriteBoolean("deploymentFresh", context.DeploymentFresh);
+            writer.WriteStartArray("providers");
+            foreach (VortexProviderContext provider in context.Providers.OrderBy(value => value.Order))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("id", provider.Id);
+                writer.WriteString("name", provider.Name);
+                writer.WriteString("rootPath", Path.GetFullPath(provider.RootPath));
+                writer.WriteNumber("order", provider.Order);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteStartObject("deployedWinners");
+            foreach ((string relativePath, string providerId) in context.DeployedWinners.OrderBy(value => value.Key, StringComparer.Ordinal)) writer.WriteString(relativePath, providerId);
+            writer.WriteEndObject();
+            writer.WriteStartArray("archiveOrder");
+            foreach (string archive in context.ArchiveOrder) writer.WriteStringValue(archive);
+            writer.WriteEndArray();
+            writer.WriteString("archiveOrderSha256", context.ArchiveOrderSha256);
+            writer.WriteBoolean("deploymentInventoryComplete", context.DeploymentInventoryComplete);
+            writer.WriteNumber("deploymentFileCount", context.DeploymentFileCount);
+            writer.WriteNumber("relevantDeploymentFileCount", context.RelevantDeploymentFileCount);
+            writer.WriteNumber("unmappedRelevantFileCount", context.UnmappedRelevantFileCount);
+            writer.WriteNumber("targetRelocatedFileCount", context.TargetRelocatedFileCount);
+            writer.WriteEndObject();
+        }
+        return Convert.ToHexStringLower(SHA256.HashData(content.ToArray()));
+    }
+
     private static bool IsWithin(string root, string path)
     {
         string relative = Path.GetRelativePath(root, Path.GetFullPath(path));
@@ -145,7 +186,7 @@ public static class VortexManagerContextStore
 
     private static string Normalize(string value) => value.Replace('/', '\\').TrimStart('\\');
 
-    private static bool IsSha256(string value) => value.Length == 64 && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+    private static bool IsSha256(string? value) => value is not null && value.Length == 64 && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 }
 
 public static class VortexDeploymentGuard

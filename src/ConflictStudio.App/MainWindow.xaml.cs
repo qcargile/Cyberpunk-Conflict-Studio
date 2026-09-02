@@ -331,7 +331,7 @@ public partial class MainWindow : Window, IDisposable
         catch (Exception exception)
         {
             if (throwOnFailure) throw;
-            HandleScanFailure(exception);
+            InvalidateMixedManagerReceiptAndShowScanError(exception);
         }
         finally
         {
@@ -361,8 +361,10 @@ public partial class MainWindow : Window, IDisposable
         {
             SelectedClassificationTextBlock.Text = "Select a case";
             SelectedTargetTextBlock.Text = "Select a row to see details";
+            SelectedMeaningTextBlock.Text = string.Empty;
             SelectedSummaryTextBlock.Text = string.Empty;
             SelectedProofTextBlock.Text = string.Empty;
+            SelectedBoundaryTextBlock.Text = string.Empty;
             SelectedProvidersTextBlock.Text = string.Empty;
             SelectedActionTextBlock.Text = string.Empty;
             SelectedHashTextBlock.Text = string.Empty;
@@ -386,9 +388,11 @@ public partial class MainWindow : Window, IDisposable
             string[] providers = selected.SelectMany(value => value.Providers).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray();
             SelectedClassificationTextBlock.Text = "MULTIPLE CASES";
             SelectedTargetTextBlock.Text = $"{selected.Length:N0} cases selected";
+            SelectedMeaningTextBlock.Text = "The selected rows may contain different evidence types and different unanswered questions.";
             SelectedSummaryTextBlock.Text = string.Join(" · ", selected.GroupBy(value => value.ClassificationLabel).OrderBy(value => value.Key, StringComparer.OrdinalIgnoreCase).Select(value => $"{value.Count():N0} {value.Key}"));
-            SelectedProofTextBlock.Text = "This choice will be saved for every selected case.";
-            SelectedProvidersTextBlock.Text = $"{providers.Length:N0} mods: " + string.Join("  ·  ", providers);
+            SelectedProofTextBlock.Text = "A bulk review saves the same outcome for every selected case.";
+            SelectedBoundaryTextBlock.Text = "Do not apply one technical conclusion to mixed rows. Open individual cases when their evidence differs.";
+            SelectedProvidersTextBlock.Text = string.Join("  ↔  ", providers);
             SelectedActionTextBlock.Text = "Use one bulk outcome only when it is true for every selected row. Otherwise, reduce the selection first.";
             SelectedHashTextBlock.Text = $"{selected.Length:N0} case IDs selected";
             ReviewRationaleTextBox.Text = string.Empty;
@@ -405,9 +409,11 @@ public partial class MainWindow : Window, IDisposable
         ConflictWorkItem item = selected[0];
         SelectedClassificationTextBlock.Text = item.ClassificationLabel;
         SelectedTargetTextBlock.Text = item.Target;
+        SelectedMeaningTextBlock.Text = item.MeaningLabel;
         SelectedSummaryTextBlock.Text = item.Summary;
         SelectedProofTextBlock.Text = item.ProofLabel;
-        SelectedProvidersTextBlock.Text = "Providers: " + string.Join("  →  ", item.Providers);
+        SelectedBoundaryTextBlock.Text = item.BoundaryLabel;
+        SelectedProvidersTextBlock.Text = string.Join("  ↔  ", item.Providers);
         SelectedActionTextBlock.Text = item.NextAction;
         SelectedHashTextBlock.Text = "Case ID: " + item.EvidenceSha256;
         ReviewRationaleTextBox.Text = string.Empty;
@@ -820,7 +826,9 @@ public partial class MainWindow : Window, IDisposable
 
     private void LoadReceipt(ProfileScanReceipt receipt, string managerRoot, object profile, bool preserveArchiveUndo = false)
     {
-        EvidenceDecision[] decisions = new EvidenceDecisionStore(_decisionDirectory).Load();
+        EvidenceDecisionStore decisionStore = new(_decisionDirectory);
+        EvidenceDecision[] decisions = decisionStore.Load();
+        if (decisionStore.LastRecoveryPath is not null) RecordAction("evidence-decisions", "recovered", $"Preserved unreadable review data as {Path.GetFileName(decisionStore.LastRecoveryPath)} and started with an empty review set");
         ConflictWorkItem[] workItems = ConflictWorkQueueBuilder.Build(receipt, decisions);
         if (receipt.EditableArchiveInventory is null || receipt.EditableArchiveOrder is null) throw new InvalidDataException("The scan receipt has no editable legacy archive snapshot.");
         Mo2ArchiveWriteTarget target;
@@ -1264,7 +1272,7 @@ public partial class MainWindow : Window, IDisposable
             : "The action did not complete. Nothing was changed.";
     }
 
-    private void HandleScanFailure(Exception exception)
+    private void InvalidateMixedManagerReceiptAndShowScanError(Exception exception)
     {
         if (exception is CrossManagerDeploymentException) InvalidateReceipt();
         ShowError("profile-scan", exception);

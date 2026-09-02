@@ -161,9 +161,13 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
     public ArchiveOrderApplyResult Apply(ArchiveOrderPreview preview) => Apply(preview, preview.Observation.Archives);
 
     public ArchiveOrderApplyResult Apply(ArchiveOrderPreview preview, IReadOnlyList<ArchiveFingerprint> currentArchives)
+        => Apply(preview, currentArchives, () => currentArchives);
+
+    public ArchiveOrderApplyResult Apply(ArchiveOrderPreview preview, IReadOnlyList<ArchiveFingerprint> currentArchives, Func<IReadOnlyList<ArchiveFingerprint>> currentArchivesAtCommit)
     {
         ArgumentNullException.ThrowIfNull(preview);
         ArgumentNullException.ThrowIfNull(currentArchives);
+        ArgumentNullException.ThrowIfNull(currentArchivesAtCommit);
         if (!SameInventory(preview.Observation.Archives, currentArchives)) throw new ArchiveOrderException("The archive inventory changed after the preview. Scan again before applying.");
         EnsureGameNotRunning();
         string orderPath = Path.Combine(preview.Observation.DirectoryPath, "modlist.txt");
@@ -186,6 +190,12 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
                 stream.Write(expected);
                 stream.Flush(true);
             }
+            IReadOnlyList<ArchiveFingerprint> commitArchives = currentArchivesAtCommit();
+            if (!SameInventory(preview.Observation.Archives, commitArchives)) throw new ArchiveOrderException("The archive inventory changed during archive-order preparation. Scan again before applying.");
+            EnsureGameNotRunning();
+            byte[]? commitOrder = File.Exists(orderPath) ? _readAllBytes(orderPath) : null;
+            string? commitOrderHash = commitOrder is null ? null : Hash(commitOrder);
+            if (!string.Equals(commitOrderHash, currentHash, StringComparison.Ordinal)) throw new ArchiveOrderException("The archive order file changed during archive-order preparation. The concurrent edit was preserved.");
             File.Move(temporary, orderPath, true);
             replaced = true;
             bool verified = _readAllBytes(orderPath).AsSpan().SequenceEqual(expected);
@@ -223,7 +233,7 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
         Directory.CreateDirectory(Path.GetDirectoryName(fullTargetPath)!);
         using FileStream operationLock = AcquireOperationLock(fullTargetPath + ".conflictstudio.lock");
         EnsureGameNotRunning();
-        ArchiveOrderRollback.RestorePrevious(result, targetPath);
+        ArchiveOrderRollback.RestorePrevious(result, targetPath, EnsureGameNotRunning);
     }
 
     private void EnsureGameNotRunning()

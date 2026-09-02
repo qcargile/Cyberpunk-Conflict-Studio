@@ -338,7 +338,10 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         if (_profileTarget?.WriteBlockedReason is not null) throw new ArchiveOrderException(_profileTarget.WriteBlockedReason);
         RefreshAndRequireWriteTarget();
         IArchiveOrderWriter writer = _writerFactory(_profileTarget);
-        ArchiveOrderApplyResult result = writer.Apply(_preview, CurrentArchiveFingerprints());
+        ArchiveFingerprint[] currentArchives = CurrentArchiveFingerprints();
+        ArchiveOrderApplyResult result = writer is ArchiveOrderWriter archiveWriter
+            ? archiveWriter.Apply(_preview, currentArchives, RefreshArchiveFingerprintsForCommit)
+            : writer.Apply(_preview, currentArchives);
         _lastWriter = writer;
         _lastApply = result;
         _lastTargetPath = Path.Combine(_observation.DirectoryPath, "modlist.txt");
@@ -454,6 +457,15 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
             using FileStream stream = File.OpenRead(path);
             return new ArchiveFingerprint(Path.GetFileName(path), stream.Length, Convert.ToHexStringLower(SHA256.HashData(stream)));
         }).ToArray();
+    }
+
+    private ArchiveFingerprint[] RefreshArchiveFingerprintsForCommit()
+    {
+        if (_profileTarget?.ManagerKind != ModManagerKind.Mo2 || _profileRefresh is null) return CurrentArchiveFingerprints();
+        Mo2ArchiveProfile profile = _profileRefresh();
+        Mo2ArchiveWriteTarget target = Mo2ArchiveWriteTargetResolver.Resolve(_profileManagerRoot!, profile.OrderEvidence);
+        RequireSameWriteTarget(_profileTarget, target);
+        return profile.Archives.Select(value => new ArchiveFingerprint(value.ArchiveName, value.Size, value.Sha256)).ToArray();
     }
 
     private void RefreshAndRequireWriteTarget()

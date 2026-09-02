@@ -29,14 +29,14 @@ function createContext(input) {
   };
 }
 
-function applyOrderRequest(request, context, now = new Date(), guards = {}) {
+async function applyOrderRequest(request, context, now = new Date(), guards = {}) {
   requireRequest(request, context, now);
   const gameRunning = guards.gameRunning || (() => false);
   const currentTime = guards.now || (() => new Date());
   if (gameRunning()) throw new Error("Archive order cannot be written while Cyberpunk2077 is running.");
   const archiveRoot = path.join(context.gameRoot, "archive", "pc", "mod");
   const orderPath = path.join(archiveRoot, "modlist.txt");
-  const inventory = archiveInventory(archiveRoot);
+  const inventory = await archiveInventoryAsync(archiveRoot, guards);
   if (!sameInventory(inventory, request.inventory)) throw new Error("The deployed archive inventory changed after Conflict Studio previewed it.");
   if (request.restorePrevious !== true) {
     const expectedNames = new Set(inventory.map((entry) => entry.name.toLowerCase()));
@@ -61,7 +61,7 @@ function applyOrderRequest(request, context, now = new Date(), guards = {}) {
   let replaced = false;
   try {
     if (output === null) {
-      requireWriteAuthorized(request, gameRunning, currentTime);
+      await requireWriteAuthorized(request, context, archiveRoot, orderPath, inventory, currentSha, gameRunning, currentTime, guards);
       if (fs.existsSync(orderPath)) fs.unlinkSync(orderPath);
       replaced = true;
     } else {
@@ -72,7 +72,7 @@ function applyOrderRequest(request, context, now = new Date(), guards = {}) {
       } finally {
         fs.closeSync(handle);
       }
-      requireWriteAuthorized(request, gameRunning, currentTime);
+      await requireWriteAuthorized(request, context, archiveRoot, orderPath, inventory, currentSha, gameRunning, currentTime, guards);
       fs.renameSync(temporary, orderPath);
       replaced = true;
     }
@@ -168,14 +168,31 @@ function requireRequestTime(request, now) {
   if (now.getTime() > new Date(request.expiresAtUtc).getTime()) throw new Error("The archive order request expired. Preview the order again.");
 }
 
-function requireWriteAuthorized(request, gameRunning, currentTime) {
+async function requireWriteAuthorized(request, context, archiveRoot, orderPath, inventory, currentSha, gameRunning, currentTime, guards) {
+  const currentRevision = guards.stateRevision;
+  if (currentRevision && currentRevision() !== guards.expectedRevision) throw new Error("The active Vortex profile changed during archive-order preparation. Scan again before applying.");
+  const currentContext = guards.currentContext ? guards.currentContext() : context;
+  if (!currentContext) throw new Error("The active Vortex profile context disappeared during archive-order preparation.");
+  requireRequest(request, currentContext, currentTime());
+  const commitInventory = await archiveInventoryAsync(archiveRoot, guards);
+  if (!sameInventory(commitInventory, inventory) || !sameInventory(commitInventory, request.inventory)) throw new Error("The deployed archive inventory changed after Conflict Studio previewed it.");
   if (gameRunning()) throw new Error("Archive order cannot be written while Cyberpunk2077 is running.");
   requireRequestTime(request, currentTime());
+  if (currentRevision && currentRevision() !== guards.expectedRevision) throw new Error("The active Vortex profile changed during archive-order preparation. Scan again before applying.");
+  const current = fs.existsSync(orderPath) ? fs.readFileSync(orderPath) : null;
+  const currentOrderSha = current === null ? null : sha(current);
+  if (currentOrderSha !== currentSha) throw new Error("The deployed archive order changed after Conflict Studio previewed it.");
 }
 
 function archiveInventory(archiveRoot) {
   return archiveNames(archiveRoot)
     .map((name) => ({ name, ...fingerprintFile(path.join(archiveRoot, name)) }));
+}
+
+async function archiveInventoryAsync(archiveRoot, options = {}) {
+  const inventory = [];
+  for (const name of archiveNames(archiveRoot)) inventory.push({ name, ...await fingerprintFileAsync(path.join(archiveRoot, name), options) });
+  return inventory;
 }
 
 function archiveNames(archiveRoot) {
@@ -254,6 +271,33 @@ function fingerprintFile(filePath, fileSystem = fs) {
   }
 }
 
+async function fingerprintFileAsync(filePath, options = {}) {
+  const yieldEveryBytes = options.yieldEveryBytes || 8 * 1024 * 1024;
+  const yieldNow = options.yieldNow || (() => new Promise((resolve) => setImmediate(resolve)));
+  const handle = await fs.promises.open(filePath, "r");
+  try {
+    const before = await handle.stat();
+    const hash = crypto.createHash("sha256");
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let bytesSinceYield = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
+      bytesSinceYield += bytesRead;
+      if (bytesSinceYield >= yieldEveryBytes) {
+        bytesSinceYield = 0;
+        await yieldNow();
+      }
+    }
+    const after = await handle.stat();
+    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) throw new Error(`Archive changed while it was being fingerprinted: ${path.basename(filePath)}`);
+    return { size: after.size, sha256: hash.digest("hex") };
+  } finally {
+    await handle.close();
+  }
+}
+
 function shaFile(filePath, fileSystem = fs) {
   return fingerprintFile(filePath, fileSystem).sha256;
 }
@@ -284,11 +328,11 @@ function mergeOrder(existing, proposedOrder) {
 }
 
 function sortObject(value) {
-  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)));
+  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0));
 }
 
 function sha(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
-module.exports = { applyOrderRequest, archiveInventory, archiveNames, completeOrder, createContext, isRelevantDeploymentPath, rollbackOrder, selectDeploymentWinners, sha, shaFile };
+module.exports = { applyOrderRequest, archiveInventory, archiveInventoryAsync, archiveNames, completeOrder, createContext, isRelevantDeploymentPath, rollbackOrder, selectDeploymentWinners, sha, shaFile };

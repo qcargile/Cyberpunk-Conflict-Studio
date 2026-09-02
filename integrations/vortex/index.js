@@ -150,7 +150,8 @@ function init(context) {
     let response;
     try {
       const current = await refresh("order request");
-      response = bridge.applyOrderRequest(request, current, new Date(), { gameRunning: cyberpunkRunning });
+      const expectedRevision = stateRevision;
+      response = await bridge.applyOrderRequest(request, current, new Date(), { gameRunning: cyberpunkRunning, currentContext: () => readJson(contextPath), stateRevision: () => stateRevision, expectedRevision });
       response = await bridge.completeOrder(response, current, () => refresh("order completion"), (value) => writeJson(orderResponsePath, value));
     } catch (error) {
       response = {

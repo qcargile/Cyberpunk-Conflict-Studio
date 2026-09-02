@@ -23,7 +23,9 @@ public sealed record ConflictWorkItem(
     string EvidenceSha256,
     string? ReviewRationale = null,
     string? ResultOverride = null,
-    string? ProofOverride = null)
+    string? ProofOverride = null,
+    string? MeaningOverride = null,
+    string? BoundaryOverride = null)
 {
     public string[] RelatedTargets { get; init; } = [];
     public string StateLabel => State switch
@@ -42,18 +44,18 @@ public sealed record ConflictWorkItem(
         ConflictSurface.ArchiveXl => "ArchiveXL",
         _ => "Setup or scan"
     };
-    public string ClassificationLabel => Classification == EvidenceClassification.Intentional ? "Intentional" : ResultOverride ?? (Classification switch
+    public string ClassificationLabel => Classification == EvidenceClassification.Intentional ? "Reviewed for this profile" : ResultOverride ?? (Classification switch
     {
-        EvidenceClassification.Redundant => "Same content",
-        EvidenceClassification.EffectiveOverwrite => "Selected file ownership",
-        EvidenceClassification.Exclusive => "Proven conflict",
-        EvidenceClassification.Review => "Needs one check",
-        EvidenceClassification.CompilerEvidence => "Compiler evidence needed",
-        EvidenceClassification.Composable => "Composes",
-        EvidenceClassification.OrderSensitive => "Conditional interaction",
-        EvidenceClassification.Informational => "Shared target only",
-        EvidenceClassification.CompetingDeclaration => "Competing declarations",
-        _ => "Can't determine"
+        EvidenceClassification.Redundant => "No action: same change",
+        EvidenceClassification.EffectiveOverwrite => "One deployed file is selected",
+        EvidenceClassification.Exclusive => "Confirmed: different replacements",
+        EvidenceClassification.Review => "Review: behavior must be checked",
+        EvidenceClassification.CompilerEvidence => "Review: compiler result required",
+        EvidenceClassification.Composable => "No action: no competing outcome found",
+        EvidenceClassification.OrderSensitive => "Review: one mod may stop the next",
+        EvidenceClassification.Informational => "Information: shared target",
+        EvidenceClassification.CompetingDeclaration => "Review: different values assigned",
+        _ => "Review: evidence is incomplete"
     });
     public ConflictCaseKind CaseKind => Classification switch
     {
@@ -72,18 +74,44 @@ public sealed record ConflictWorkItem(
     public bool IsActionable => CaseKind is ConflictCaseKind.ProvenConflict or ConflictCaseKind.FileOverride or ConflictCaseKind.OrderSensitive or ConflictCaseKind.CompetingDeclaration or ConflictCaseKind.CompilerEvidence or ConflictCaseKind.RuntimeCheck or ConflictCaseKind.Unknown;
     public bool IsCodeCase => Surface is not ConflictSurface.PackedResource and not ConflictSurface.Diagnostic;
     public string ProviderSummary => string.Join("  ↔  ", Providers);
-    public string ProofLabel => CaseKind == ConflictCaseKind.Reviewed ? "Reviewed for this profile" : ProofOverride ?? (CaseKind switch
+    public string ProofLabel => CaseKind == ConflictCaseKind.Reviewed ? "You recorded an outcome for this profile" : ProofOverride ?? (CaseKind switch
     {
-        ConflictCaseKind.ProvenConflict => "Source annotations declare exclusive ownership",
-        ConflictCaseKind.FileOverride => "Static provider order selects one source",
-        ConflictCaseKind.OrderSensitive => "Conditional evidence; the final outcome is not observed",
-        ConflictCaseKind.CompetingDeclaration => "Active sources assign different values",
-        ConflictCaseKind.CompilerEvidence => "Check the RedScript compiler log",
-        ConflictCaseKind.RuntimeCheck => "Needs an in-game check",
-        ConflictCaseKind.Composes => "Both changes can apply",
-        ConflictCaseKind.SameEvidence => "Same declaration or content",
-        ConflictCaseKind.SharedTarget => "Same target; no conflict found",
-        _ => "Needs more information"
+        ConflictCaseKind.ProvenConflict => "Different replacement bodies target one method",
+        ConflictCaseKind.FileOverride => "The deployed order selects one file",
+        ConflictCaseKind.OrderSensitive => "At least one path can stop before later code runs",
+        ConflictCaseKind.CompetingDeclaration => "Two active sources assign different values to one field",
+        ConflictCaseKind.CompilerEvidence => "The active compiler result is needed",
+        ConflictCaseKind.RuntimeCheck => "The source cannot decide the in-game behavior",
+        ConflictCaseKind.Composes => "The analyzed paths preserve one another",
+        ConflictCaseKind.SameEvidence => "The analyzed declarations or file contents are identical",
+        ConflictCaseKind.SharedTarget => "The mods share a target, but no competing outcome is shown",
+        _ => "The available evidence cannot decide this boundary"
+    });
+    public string MeaningLabel => MeaningOverride ?? (CaseKind switch
+    {
+        ConflictCaseKind.ProvenConflict => "Two active mods replace the same method with different code. Only one replacement can provide that method.",
+        ConflictCaseKind.FileOverride => Winner is null ? "Several mods install the same file path. The available deployment evidence does not name a selected file." : $"Several mods install the same file path. The deployed profile selects {Winner}.",
+        ConflictCaseKind.OrderSensitive => "The mods touch the same method, and at least one path can stop before later code runs. Their conditions may still be separate.",
+        ConflictCaseKind.CompetingDeclaration => "Two active tweak files assign different values to the same field. One final value will exist after loading.",
+        ConflictCaseKind.CompilerEvidence => "Active source declarations overlap in a way only the RedScript compiler result can decide.",
+        ConflictCaseKind.RuntimeCheck => "The sources share a boundary, but static inspection cannot determine the visible in-game result.",
+        ConflictCaseKind.Composes => "The analyzed changes do not produce competing outcomes at this boundary.",
+        ConflictCaseKind.SameEvidence => "The active mods contain the same analyzed change. There is no competing outcome at this boundary.",
+        ConflictCaseKind.SharedTarget => "The mods refer to the same target. Shared use alone is not a conflict.",
+        ConflictCaseKind.Reviewed => "You recorded how this case should be handled for the current profile.",
+        _ => "Conflict Studio could not collect enough evidence to classify this boundary."
+    });
+    public string BoundaryLabel => BoundaryOverride ?? (CaseKind switch
+    {
+        ConflictCaseKind.ProvenConflict => "This proves competing source ownership. It does not prove the game fails to compile or that either mod caused a bug.",
+        ConflictCaseKind.FileOverride => "This proves deployed file ownership. It does not prove the selected file is the version you intended.",
+        ConflictCaseKind.OrderSensitive => "This is not a confirmed conflict. It does not prove either feature fails or that the listed mod order is the runtime call order.",
+        ConflictCaseKind.CompetingDeclaration => "This proves different source values. It does not prove which value is active in game.",
+        ConflictCaseKind.CompilerEvidence => "No compiler outcome is claimed until the active compiler log is supplied.",
+        ConflictCaseKind.RuntimeCheck => "This is not a confirmed conflict. A targeted in-game observation is still required.",
+        ConflictCaseKind.Reviewed => "This records your profile decision. It does not create new technical evidence.",
+        ConflictCaseKind.Unknown => "No conflict or compatibility conclusion can be made from the available evidence.",
+        _ => "No conflict is shown at this boundary. This does not prove the mods are compatible everywhere else."
     });
 }
 
@@ -134,8 +162,8 @@ public static class ConflictWorkQueueBuilder
         {
             EvidenceClassification classification = ClassifyInteraction(finding, interactions);
             (string summary, string action) = DescribeInteraction(finding, classification, interactions);
-            (string? result, string? proof) = InteractionLabels(finding, interactions);
-            Add(items, receipt, decisions, ConflictSurface.ScriptAndTweak, finding.Target, classification, summary, action, null, InteractionProviders(finding, interactions), InteractionEvidence(finding, interactions), null, result, proof);
+            (string? result, string? proof, string? meaning, string? boundary) = InteractionLabels(finding, interactions);
+            Add(items, receipt, decisions, ConflictSurface.ScriptAndTweak, finding.Target, classification, summary, action, null, InteractionProviders(finding, interactions), InteractionEvidence(finding, interactions), null, result, proof, meaning, boundary);
         }
         foreach (SharedStateWriteFinding finding in receipt.SharedStateWrites)
         {
@@ -187,14 +215,14 @@ public static class ConflictWorkQueueBuilder
         _ => 3
     };
 
-    private static void Add(List<ConflictWorkItem> items, ProfileScanReceipt receipt, IReadOnlyList<EvidenceDecision> decisions, ConflictSurface surface, string target, EvidenceClassification classification, string summary, string action, string? winner, string[] providers, string[] evidence, string[]? relatedTargets = null, string? resultOverride = null, string? proofOverride = null)
+    private static void Add(List<ConflictWorkItem> items, ProfileScanReceipt receipt, IReadOnlyList<EvidenceDecision> decisions, ConflictSurface surface, string target, EvidenceClassification classification, string summary, string action, string? winner, string[] providers, string[] evidence, string[]? relatedTargets = null, string? resultOverride = null, string? proofOverride = null, string? meaningOverride = null, string? boundaryOverride = null)
     {
         string hash = Hash(surface, target, classification, winner, providers, evidence);
         EvidenceDecision? decision = classification == EvidenceClassification.Unresolved || receipt.InstallationId is null ? null : decisions.Where(value => value.Target == target && value.Providers.SequenceEqual(providers, StringComparer.OrdinalIgnoreCase)).FirstOrDefault(value => EvidenceDecisionStore.Evaluate(value, receipt.InstallationId, receipt.ProfileName, surface, hash) == EvidenceDecisionState.Resolved);
         bool reviewed = decision is not null;
         ConflictWorkState state = reviewed ? ConflictWorkState.Reviewed : classification is EvidenceClassification.Redundant or EvidenceClassification.Composable or EvidenceClassification.Informational ? ConflictWorkState.NoActionNeeded : classification is EvidenceClassification.Exclusive or EvidenceClassification.Unresolved ? ConflictWorkState.NeedsAttention : ConflictWorkState.ReviewWhenRelevant;
         EvidenceClassification effectiveClassification = reviewed ? EvidenceClassification.Intentional : classification;
-        items.Add(new ConflictWorkItem(surface, target, effectiveClassification, state, summary, action, winner, providers, hash, reviewed ? decision!.Rationale : null, resultOverride, proofOverride) { RelatedTargets = relatedTargets ?? [target] });
+        items.Add(new ConflictWorkItem(surface, target, effectiveClassification, state, summary, action, winner, providers, hash, reviewed ? decision!.Rationale : null, resultOverride, proofOverride, meaningOverride, boundaryOverride) { RelatedTargets = relatedTargets ?? [target] });
     }
 
     private static string Hash(ConflictSurface surface, string target, EvidenceClassification classification, string? winner, string[] providers, string[] evidence)
@@ -254,6 +282,11 @@ public static class ConflictWorkQueueBuilder
         }
         if (flows.Length > 0)
         {
+            if (HasIdenticalReplacementBodies(flows))
+            {
+                string identicalSummary = string.Join(" ", flows.Select(value => $"{value.Provider} contains the same replacement body ({value.FilePath}:{value.Line})."));
+                return (identicalSummary, "No action is needed for this method because the analyzed replacement bodies are identical.");
+            }
             string summary = string.Join(" ", flows.Select(value => value.Kind switch
             {
                 RedScriptFlowKind.Wrap => $"{value.Provider} wraps this method and {(value.Continuation == RedScriptContinuationEvidence.Continues ? "continues to the next implementation" : value.Continuation == RedScriptContinuationEvidence.EarlyReturnBeforeContinuation ? "can return before the next implementation" : "does not call the next implementation")} ({value.FilePath}:{value.Line}).",
@@ -261,7 +294,7 @@ public static class ConflictWorkQueueBuilder
                 _ => $"{value.Provider} adds the method ({value.FilePath}:{value.Line})."
             }));
             bool everyWrapperContinues = flows.All(value => value.Kind != RedScriptFlowKind.Wrap || value.Continuation == RedScriptContinuationEvidence.Continues);
-            string action = classification == EvidenceClassification.Exclusive ? $"Only one replacement can own this method. Install a compatibility patch or choose the intended provider between {finding.Providers[0]} and {finding.Providers[1]}." : classification == EvidenceClassification.Review ? "Reproduce the named path with the exact active profile and record the observed behavior before changing either provider." : everyWrapperContinues ? "No action is needed unless the combined feature behaves incorrectly in game." : "Reproduce the named path with the exact active profile and record what fails. If you then disable a provider, treat the result as a direction check and rescan before attributing the cause.";
+            string action = classification == EvidenceClassification.Exclusive ? $"Only one replacement can own this method. Install a compatibility patch or choose the intended provider between {finding.Providers[0]} and {finding.Providers[1]}." : classification == EvidenceClassification.Review ? "Test the affected feature once with this exact profile and record what happens before changing either mod." : everyWrapperContinues ? "No action is needed unless the combined feature behaves incorrectly in game." : "Test the affected feature once with this exact profile. If it fails, disable one mod only as a direction check, then rescan before blaming either mod.";
             return (summary, action);
         }
 
@@ -274,9 +307,9 @@ public static class ConflictWorkQueueBuilder
         if (callbacks.Length > 0)
         {
             string summary = string.Join(" ", callbacks.Select(value => $"{string.Join(", ", value.Copies.Select(copy => copy.Provider))} registers {value.Kind}; continuation is {value.Continuation}."));
-            return classification == EvidenceClassification.Informational ? (summary, "No conflict is proven. Inspect this only when troubleshooting the named callback target.") : classification == EvidenceClassification.Composable ? (summary, "No action is needed unless a related feature fails.") : (summary, "Run the callback test in the support bundle. If both callbacks arrive and the feature works, mark the interaction intentional.");
+            return classification == EvidenceClassification.Informational ? (summary, "No conflict is proven. Inspect this only when troubleshooting the affected callback.") : classification == EvidenceClassification.Composable ? (summary, "No action is needed unless a related feature fails.") : (summary, "Run the callback check from the support bundle. If both callbacks arrive and the feature works, mark the interaction intentional.");
         }
-        return (finding.Summary, classification == EvidenceClassification.Composable ? "No action is needed unless the feature behaves differently in game." : "Open Technical details for the source locations, then test the named behavior once.");
+        return (finding.Summary, classification == EvidenceClassification.Composable ? "No action is needed unless the feature behaves differently in game." : "Open Technical details for the source locations, then test the affected feature once.");
     }
 
     private static string Truncate(string value, int length) => value.Length <= length ? value : value[..length] + "…";
@@ -299,7 +332,7 @@ public static class ConflictWorkQueueBuilder
                     : ($"{operations} TweakXL applies every addition.", "No action is needed unless the final array differs in game.")
                 : ($"{operations} The operations affect distinct values, so no operation cancels another.", "No action is needed unless the final array differs in game.");
         }
-        if (tweak.Kind == TweakOverlapKind.ScalarOverwrite) return ($"{operations} The active sources assign different values; the final in-game value is not observed here.", "Open Details to compare the values, then capture the in-game value after startup before deciding which value should apply.");
+        if (tweak.Kind == TweakOverlapKind.ScalarOverwrite) return ($"{operations} The active sources assign different values; the final in-game value is not observed here.", "Open Technical details to compare the values. Then capture the in-game value after startup before deciding which value should apply.");
         if (tweak.Kind == TweakOverlapKind.DuplicateMutation) return ($"{operations} The same value can be inserted more than once.", "Use an append-once operation or remove the unintended duplicate addition in a compatibility patch.");
         if (tweak.Kind == TweakOverlapKind.RecordDefinitionCollision) return ($"{operations} TweakXL keeps the first construction it encounters; the normal-file discovery order is not established here.", "Keep one record definition or install a compatibility patch that owns the record construction.");
         if (tweak.Kind == TweakOverlapKind.SourceArrayDependency) return ($"{operations} The copied source array is changed by another provider, and source-copy operations discard duplicates already present in the target.", "Capture the final source and target arrays before deciding whether the interaction needs a patch.");
@@ -327,27 +360,29 @@ public static class ConflictWorkQueueBuilder
     private static bool HasAddRemovePair(TweakOverlap tweak)
         => tweak.Operations.GroupBy(value => value.Value, StringComparer.Ordinal).Any(values => values.Any(value => IsTweakAddition(value.Kind)) && values.Any(value => value.Kind == TweakOperationKind.ArrayRemove));
 
-    private static (string? Result, string? Proof) InteractionLabels(InteractionFinding finding, InteractionLookup interactions)
+    private static (string? Result, string? Proof, string? Meaning, string? Boundary) InteractionLabels(InteractionFinding finding, InteractionLookup interactions)
     {
+        if (HasIdenticalReplacementBodies(interactions.Flows(finding.Target))) return ("No action: same replacement", "The replacement bodies are identical", "Both mods declare the same replacement body. The analyzed method result is identical in both sources.", "This proves identical replacement source, not a competing method result. It does not prove the mods are compatible elsewhere.");
         TweakOverlap? tweak = interactions.Tweak(finding.Target);
-        if (tweak is null) return (null, null);
-        return tweak.Kind switch
+        if (tweak is null) return (null, null, null, null);
+        (string? result, string? proof) = tweak.Kind switch
         {
-            TweakOverlapKind.ScalarOverwrite => ("Competing declarations", "Active sources assign different values"),
-            TweakOverlapKind.AssignmentThenMutation => ("Assignment then mutations", "TweakXL applies documented phases"),
-            TweakOverlapKind.MixedArrayOperations when HasCompetingWholeArrayReplacements(tweak) => ("Competing whole-array declarations", "Active sources assign different arrays"),
-            TweakOverlapKind.MixedArrayOperations when tweak.Operations.Any(value => value.Kind == TweakOperationKind.ArrayReplacement) => ("Whole-array owner is unresolved", "Different assignments share one array"),
-            TweakOverlapKind.MixedArrayOperations => ("Tweak order changes duplicate count", "Guarded and unguarded additions share one value"),
-            TweakOverlapKind.DuplicateMutation => ("Same value may be added twice", "Duplicate unguarded additions are proven"),
-            TweakOverlapKind.RecordDefinitionCollision => ("Record definition collision", "Providers construct the same record differently"),
-            TweakOverlapKind.SourceArrayDependency => ("Source array needs verification", "Copied array contents are unknown"),
-            TweakOverlapKind.ComposableMutation when HasAddRemovePair(tweak) => ("Remove first, then add", "Documented TweakXL phases decide membership"),
-            TweakOverlapKind.ComposableMutation when tweak.Operations.All(value => IsTweakAddition(value.Kind)) && tweak.Operations.Select(value => value.Value).Distinct(StringComparer.Ordinal).Count() == 1 && tweak.Operations.All(value => IsUniqueTweakAddition(value.Kind)) => ("Duplicate is prevented", "A uniqueness guard keeps one value"),
-            TweakOverlapKind.ComposableMutation when tweak.Operations.All(value => IsTweakAddition(value.Kind)) => ("All additions are applied", "Distinct additions compose"),
-            TweakOverlapKind.ComposableMutation => ("Array changes compose", "Distinct array values are changed"),
-            TweakOverlapKind.Redundant => ("Same declaration", "Every provider declares the same value"),
+            TweakOverlapKind.ScalarOverwrite => ("Review: different values assigned", "Two active sources assign different values to one field"),
+            TweakOverlapKind.AssignmentThenMutation => ("No action: assignment followed by changes", "TweakXL applies the operations in a documented order"),
+            TweakOverlapKind.MixedArrayOperations when HasCompetingWholeArrayReplacements(tweak) => ("Review: different arrays assigned", "Two active sources assign different complete arrays"),
+            TweakOverlapKind.MixedArrayOperations when tweak.Operations.Any(value => value.Kind == TweakOperationKind.ArrayReplacement) => ("Review: final array needs verification", "A complete array assignment is mixed with other changes"),
+            TweakOverlapKind.MixedArrayOperations => ("Review: duplicate count may change", "Guarded and unguarded additions use the same value"),
+            TweakOverlapKind.DuplicateMutation => ("Review: one value may be added twice", "Multiple unguarded additions use the same value"),
+            TweakOverlapKind.RecordDefinitionCollision => ("Review: same record is built differently", "Several mods construct the same record with different source"),
+            TweakOverlapKind.SourceArrayDependency => ("Review: copied array needs verification", "One mod copies an array that another mod changes"),
+            TweakOverlapKind.ComposableMutation when HasAddRemovePair(tweak) => ("No action: remove happens before add", "TweakXL's documented order decides membership"),
+            TweakOverlapKind.ComposableMutation when tweak.Operations.All(value => IsTweakAddition(value.Kind)) && tweak.Operations.Select(value => value.Value).Distinct(StringComparer.Ordinal).Count() == 1 && tweak.Operations.All(value => IsUniqueTweakAddition(value.Kind)) => ("No action: duplicate is prevented", "A uniqueness guard keeps one copy of the value"),
+            TweakOverlapKind.ComposableMutation when tweak.Operations.All(value => IsTweakAddition(value.Kind)) => ("No action: all additions apply", "The mods add different values"),
+            TweakOverlapKind.ComposableMutation => ("No action: array changes can coexist", "The mods change different array values"),
+            TweakOverlapKind.Redundant => ("No action: same declaration", "Every provider declares the same value"),
             _ => (null, null)
         };
+        return (result, proof, null, null);
     }
 
     private static EvidenceClassification ClassifyInteraction(InteractionFinding finding, InteractionLookup interactions)
@@ -373,6 +408,11 @@ public static class ConflictWorkQueueBuilder
         => tweak.Operations.Length > 1
             && tweak.Operations.All(value => value.Kind == TweakOperationKind.ArrayReplacement)
             && tweak.Operations.Select(value => value.Value).Distinct(StringComparer.Ordinal).Count() > 1;
+
+    private static bool HasIdenticalReplacementBodies(RedScriptFlowEvidence[] flows)
+        => flows.Length > 1
+            && flows.All(value => value.Kind == RedScriptFlowKind.Replace && value.BodySha256 is not null)
+            && flows.Select(value => value.BodySha256).Distinct(StringComparer.Ordinal).Count() == 1;
 
     private static bool HasDocumentedExclusiveMechanism(IEnumerable<RedScriptFlowEvidence> flows)
         => flows.Where(value => value.Kind == RedScriptFlowKind.Replace).Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;

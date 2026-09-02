@@ -15,9 +15,21 @@ This is a beta. Keep a backup and read the preview before changing archive order
 
 Conflict Studio does not decide that two mods are compatible or incompatible. A shared method or record is only a place to inspect. Compile results, the loaded game state, and an in-game reproduction still matter.
 
+## How to read code results
+
+- **Confirmed conflicts** identify one exact boundary where active changes cannot coexist.
+- **Needs review** identifies one unanswered question. It is not a compatibility verdict.
+- **No action / information** contains identical source, changes that can combine, and related targets that may matter only while troubleshooting.
+- File ownership proves which deployed file is selected. It does not prove that the selected file is the version you intended.
+- Competing values prove that active sources assign different values. They do not prove the final in-game value without a runtime observation.
+
+Conflict Studio can read literal CET callbacks and deployed DLL ownership. It does not resolve dynamically constructed CET callbacks or inspect native DLL hooks and internal behavior.
+
+See [CHANGELOG.md](CHANGELOG.md) for release changes.
+
 ## Install
 
-Download `Cyberpunk-Conflict-Studio-0.2.0-Nexus.zip` from Nexus Mods.
+Download `Cyberpunk-Conflict-Studio-0.3.0-Nexus.zip` from Nexus Mods.
 
 ### Vortex
 
@@ -45,10 +57,10 @@ Run `Conflict Studio\ConflictStudio.exe`, choose Manual, and select the Cyberpun
 The public package is a self-contained Windows x64 executable:
 
 ```powershell
-.\scripts\publish-win-x64.ps1 -Version 0.2.0
+.\scripts\publish-win-x64.ps1 -Version 0.3.0
 ```
 
-The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/0.2.0.json`.
+The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/0.3.0.json`.
 
 ## Credits
 

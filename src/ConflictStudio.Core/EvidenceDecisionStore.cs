@@ -17,6 +17,7 @@ public sealed class EvidenceDecisionStore
     private static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = false, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, WriteIndented = true };
     private readonly string _path;
     private readonly string _mutexName;
+    public string? LastRecoveryPath { get; private set; }
 
     public EvidenceDecisionStore(string directory)
     {
@@ -31,10 +32,26 @@ public sealed class EvidenceDecisionStore
     private EvidenceDecision[] LoadUnlocked()
     {
         if (!File.Exists(_path)) return [];
-        EvidenceDecisionDocument document = JsonSerializer.Deserialize<EvidenceDecisionDocument>(File.ReadAllText(_path), Options) ?? throw new EvidenceDecisionException("The decision document is empty.");
-        if (document.SchemaVersion != SchemaVersion || document.Decisions is null) throw new EvidenceDecisionException("The decision document has an unsupported schema.");
-        foreach (EvidenceDecision decision in document.Decisions) Validate(decision);
-        return document.Decisions;
+        try
+        {
+            EvidenceDecisionDocument document = JsonSerializer.Deserialize<EvidenceDecisionDocument>(File.ReadAllText(_path), Options) ?? throw new EvidenceDecisionException("The decision document is empty.");
+            if (document.SchemaVersion != SchemaVersion || document.Decisions is null) throw new EvidenceDecisionException("The decision document has an unsupported schema.");
+            foreach (EvidenceDecision decision in document.Decisions) Validate(decision);
+            return document.Decisions;
+        }
+        catch (Exception exception) when (exception is JsonException or EvidenceDecisionException)
+        {
+            LastRecoveryPath = PreserveInvalidFile();
+            return [];
+        }
+    }
+
+    private string PreserveInvalidFile()
+    {
+        string directory = Path.GetDirectoryName(_path)!;
+        string preserved = Path.Combine(directory, $"evidence-decisions.invalid-{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfffZ}-{Guid.NewGuid():N}.json");
+        File.Move(_path, preserved, false);
+        return preserved;
     }
 
     public void Save(IReadOnlyList<EvidenceDecision> decisions) => WithLock(() => SaveUnlocked(decisions));
@@ -107,7 +124,7 @@ public sealed class EvidenceDecisionStore
 
     private static void Validate(EvidenceDecision decision)
     {
-        if (decision is null || string.IsNullOrWhiteSpace(decision.ProfileName) || string.IsNullOrWhiteSpace(decision.Target) || decision.Providers is null || decision.Providers.Length == 0 || decision.Providers.Any(string.IsNullOrWhiteSpace) || string.IsNullOrWhiteSpace(decision.Rationale) || decision.ReviewedAtUtc.Offset != TimeSpan.Zero || decision.EvidenceSha256.Length != 64 || decision.EvidenceSha256.Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))) throw new EvidenceDecisionException("An evidence decision is invalid.");
+        if (decision is null || string.IsNullOrWhiteSpace(decision.ProfileName) || string.IsNullOrWhiteSpace(decision.Target) || decision.Providers is null || decision.Providers.Length == 0 || decision.Providers.Any(string.IsNullOrWhiteSpace) || string.IsNullOrWhiteSpace(decision.Rationale) || decision.ReviewedAtUtc.Offset != TimeSpan.Zero || string.IsNullOrWhiteSpace(decision.EvidenceSha256) || decision.EvidenceSha256.Length != 64 || decision.EvidenceSha256.Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))) throw new EvidenceDecisionException("An evidence decision is invalid.");
     }
 
     private static bool SameTarget(EvidenceDecision decision, string installationId, string profileName, ConflictSurface surface, string target, string[] providers)

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.2.0',
+    [string]$Version = '0.3.0',
     [string]$OutputRoot = (Join-Path $env:LOCALAPPDATA 'Cyberpunk Conflict Studio\releases'),
     [switch]$Force
 )
@@ -27,12 +27,12 @@ try {
     $appStage = Join-Path $stageRoot 'Conflict Studio'
     dotnet restore $appProject --runtime win-x64
     if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed.' }
-    dotnet restore $appProject --runtime win-x64
-    if ($LASTEXITCODE -ne 0) { throw 'Final App runtime restore failed.' }
     dotnet build $appProject --configuration Release --runtime win-x64 --self-contained true --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'dotnet build failed.' }
     node --check (Join-Path $repositoryRoot 'integrations\vortex\index.js')
     if ($LASTEXITCODE -ne 0) { throw 'Vortex bridge syntax validation failed.' }
+    node --check (Join-Path $repositoryRoot 'integrations\vortex\bridge.js')
+    if ($LASTEXITCODE -ne 0) { throw 'Vortex archive-order bridge syntax validation failed.' }
     $integrationRoot = Join-Path $repositoryRoot 'integrations'
     dotnet publish $appProject --configuration Release --runtime win-x64 --self-contained true --no-restore --output $appStage -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false
     if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed.' }
