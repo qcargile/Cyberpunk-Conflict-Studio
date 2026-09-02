@@ -43,12 +43,13 @@ public sealed record ProfileScanReceipt(
     ArchiveOrderEvidence? EditableArchiveOrderEvidence = null,
     ModManagerKind ManagerKind = ModManagerKind.Mo2,
     string? ManagerContextPath = null,
-    bool DeploymentFresh = true);
+    bool DeploymentFresh = true,
+    CodeCoverageReceipt? CodeCoverage = null);
 
 public static class ProfileScanCoordinator
 {
     private const int PackedAnalysisSchema = 1;
-    private const int CodeAnalysisSchema = 2;
+    private const int CodeAnalysisSchema = 3;
 
     public static ProfileScanReceipt Scan(string mo2Root, Mo2Profile profile, DateTimeOffset scannedAtUtc)
         => Scan(mo2Root, profile, scannedAtUtc, null, CancellationToken.None);
@@ -266,10 +267,11 @@ public static class ProfileScanCoordinator
             progress?.Report(new ScanProgress("effective source", 1, 2));
             VirtualFileShadowScanResult virtualShadowScan = VirtualFileShadowScanner.ScanManifest(prepared.FileManifest, prepared.DeployedWinners, excludedPhysicalPaths, cancellationToken);
             RedScriptFlowEvidence[] flows = RedScriptFlowEvidenceAnalyzer.Analyze(inventory.RedScripts);
-            SharedStateWriteFinding[] stateWrites = SharedStateWriteAnalyzer.Analyze(inventory.RedScripts, inventory.LuaSources);
+            SharedStateWrite[] runtimeWrites = SharedStateWriteAnalyzer.Collect(inventory.RedScripts, inventory.LuaSources);
+            SharedStateWriteFinding[] stateWrites = SharedStateWriteAnalyzer.Analyze(runtimeWrites);
             LuaCallbackEvidence[] callbacks = LuaCallbackEvidenceAnalyzer.Analyze(inventory.LuaSources);
             TweakAnalysisResult tweakAnalysis = TweakInteractionAnalyzer.AnalyzeDetailed(inventory.TweakSources);
-            InteractionFinding[] interactions = InteractionReportBuilder.Build(inventory, flows, callbacks, tweakAnalysis.Overlaps);
+            InteractionFinding[] interactions = InteractionReportBuilder.Build(inventory, flows, callbacks, tweakAnalysis.Overlaps, tweakAnalysis.Operations, runtimeWrites);
             int sourceItemCount = inventory.RedScripts.Length + inventory.LuaSources.Length + inventory.TweakSources.Length;
             phases.Add(new ScanPhaseMetric("effective source", phase.ElapsedMilliseconds, sourceItemCount));
             progress?.Report(new ScanProgress("effective source", 2, 2));
@@ -281,7 +283,8 @@ public static class ProfileScanCoordinator
             ArchiveXlOperationChain[] chains = ArchiveXlProviderChainAnalyzer.Group(archiveXlAnalysis.Operations);
             ArchiveXlSourceFailure[] xlFailures = archiveXlSources.Failures.Concat(archiveXlAnalysis.Failures).ToArray();
             SourceAnalysisFailure[] sourceFailures = inventory.Failures.Concat(tweakAnalysis.Failures).Concat(virtualShadowScan.Failures).ToArray();
-            code = new CodeProfileAnalysis(CodeAnalysisSchema, virtualShadowScan.Shadows, interactions, flows, stateWrites, callbacks, tweakAnalysis.Overlaps, chains, xlFailures, sourceFailures, sourceItemCount, archiveXlSources.Sources.Length);
+            CodeCoverageReceipt coverage = CodeCoverageReceipt.Build(inventory, callbacks, inventory.Failures.Concat(prepared.AdditionalFailures).ToArray(), archiveXlSources.Sources.Length);
+            code = new CodeProfileAnalysis(CodeAnalysisSchema, virtualShadowScan.Shadows, interactions, flows, stateWrites, callbacks, tweakAnalysis.Overlaps, chains, xlFailures, sourceFailures, sourceItemCount, archiveXlSources.Sources.Length, coverage);
             codeToCache = code;
             phases.Add(new ScanPhaseMetric("ArchiveXL", phase.ElapsedMilliseconds, code.ArchiveXlSourceCount));
         }
@@ -371,7 +374,8 @@ public static class ProfileScanCoordinator
             prepared.LegacyArchives.OrderEvidence,
             prepared.ManagerKind,
             prepared.ManagerContextPath,
-            prepared.DeploymentFresh);
+            prepared.DeploymentFresh,
+            codeResult.CodeCoverage);
     }
 
     private static string PackedCacheKey(PreparedProfileScan prepared, IReadOnlyList<string> exclusions)
@@ -421,7 +425,7 @@ public static class ProfileScanCoordinator
         }
 
         string[] relativeRoots = ["archive\\pc\\mod", "bin\\x64\\plugins", "engine\\config", "r6\\input", "r6\\scripts", "r6\\tweaks", "red4ext\\plugins"];
-        string[] sourceExtensions = [".reds", ".lua", ".yaml", ".yml", ".xl"];
+        string[] sourceExtensions = [".reds", ".lua", ".tweak", ".yaml", ".yml", ".xl"];
         Dictionary<string, List<DeploymentFileEntry>> candidates = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, DeploymentFileEntry> required = new(StringComparer.OrdinalIgnoreCase);
         foreach (DeploymentFileEnumerationFailure failure in manifest.Failures)

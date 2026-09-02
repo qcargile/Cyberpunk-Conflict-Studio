@@ -1016,6 +1016,8 @@ public partial class MainWindow : Window, IDisposable
 
     private void UpdateCodeCaseCounts(IReadOnlyList<ConflictWorkItem> items)
     {
+        CodeCoverageSummaryTextBlock.Text = CodeCoveragePresentation.Summary(_receipt);
+        CodeCoverageDetailsTextBlock.Text = CodeCoveragePresentation.Details(_receipt);
         CodeCaseCounts counts = CodeCaseWorkspace.Counts(items);
         AttentionCountTextBlock.Text = counts.ProvenConflicts.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ReviewCountTextBlock.Text = counts.NeedsDecision.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -1167,6 +1169,8 @@ public partial class MainWindow : Window, IDisposable
         LoadOrderOverviewBar.Entries = [];
         ConflictOverviewBar.Entries = [];
         SetOverviewSelection((string?)null);
+        CodeCoverageSummaryTextBlock.Text = CodeCoveragePresentation.Summary(null);
+        CodeCoverageDetailsTextBlock.Text = CodeCoveragePresentation.Details(null);
         AttentionCountTextBlock.Text = "0";
         ReviewCountTextBlock.Text = "0";
         ReviewedCountTextBlock.Text = "0";
@@ -1709,13 +1713,13 @@ public partial class MainWindow : Window, IDisposable
         }
         ArchiveOrderCloseDialog dialog = new(_workspace.CanApply) { Owner = this };
         dialog.ShowDialog();
-        ArchiveOrderCloseAction action = dialog.Action;
-        if (action == ArchiveOrderCloseAction.Cancel)
+        ArchivePendingCloseDisposition disposition = ArchivePendingClosePolicy.Resolve(dialog.Action);
+        if (disposition == ArchivePendingCloseDisposition.KeepOpen)
         {
             e.Cancel = true;
             return;
         }
-        if (action == ArchiveOrderCloseAction.DiscardAndClose)
+        if (disposition == ArchivePendingCloseDisposition.CloseNow)
         {
             RecordAction("archive-order-close", "discarded", "Unapplied archive order discarded on exit");
             _allowClose = true;

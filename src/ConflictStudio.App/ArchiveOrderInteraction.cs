@@ -122,3 +122,16 @@ public sealed class ArchiveOrderCloseDialog : Window
 }
 
 public enum ArchiveOrderCloseAction { ApplyAndClose, DiscardAndClose, Cancel }
+
+internal enum ArchivePendingCloseDisposition { CloseNow, KeepOpen, ApplyThenClose }
+
+internal static class ArchivePendingClosePolicy
+{
+    public static ArchivePendingCloseDisposition Resolve(ArchiveOrderCloseAction action)
+        => action switch
+        {
+            ArchiveOrderCloseAction.ApplyAndClose => ArchivePendingCloseDisposition.ApplyThenClose,
+            ArchiveOrderCloseAction.DiscardAndClose => ArchivePendingCloseDisposition.CloseNow,
+            _ => ArchivePendingCloseDisposition.KeepOpen
+        };
+}

@@ -1,18 +1,37 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.3.0',
+    [string]$Version = '0.4.0',
     [string]$OutputRoot = (Join-Path $env:LOCALAPPDATA 'Cyberpunk Conflict Studio\releases'),
-    [switch]$Force
+    [switch]$Force,
+    [string]$RepositoryRoot,
+    [scriptblock]$CommandRunner
 )
 
 $ErrorActionPreference = 'Stop'
-$repositoryRoot = Split-Path -Parent $PSScriptRoot
+$repositoryRoot = if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { Split-Path -Parent $PSScriptRoot } else { (Resolve-Path -LiteralPath $RepositoryRoot).Path }
+
+function Invoke-PublisherCommand {
+    param([string]$Command, [string[]]$Arguments)
+
+    if ($null -eq $CommandRunner) {
+        & $Command @Arguments | Out-Host
+        return [int]$LASTEXITCODE
+    }
+    $result = @(& $CommandRunner $Command ($Arguments -join "`n"))
+    if ($result.Count -eq 0 -or $result[-1] -isnot [int]) { throw 'CommandRunner must return a final integer exit code.' }
+    if ($result.Count -gt 1) { $result[0..($result.Count - 2)] | Out-Host }
+    return [int]$result[-1]
+}
 $metadataPath = Join-Path $repositoryRoot "release\$Version.json"
 $appProject = Join-Path $repositoryRoot 'src\ConflictStudio.App\ConflictStudio.App.csproj'
+$coreTests = Join-Path $repositoryRoot 'tests\ConflictStudio.Core.Tests\ConflictStudio.Core.Tests.csproj'
+$appTests = Join-Path $repositoryRoot 'tests\ConflictStudio.App.Tests\ConflictStudio.App.Tests.csproj'
 $packageRoot = Join-Path (Join-Path $OutputRoot $Version) 'win-x64'
 
 if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) { throw "Release metadata was not found: $metadataPath" }
 if (-not (Test-Path -LiteralPath $appProject -PathType Leaf)) { throw "Application project was not found: $appProject" }
+if (-not (Test-Path -LiteralPath $coreTests -PathType Leaf)) { throw "Core test project was not found: $coreTests" }
+if (-not (Test-Path -LiteralPath $appTests -PathType Leaf)) { throw "App test project was not found: $appTests" }
 $dirtyPaths = @(git -C $repositoryRoot status --porcelain --untracked-files=all)
 if ($LASTEXITCODE -ne 0) { throw 'Repository status could not be resolved.' }
 if ($dirtyPaths.Count -gt 0) { throw 'Release packages require a clean repository so sourceCommit identifies the packaged source exactly.' }
@@ -25,17 +44,16 @@ $stageRoot = Join-Path ([IO.Path]::GetTempPath()) "cyberpunk-conflict-studio-$Ve
 try {
     New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
     $appStage = Join-Path $stageRoot 'Conflict Studio'
-    dotnet restore $appProject --runtime win-x64
-    if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed.' }
-    dotnet build $appProject --configuration Release --runtime win-x64 --self-contained true --no-restore
-    if ($LASTEXITCODE -ne 0) { throw 'dotnet build failed.' }
+    if ((Invoke-PublisherCommand dotnet @('test', $coreTests, '--configuration', 'Release')) -ne 0) { throw 'Core regression tests failed.' }
+    if ((Invoke-PublisherCommand dotnet @('test', $appTests, '--configuration', 'Release')) -ne 0) { throw 'App regression tests failed.' }
+    if ((Invoke-PublisherCommand dotnet @('restore', $appProject, '--runtime', 'win-x64')) -ne 0) { throw 'dotnet restore failed.' }
+    if ((Invoke-PublisherCommand dotnet @('build', $appProject, '--configuration', 'Release', '--runtime', 'win-x64', '--self-contained', 'true', '--no-restore')) -ne 0) { throw 'dotnet build failed.' }
     node --check (Join-Path $repositoryRoot 'integrations\vortex\index.js')
     if ($LASTEXITCODE -ne 0) { throw 'Vortex bridge syntax validation failed.' }
     node --check (Join-Path $repositoryRoot 'integrations\vortex\bridge.js')
     if ($LASTEXITCODE -ne 0) { throw 'Vortex archive-order bridge syntax validation failed.' }
     $integrationRoot = Join-Path $repositoryRoot 'integrations'
-    dotnet publish $appProject --configuration Release --runtime win-x64 --self-contained true --no-restore --output $appStage -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false
-    if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed.' }
+    if ((Invoke-PublisherCommand dotnet @('publish', $appProject, '--configuration', 'Release', '--runtime', 'win-x64', '--self-contained', 'true', '--no-restore', '--output', $appStage, '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:EnableCompressionInSingleFile=true', '-p:PublishTrimmed=false')) -ne 0) { throw 'dotnet publish failed.' }
     $licenseStage = Join-Path $stageRoot 'Licenses'
     New-Item -ItemType Directory -Path $licenseStage -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination (Join-Path $licenseStage 'Conflict-Studio-LICENSE.txt')

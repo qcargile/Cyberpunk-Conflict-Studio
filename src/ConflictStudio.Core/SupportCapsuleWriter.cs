@@ -30,6 +30,14 @@ public static class SupportCapsuleWriter
         html.Append("<!doctype html><meta charset=\"utf-8\"><title>Conflict Studio casefile</title><style>body{font:14px system-ui;background:#111;color:#ddd;max-width:1100px;margin:40px auto}h1,h2{color:#fff}.item,details{border:1px solid #444;padding:12px;margin:8px 0}.muted{color:#aaa}code{overflow-wrap:anywhere}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #333;padding:7px;text-align:left}</style>");
         html.Append("<h1>Conflict Studio casefile</h1><p>Manager: ").Append(E(capsule.Evidence.ManagerKind.ToString())).Append(" · Profile: ").Append(E(capsule.Casefile.ProfileName)).Append("</p>");
         html.Append("<p class=\"muted\">Providers: ").Append(capsule.Summary.ActiveProviders).Append(" · Archives: ").Append(capsule.Summary.Archives).Append(" · Resource conflicts: ").Append(capsule.Summary.ResourceConflicts).Append(" · Source findings: ").Append(capsule.Summary.InteractionFindings).Append("</p>");
+        html.Append("<h2>Code coverage</h2>");
+        if (capsule.Evidence.CodeCoverage is { } coverage)
+        {
+            html.Append("<p>Effective files submitted to analysis: ").Append(E(string.Join(" · ", coverage.Sources.Select(value => $"{value.Surface}: {value.AnalyzedFiles}")))).Append("</p>");
+            html.Append("<p>Unsupported .tweak: ").Append(coverage.UnsupportedTweakFiles).Append(" · Unreadable inputs: ").Append(coverage.UnreadableInputs).Append(" · CET callbacks: ").Append(coverage.LiteralCallbacks).Append(" literal / ").Append(coverage.DynamicCallbacks).Append(" dynamic</p>");
+            foreach (string limitation in coverage.Limitations) html.Append("<p class=\"muted\">").Append(E(limitation)).Append("</p>");
+        }
+        else html.Append("<p>Coverage was not recorded in this receipt. Rescan to capture it.</p>");
         html.Append("<h2>Archive order</h2><ol>");
         foreach (string archive in capsule.Casefile.ArchiveOrder) html.Append("<li><code>").Append(E(archive)).Append("</code></li>");
         html.Append("</ol><h2>Scan metrics</h2>");
@@ -40,7 +48,7 @@ public static class SupportCapsuleWriter
             html.Append("</ul>");
         }
         html.Append("<h2>Work queue</h2>");
-        foreach (ConflictWorkItem item in capsule.WorkQueue) html.Append("<div class=\"item\"><strong>").Append(E(item.Target)).Append("</strong><p>").Append(E(item.State.ToString())).Append(" · ").Append(E(item.Classification.ToString())).Append(" · ").Append(E(item.Summary)).Append("</p><span class=\"muted\">").Append(E(string.Join(", ", item.Providers))).Append("</span><p>").Append(E(item.NextAction)).Append("</p></div>");
+        foreach (ConflictWorkItem item in capsule.WorkQueue) html.Append("<div class=\"item\"><strong>").Append(E(item.Target)).Append("</strong><p>").Append(E(item.State.ToString())).Append(" · ").Append(E(item.Classification.ToString())).Append(" · ").Append(E(item.Summary)).Append("</p><p>Proof: ").Append(E(item.ProofLabel)).Append("</p><p>Meaning: ").Append(E(item.MeaningLabel)).Append("</p><p>Boundary: ").Append(E(item.BoundaryLabel)).Append("</p><span class=\"muted\">").Append(E(string.Join(", ", item.Providers))).Append("</span><p>").Append(E(item.NextAction)).Append("</p></div>");
         html.Append("<h2>Reviewed decisions</h2>");
         foreach (EvidenceDecision decision in capsule.Decisions) html.Append("<div class=\"item\"><strong>").Append(E(decision.Target)).Append("</strong><p>").Append(E(decision.Rationale)).Append("</p><code>").Append(E(decision.EvidenceSha256)).Append("</code></div>");
         html.Append("<h2>Diagnostics</h2>");
@@ -68,16 +76,28 @@ public static class SupportCapsuleWriter
             html.Append("</details>");
         }
         html.Append("<h2>RedScript flow evidence</h2>");
+        foreach (InteractionFinding finding in capsule.Casefile.Findings)
+            foreach (RedScriptFieldDeclaration declaration in finding.DeclarationEvidence ?? [])
+                html.Append("<p><code>").Append(E(finding.Target)).Append(" · ").Append(E(declaration.Provider)).Append(" · addField · ").Append(E(declaration.Type)).Append(" · ").Append(E(declaration.FilePath)).Append(':').Append(declaration.Line).Append("</code></p>");
         foreach (RedScriptFlowEvidence flow in capsule.Evidence.RedScriptFlows) html.Append("<p><code>").Append(E(flow.Target)).Append(" · ").Append(E(flow.Provider)).Append(" · ").Append(E(flow.Kind.ToString())).Append(" · ").Append(E(flow.Continuation.ToString())).Append(" · ").Append(E(flow.SourceHash)).Append("</code></p>");
         html.Append("<h2>Shared state evidence</h2>");
         foreach (SharedStateWriteFinding finding in capsule.Evidence.SharedStateWrites) foreach (SharedStateWrite write in finding.Writes) html.Append("<p><code>").Append(E(finding.Surface.ToString())).Append(" · ").Append(E(finding.Target)).Append(" · ").Append(E(write.Provider)).Append(" · ").Append(E(write.FilePath)).Append(':').Append(write.Line).Append("</code></p>");
         html.Append("<h2>CET Lua evidence</h2>");
         foreach (LuaCallbackEvidence callback in capsule.Evidence.LuaCallbacks) html.Append("<p><code>").Append(E(callback.Target)).Append(" · ").Append(E(callback.Kind.ToString())).Append(" · ").Append(E(callback.Continuation.ToString())).Append(" · ").Append(E(callback.SourceHash)).Append("</code></p>");
         html.Append("<h2>TweakXL evidence</h2>");
+        foreach (InteractionFinding finding in capsule.Casefile.Findings.Where(value => value.TweakRuntimeEvidence is not null))
+        {
+            html.Append("<details><summary>").Append(E(finding.Target)).Append(" · declarative/runtime shared target</summary>");
+            foreach (TweakOperation declaration in finding.TweakRuntimeEvidence!.Declarations)
+                html.Append("<p><code>").Append(E(declaration.Provider)).Append(" · ").Append(E(declaration.Kind.ToString())).Append(" · ").Append(E(declaration.Value)).Append(" · ").Append(E(declaration.FilePath)).Append(':').Append(declaration.LineNumber).Append("</code></p>");
+            foreach (SharedStateWrite write in finding.TweakRuntimeEvidence.Writes)
+                html.Append("<p><code>").Append(E(write.Provider)).Append(" · ").Append(E(write.Evidence)).Append(" · ").Append(E(write.FilePath)).Append(':').Append(write.Line).Append(" · ").Append(E(write.CallSha256 ?? write.SourceHash)).Append("</code></p>");
+            html.Append("</details>");
+        }
         foreach (TweakOverlap overlap in capsule.Evidence.TweakOverlaps)
         {
             html.Append("<details><summary>").Append(E(overlap.Target)).Append(" · ").Append(E(overlap.Kind.ToString())).Append("</summary>");
-            foreach (TweakOperation operation in overlap.Operations) html.Append("<p><code>").Append(E(operation.Provider)).Append(" · ").Append(E(operation.Kind.ToString())).Append(" · ").Append(E(operation.Value)).Append(" · ").Append(E(operation.FilePath)).Append(':').Append(operation.LineNumber).Append("</code></p>");
+            foreach (TweakOperation operation in overlap.Operations) html.Append("<p><code>").Append(E(operation.Provider)).Append(" · ").Append(E(operation.Target)).Append(" · ").Append(E(operation.Kind.ToString())).Append(" · ").Append(E(operation.Value)).Append(" · ").Append(E(operation.FilePath)).Append(':').Append(operation.LineNumber).Append("</code></p>");
             html.Append("</details>");
         }
         html.Append("<h2>ArchiveXL evidence</h2>");

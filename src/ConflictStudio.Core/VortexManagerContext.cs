@@ -139,7 +139,7 @@ public static class VortexManagerContextStore
         if (context.ArchiveOrder.Any(string.IsNullOrWhiteSpace) || context.ArchiveOrderSha256 is not null && !IsSha256(context.ArchiveOrderSha256)) throw new InvalidDataException("The Vortex archive order context is invalid.");
     }
 
-    private static string ComputeContextId(VortexManagerContext context)
+    internal static string ComputeContextId(VortexManagerContext context)
     {
         using MemoryStream content = new();
         using (Utf8JsonWriter writer = new(content, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))

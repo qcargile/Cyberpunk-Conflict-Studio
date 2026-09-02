@@ -352,7 +352,7 @@ public static class RedScriptFlowEvidenceAnalyzer
 
 public enum SharedStateSurface { TweakDb, Blackboard, StatusEffect, StatPool, Persistence }
 
-public sealed record SharedStateWrite(string Provider, string FilePath, SharedStateSurface Surface, string Target, int Line, string Operation = "", string Evidence = "", string SourceHash = "");
+public sealed record SharedStateWrite(string Provider, string FilePath, SharedStateSurface Surface, string Target, int Line, string Operation = "", string Evidence = "", string SourceHash = "", string? CallSha256 = null);
 
 public sealed record SharedStateWriteFinding(
     SharedStateSurface Surface,
@@ -363,19 +363,28 @@ public sealed record SharedStateWriteFinding(
 
 public static class SharedStateWriteAnalyzer
 {
-    private static readonly Regex TweakDb = new("\\b(?:TweakDBInterface|TweakDB)(?:\\.|:)(?:SetFlat|SetFlatNoUpdate)\\s*\\(\\s*t?[\"'](?<target>[^\"']+)[\"']", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex TweakDb = new("\\b(?<receiver>TweakDBInterface|TweakDBManager|TweakDB)(?:\\.|:)(?<operation>SetFlat|SetFlatNoUpdate)\\s*\\(\\s*(?<prefix>[tn])?(?<quote>[\"'])(?<target>[^\"'\\\\\\r\\n]+)\\k<quote>(?=\\s*,)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex Blackboard = new("\\b[A-Za-z_][A-Za-z0-9_]*(?:\\.|:)(?:SetBool|SetInt|SetFloat|SetName|SetString|SetVariant|SetEntity|SetVector|SetUint|SetUInt)\\s*\\(\\s*(?<target>GetAllBlackboardDefs\\(\\)\\.[A-Za-z_][A-Za-z0-9_.]*)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex StatusEffect = new("\\b(?:StatusEffectHelper|[A-Za-z_][A-Za-z0-9_]*)(?:\\.|:)(?:ApplyStatusEffect|RemoveStatusEffect)\\s*\\(\\s*[^,\\r\\n]+,\\s*t?[\"'](?<target>[^\"']+)[\"']", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex StatPool = new("\\b[A-Za-z_][A-Za-z0-9_]*(?:\\.|:)(?:RequestChangingStatPoolValue|RequestSettingStatPoolValue)\\s*\\(\\s*[^,\\r\\n]+,\\s*gamedataStatPoolType\\.(?<target>[A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex Persistence = new("\\b[A-Za-z_][A-Za-z0-9_]*(?:\\.|:)(?:SetFactStr|SetFactValue|SetQuestFact)\\s*\\(\\s*n?[\"'](?<target>[^\"']+)[\"']", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static SharedStateWriteFinding[] Analyze(IReadOnlyList<RedScriptSource> redScripts, IReadOnlyList<LuaSource> luaSources)
+        => Analyze(Collect(redScripts, luaSources));
+
+    public static SharedStateWrite[] Collect(IReadOnlyList<RedScriptSource> redScripts, IReadOnlyList<LuaSource> luaSources)
     {
         ArgumentNullException.ThrowIfNull(redScripts);
         ArgumentNullException.ThrowIfNull(luaSources);
         List<SharedStateWrite> writes = [];
-        foreach (RedScriptSource source in redScripts) Extract(source.Provider, source.FilePath, SourceTextMask.RedScript(source.Text, false), SourceHash(source.Text), writes);
-        foreach (LuaSource source in luaSources) Extract(source.Provider, source.FilePath, SourceTextMask.Lua(source.Text), SourceHash(source.Text), writes);
+        foreach (RedScriptSource source in RedScriptConditionalSourceFilter.Filter(redScripts)) Extract(source.Provider, source.FilePath, SourceTextMask.RedScript(source.Text, false), SourceTextMask.RedScript(source.Text, true), writes);
+        foreach (LuaSource source in luaSources) Extract(source.Provider, source.FilePath, SourceTextMask.Lua(source.Text), SourceTextMask.Lua(source.Text, true), writes, lua: true);
+        return writes.ToArray();
+    }
+
+    public static SharedStateWriteFinding[] Analyze(IReadOnlyList<SharedStateWrite> writes)
+    {
+        ArgumentNullException.ThrowIfNull(writes);
         return writes.GroupBy(value => (value.Surface, value.Target))
             .Where(group => group.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
             .Select(group => new SharedStateWriteFinding(group.Key.Surface, group.Key.Target, EvidenceConfidence.Literal, EvidenceImpact.Review, group.ToArray()))
@@ -384,25 +393,47 @@ public static class SharedStateWriteAnalyzer
             .ToArray();
     }
 
-    private static void Extract(string provider, string filePath, string text, string sourceHash, List<SharedStateWrite> writes)
+    private static void Extract(string provider, string filePath, string text, string syntax, List<SharedStateWrite> writes, bool lua = false)
     {
-        Extract(TweakDb, SharedStateSurface.TweakDb, provider, filePath, text, sourceHash, writes);
-        Extract(Blackboard, SharedStateSurface.Blackboard, provider, filePath, text, sourceHash, writes);
-        Extract(StatusEffect, SharedStateSurface.StatusEffect, provider, filePath, text, sourceHash, writes);
-        Extract(StatPool, SharedStateSurface.StatPool, provider, filePath, text, sourceHash, writes);
-        Extract(Persistence, SharedStateSurface.Persistence, provider, filePath, text, sourceHash, writes);
+        string sourceHash = SemanticEvidence.Sha256(text);
+        Extract(TweakDb, SharedStateSurface.TweakDb, provider, filePath, text, syntax, sourceHash, writes, lua);
+        Extract(Blackboard, SharedStateSurface.Blackboard, provider, filePath, text, syntax, sourceHash, writes);
+        Extract(StatusEffect, SharedStateSurface.StatusEffect, provider, filePath, text, syntax, sourceHash, writes);
+        Extract(StatPool, SharedStateSurface.StatPool, provider, filePath, text, syntax, sourceHash, writes);
+        Extract(Persistence, SharedStateSurface.Persistence, provider, filePath, text, syntax, sourceHash, writes);
     }
 
-    private static void Extract(Regex pattern, SharedStateSurface surface, string provider, string filePath, string text, string sourceHash, List<SharedStateWrite> writes)
+    private static void Extract(Regex pattern, SharedStateSurface surface, string provider, string filePath, string text, string syntax, string sourceHash, List<SharedStateWrite> writes, bool lua = false)
     {
         foreach (Match match in pattern.Matches(text))
         {
+            if (syntax[match.Index] != text[match.Index]) continue;
+            if (surface == SharedStateSurface.TweakDb)
+            {
+                if (lua && match.Groups["prefix"].Success) continue;
+                if (match.Groups["prefix"].Value == "n" && (match.Groups["receiver"].Value != "TweakDBManager" || match.Groups["operation"].Value != "SetFlat")) continue;
+                int receiver = match.Index - 1;
+                while (receiver >= 0 && char.IsWhiteSpace(syntax[receiver])) receiver--;
+                if (receiver >= 0 && syntax[receiver] is '.' or ':') continue;
+            }
             string operation = Regex.Match(match.Value, "(?:\\.|:)(?<operation>[A-Za-z_][A-Za-z0-9_]*)\\s*\\(").Groups["operation"].Value;
-            writes.Add(new SharedStateWrite(provider, filePath, surface, match.Groups["target"].Value, RedScriptFlowEvidenceAnalyzer.LineAt(text, match.Index), operation, Regex.Replace(match.Value, "\\s+", " ").Trim(), sourceHash));
+            int end = surface == SharedStateSurface.TweakDb ? CallEnd(syntax, syntax.IndexOf('(', match.Index)) : -1;
+            string evidence = surface == SharedStateSurface.TweakDb ? SemanticEvidence.Normalize(end < 0 ? match.Value : text[match.Index..(end + 1)]) : Regex.Replace(match.Value, "\\s+", " ").Trim();
+            writes.Add(new SharedStateWrite(provider, filePath, surface, match.Groups["target"].Value, RedScriptFlowEvidenceAnalyzer.LineAt(text, match.Index), operation, evidence, sourceHash, end < 0 ? null : SemanticEvidence.Sha256(evidence)));
         }
     }
 
-    private static string SourceHash(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+    private static int CallEnd(string syntax, int opening)
+    {
+        if (opening < 0) return -1;
+        int depth = 0;
+        for (int index = opening; index < syntax.Length; index++)
+        {
+            if (syntax[index] == '(') depth++;
+            else if (syntax[index] == ')' && --depth == 0) return index;
+        }
+        return -1;
+    }
 }
 
 public enum LuaCallbackEvidenceKind { Observe, ObserveBefore, ObserveAfter, Override, Lifecycle }
@@ -435,9 +466,11 @@ public static class LuaCallbackEvidenceAnalyzer
         {
             LuaSource source = group.First();
             string code = SourceTextMask.Lua(source.Text);
+            string structure = SourceTextMask.Lua(source.Text, true);
             LuaSourceCopy[] copies = group.Select(value => new LuaSourceCopy(value.Provider, value.FilePath)).ToArray();
             foreach (Match match in Lifecycle.Matches(code))
             {
+                if (structure[match.Index] != code[match.Index]) continue;
                 (string target, bool literal) = Target(match.Groups["event"].Value);
                 evidence.Add(new LuaCallbackEvidence(LuaCallbackEvidenceKind.Lifecycle, target, literal ? EvidenceConfidence.Literal : EvidenceConfidence.Dynamic, EvidenceImpact.None, LuaContinuationEvidence.NotApplicable, RedScriptFlowEvidenceAnalyzer.LineAt(source.Text, match.Index), group.Key, copies));
             }
@@ -484,6 +517,14 @@ internal static class SemanticEvidence
                 else if (current == quote) quote = '\0';
                 continue;
             }
+            if (SourceTextMask.LuaLongStringEnd(value, index) is int longEnd)
+            {
+                if (whitespace && result.Length > 0) result.Append(' ');
+                whitespace = false;
+                result.Append(value.AsSpan(index, longEnd - index));
+                index = longEnd - 1;
+                continue;
+            }
             if (current is '\'' or '"')
             {
                 if (whitespace && result.Length > 0) result.Append(' ');
@@ -505,6 +546,17 @@ internal static class SemanticEvidence
 
 internal static class SourceTextMask
 {
+    internal static int? LuaLongStringEnd(string text, int start)
+    {
+        if (start >= text.Length || text[start] != '[') return null;
+        int openingEnd = start + 1;
+        while (openingEnd < text.Length && text[openingEnd] == '=') openingEnd++;
+        if (openingEnd >= text.Length || text[openingEnd] != '[') return null;
+        string closing = "]" + text[(start + 1)..openingEnd] + "]";
+        int closingStart = text.IndexOf(closing, openingEnd + 1, StringComparison.Ordinal);
+        return closingStart < 0 ? text.Length : closingStart + closing.Length;
+    }
+
     public static string RedScript(string text, bool maskStrings) => Mask(text, false, maskStrings);
 
     public static string Lua(string text) => Mask(text, true, false);
@@ -558,6 +610,16 @@ internal static class SourceTextMask
             {
                 quote = current;
                 if (maskStrings) result[index] = ' ';
+                continue;
+            }
+
+            bool longComment = lua && current == '-' && next == '-';
+            if (lua && LuaLongStringEnd(text, longComment ? index + 2 : index) is int longEnd)
+            {
+                if (longComment || maskStrings)
+                    for (int position = index; position < longEnd; position++)
+                        if (text[position] is not '\r' and not '\n') result[position] = ' ';
+                index = longEnd - 1;
                 continue;
             }
 

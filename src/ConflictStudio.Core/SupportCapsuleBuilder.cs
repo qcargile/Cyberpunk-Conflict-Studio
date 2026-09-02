@@ -19,7 +19,8 @@ public sealed record SupportEvidence(
     ResourcePathIndexEvidence? ResourcePathIndexEvidence = null,
     RdarArchiveWarning[]? ArchiveWarnings = null,
     ModManagerKind ManagerKind = ModManagerKind.Mo2,
-    bool DeploymentFresh = true);
+    bool DeploymentFresh = true,
+    CodeCoverageReceipt? CodeCoverage = null);
 
 public sealed record SupportCapsule(int SchemaVersion, ConflictCasefile Casefile, ConflictWorkItem[] WorkQueue, SupportEvidence Evidence, EvidenceDecision[] Decisions, RuntimeProbeManifest Probes, SupportCapsuleSummary Summary);
 
@@ -48,9 +49,9 @@ public static class SupportCapsuleBuilder
         SourceAnalysisFailure[] sourceFailures = (receipt.SourceFailures ?? []).Select(value => value with { FilePath = PrivatePathRedactor.RelativeLabel(value.FilePath), Message = PrivatePathRedactor.Redact(value.Message) }).ToArray();
         ArchiveOrderEvidence? archiveOrderEvidence = receipt.ArchiveOrderEvidence is null ? null : receipt.ArchiveOrderEvidence with { SourcePath = null, SourcePaths = [], SourceFingerprints = [], AbsentSources = [], Message = PrivatePathRedactor.Redact(receipt.ArchiveOrderEvidence.Message) };
         ResourcePathIndexEvidence? resourcePathIndexEvidence = receipt.ResourcePathIndexEvidence is null ? null : receipt.ResourcePathIndexEvidence with { SourcePath = null, Message = PrivatePathRedactor.Redact(receipt.ResourcePathIndexEvidence.Message) };
-        SupportEvidence evidence = new(archiveFailures, shadows, receipt.RedScriptFlows, receipt.SharedStateWrites, receipt.LuaCallbacks, receipt.TweakOverlaps, receipt.ArchiveXlChains, archiveXlFailures, sourceFailures, receipt.Metrics, receipt.InstallationId, archiveSummaries, archiveOrderEvidence, resourcePathIndexEvidence, archiveWarnings, receipt.ManagerKind, receipt.DeploymentFresh);
+        SupportEvidence evidence = new(archiveFailures, shadows, receipt.RedScriptFlows, receipt.SharedStateWrites, receipt.LuaCallbacks, receipt.TweakOverlaps, receipt.ArchiveXlChains, archiveXlFailures, sourceFailures, receipt.Metrics, receipt.InstallationId, archiveSummaries, archiveOrderEvidence, resourcePathIndexEvidence, archiveWarnings, receipt.ManagerKind, receipt.DeploymentFresh, receipt.CodeCoverage);
         RuntimeProbeManifest probes = RuntimeProbeManifestBuilder.Build(receipt);
         SupportCapsuleSummary summary = new(receipt.ActiveProviders.Length, receipt.ArchiveOrder.Length, receipt.ArchiveFailures.Length, receipt.ResourceConflicts.Length, receipt.VirtualFileShadows.Length, receipt.InteractionFindings.Length, profileDecisions.Length, probes.Requests.Length);
-        return PrivatePathRedactor.RedactObject(new SupportCapsule(3, casefile, workQueue, evidence, profileDecisions, probes, summary));
+        return PrivatePathRedactor.RedactObject(new SupportCapsule(4, casefile, workQueue, evidence, profileDecisions, probes, summary));
     }
 }

@@ -6,49 +6,82 @@ internal static class RedScriptConditionalSourceFilter
 {
     private static readonly Regex Module = new("^\\s*module\\s+(?<name>[A-Za-z_][A-Za-z0-9_.]*)", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline);
     private static readonly Regex Term = new("^\\s*(?<not>!)?\\s*ModuleExists\\s*\\(\\s*[\"'](?<name>[^\"']+)[\"']\\s*\\)\\s*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex Annotation = new("^\\s*@", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex Condition = new("@if(?:Not)?\\s*\\(", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex Import = new("import\\b[^;\\r\\n]*;?", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex DeclarationStart = new("^[ \\t]*(?:@|(?:[A-Za-z_][A-Za-z0-9_]*[ \\t]+)*(?:func|class|struct|enum|let|import)\\b)", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline);
 
     public static RedScriptSource[] Filter(IReadOnlyList<RedScriptSource> sources)
     {
         ArgumentNullException.ThrowIfNull(sources);
         HashSet<string> modules = sources.SelectMany(source => Module.Matches(SourceTextMask.RedScript(source.Text, false)).Select(match => match.Groups["name"].Value)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return sources.Select(source => source with { Text = Filter(source.Text, modules) }).ToArray();
+        return sources.Select(source => source with { Text = FilterBodies(source.Text, modules) }).ToArray();
+    }
+
+    private static string FilterBodies(string text, HashSet<string> modules)
+    {
+        string semantic = SourceTextMask.RedScript(text, false);
+        string syntax = SourceTextMask.RedScript(text, true);
+        char[] result = text.ToCharArray();
+        foreach ((int start, int conditionEnd, bool? active) in Conditions(semantic, syntax, modules))
+        {
+            int end = active == true ? conditionEnd : DeclarationEnd(syntax, conditionEnd);
+            for (int index = start; index < end; index++)
+                if (result[index] is not '\r' and not '\n') result[index] = ' ';
+        }
+        return new string(result);
+    }
+
+    private static int DeclarationEnd(string syntax, int start)
+    {
+        int index = start;
+        while (index < syntax.Length)
+        {
+            if (char.IsWhiteSpace(syntax[index])) { index++; continue; }
+            if (syntax[index] != '@') break;
+            while (index < syntax.Length && syntax[index] != '(') index++;
+            int parentheses = 0;
+            while (index < syntax.Length)
+            {
+                char token = syntax[index++];
+                if (token == '(') parentheses++;
+                else if (token == ')' && --parentheses == 0) break;
+            }
+        }
+        Match import = Import.Match(syntax, index);
+        if (import.Success && import.Index == index) return index + import.Length;
+        Match declaration = Regex.Match(syntax[index..], "\\b(?:func|class|struct|enum|let)\\b", RegexOptions.CultureInvariant);
+        int nextLine = syntax.IndexOf('\n', index + (declaration.Success ? declaration.Index + declaration.Length : 0));
+        Match nextDeclaration = nextLine < 0 ? Match.Empty : DeclarationStart.Match(syntax, nextLine + 1);
+        int declarationLimit = nextDeclaration.Success ? nextDeclaration.Index : syntax.Length;
+        while (index < declarationLimit && syntax[index] is not '{' and not ';') index++;
+        if (index == declarationLimit) return index;
+        if (syntax[index] == ';') return index + 1;
+        int braces = 0;
+        while (index < syntax.Length)
+        {
+            char token = syntax[index++];
+            if (token == '{') braces++;
+            else if (token == '}' && --braces == 0) return index;
+        }
+        return index;
     }
 
     public static SourceAnalysisFailure[] Failures(IReadOnlyList<RedScriptSource> sources)
     {
         ArgumentNullException.ThrowIfNull(sources);
         HashSet<string> modules = sources.SelectMany(source => Module.Matches(SourceTextMask.RedScript(source.Text, false)).Select(match => match.Groups["name"].Value)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return sources.Where(source => SourceTextMask.RedScript(source.Text, false).Split('\n').Any(line => TryCondition(line, modules, out bool? active, out _) && active is null))
+        return sources.Where(source => Conditions(SourceTextMask.RedScript(source.Text, false), SourceTextMask.RedScript(source.Text, true), modules).Any(condition => condition.Active is null))
             .Select(source => new SourceAnalysisFailure(source.Provider, source.FilePath, "RedScript condition", "At least one RedScript @if condition could not be evaluated, so guarded declarations in this file were excluded from conflict claims."))
             .ToArray();
     }
 
-    private static string Filter(string text, HashSet<string> modules)
+    private static IEnumerable<(int Start, int End, bool? Active)> Conditions(string semantic, string syntax, HashSet<string> modules)
     {
-        string[] lines = text.Split('\n');
-        string[] maskedLines = SourceTextMask.RedScript(text, false).Split('\n');
-        bool hasPending = false;
-        bool? pendingActive = null;
-        for (int index = 0; index < lines.Length; index++)
+        foreach (Match condition in Condition.Matches(semantic))
         {
-            if (TryCondition(maskedLines[index], modules, out bool? active, out int conditionEnd))
-            {
-                string rest = maskedLines[index][conditionEnd..];
-                if (Annotation.IsMatch(rest)) lines[index] = active == true ? new string(' ', conditionEnd) + rest : new string(' ', lines[index].Length);
-                else if (string.IsNullOrWhiteSpace(rest))
-                {
-                    hasPending = true;
-                    pendingActive = active;
-                }
-                continue;
-            }
-            if (!hasPending || string.IsNullOrWhiteSpace(maskedLines[index])) continue;
-            if (Annotation.IsMatch(maskedLines[index]) && pendingActive != true) lines[index] = new string(' ', lines[index].Length);
-            hasPending = false;
-            pendingActive = null;
+            if (syntax[condition.Index] == '@' && TryCondition(semantic[condition.Index..], modules, out bool? active, out int conditionEnd))
+                yield return (condition.Index, condition.Index + conditionEnd, active);
         }
-        return string.Join('\n', lines);
     }
 
     private static bool TryCondition(string line, HashSet<string> modules, out bool? active, out int end)

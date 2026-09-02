@@ -10,7 +10,7 @@ public sealed record DeploymentFileEnumerationFailure(string Provider, string Pa
 public sealed class DeploymentFileManifest
 {
     private static readonly string[] Lanes = ["archive\\pc\\mod", "bin\\x64\\plugins", "engine\\config", "r6\\input", "r6\\scripts", "r6\\tweaks", "red4ext\\plugins"];
-    private static readonly HashSet<string> TextExtensions = new([".reds", ".lua", ".yaml", ".yml", ".xl", ".json"], StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> TextExtensions = new([".reds", ".lua", ".tweak", ".yaml", ".yml", ".xl", ".json"], StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, CapturedContent> _content = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ProfileFileSnapshot> _fingerprints = new(StringComparer.OrdinalIgnoreCase);
 

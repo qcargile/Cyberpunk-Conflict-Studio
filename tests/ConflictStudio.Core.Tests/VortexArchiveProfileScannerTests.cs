@@ -1,0 +1,127 @@
+using ConflictStudio.Core;
+using System.IO;
+using System.Security.Cryptography;
+
+namespace ConflictStudio.Core.Tests;
+
+[TestClass]
+public sealed class VortexArchiveProfileScannerTests
+{
+    private static readonly string[] ExpectedOrder = ["Beta.archive", "Shared.archive", "Alpha.archive", "Manual.archive"];
+
+    [TestMethod]
+    public void ScanUsesStagingProvidersDeploymentWinnersAndGameOrderFile()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-vortex-archives-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string game = Path.Combine(root, "game");
+            string staging = Path.Combine(root, "staging");
+            string alpha = Path.Combine(staging, "Alpha");
+            string beta = Path.Combine(staging, "Beta");
+            WriteArchive(alpha, "Alpha.archive", "alpha");
+            WriteArchive(alpha, "Shared.archive", "alpha shared");
+            WriteArchive(beta, "Beta.archive", "beta");
+            WriteArchive(beta, "Shared.archive", "beta shared");
+            WriteArchive(game, "Manual.archive", "manual");
+            string orderPath = Path.Combine(game, "archive", "pc", "mod", "modlist.txt");
+            File.WriteAllText(orderPath, $"{ExpectedOrder[0]}\nhelper.archive.xl\n{string.Join('\n', ExpectedOrder[1..])}\n");
+            string orderHash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(orderPath)));
+            Dictionary<string, string> winners = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["archive\\pc\\mod\\Alpha.archive"] = "alpha",
+                ["archive\\pc\\mod\\Beta.archive"] = "beta",
+                ["archive\\pc\\mod\\Shared.archive"] = "beta"
+            };
+            VortexManagerContext context = new(1, new string('a', 64), DateTimeOffset.UtcNow, "profile", "Standard", game, staging, true, [new("alpha", "Alpha", alpha, 0), new("beta", "Beta", beta, 1)], winners, ExpectedOrder, orderHash);
+
+            Mo2ArchiveProfile profile = VortexArchiveProfileScanner.Scan(context);
+
+            CollectionAssert.AreEqual(ExpectedOrder, profile.EffectiveOrder);
+            Assert.AreEqual("Beta", profile.Archives.Single(value => value.ArchiveName == "Shared.archive").Provider);
+            Assert.AreEqual(ArchiveOrderEvidenceKind.ManagedModlist, profile.OrderEvidence!.Kind);
+            Assert.AreEqual("Vortex", profile.OrderEvidence.Provider);
+            Assert.AreEqual(Path.GetFullPath(orderPath), profile.OrderEvidence.SourcePath);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void ScanMarksAStaleBridgeOrderUnresolved()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-vortex-stale-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string game = Path.Combine(root, "game");
+            string staging = Path.Combine(root, "staging");
+            string alpha = Path.Combine(staging, "Alpha");
+            WriteArchive(alpha, "Alpha.archive", "alpha");
+            string orderPath = Path.Combine(game, "archive", "pc", "mod", "modlist.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(orderPath)!);
+            File.WriteAllText(orderPath, "Alpha.archive\n");
+            Dictionary<string, string> winners = new(StringComparer.OrdinalIgnoreCase) { ["archive\\pc\\mod\\Alpha.archive"] = "alpha" };
+            VortexManagerContext context = new(1, new string('a', 64), DateTimeOffset.UtcNow, "profile", "Standard", game, staging, true, [new("alpha", "Alpha", alpha, 0)], winners, ["Alpha.archive"], new string('b', 64));
+
+            Mo2ArchiveProfile profile = VortexArchiveProfileScanner.Scan(context);
+
+            Assert.AreEqual(ArchiveOrderEvidenceKind.Unresolved, profile.OrderEvidence!.Kind);
+            StringAssert.Contains(profile.OrderEvidence.Message, "changed after Vortex exported");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void ScanBuildsARepairDraftFromAnIncompleteDeployedOrder()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-vortex-repair-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string game = Path.Combine(root, "game");
+            string staging = Path.Combine(root, "staging");
+            string provider = Path.Combine(staging, "Provider");
+            WriteArchive(provider, "Alpha.archive", "alpha");
+            WriteArchive(provider, "Beta.archive", "beta");
+            WriteArchive(provider, "Gamma.archive", "gamma");
+            string orderPath = Path.Combine(game, "archive", "pc", "mod", "modlist.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(orderPath)!);
+            File.WriteAllText(orderPath, "Beta.archive\nstale.archive\nBeta.archive\nAlpha.archive\n");
+            string orderHash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(orderPath)));
+            Dictionary<string, string> winners = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["archive\\pc\\mod\\Alpha.archive"] = "provider",
+                ["archive\\pc\\mod\\Beta.archive"] = "provider",
+                ["archive\\pc\\mod\\Gamma.archive"] = "provider"
+            };
+            VortexManagerContext context = new(1, new string('a', 64), DateTimeOffset.UtcNow, "profile", "Standard", game, staging, true, [new("provider", "Provider", provider, 0)], winners, [], orderHash);
+
+            Mo2ArchiveProfile profile = VortexArchiveProfileScanner.Scan(context);
+            string[] repaired = ["Beta.archive", "Alpha.archive", "Gamma.archive"];
+            string[] missing = ["Gamma.archive"];
+            string[] duplicates = ["Beta.archive"];
+            string[] ignored = ["stale.archive"];
+
+            CollectionAssert.AreEqual(repaired, profile.EffectiveOrder);
+            CollectionAssert.AreEqual(missing, profile.OrderEvidence!.MissingEntries);
+            CollectionAssert.AreEqual(duplicates, profile.OrderEvidence.DuplicateEntries);
+            CollectionAssert.AreEqual(ignored, profile.OrderEvidence.IgnoredEntries);
+            Assert.AreEqual(ArchiveOrderEvidenceKind.Unresolved, profile.OrderEvidence.Kind);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    private static void WriteArchive(string root, string name, string text)
+    {
+        string directory = Path.Combine(root, "archive", "pc", "mod");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, name), text);
+    }
+}

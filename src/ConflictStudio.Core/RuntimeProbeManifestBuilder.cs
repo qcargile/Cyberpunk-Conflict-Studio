@@ -1,8 +1,14 @@
+using System.Text.Json.Serialization;
+
 namespace ConflictStudio.Core;
 
 public enum RuntimeProbeKind { ProviderPresence, PostInitializationTweakValue, CallbackDelivery, SharedStateValue, BehaviorCheck }
 
-public sealed record RuntimeProbeRequest(RuntimeProbeKind Kind, string Target, string[] Providers, string Observation, string Decides);
+public sealed record RuntimeProbeRequest(RuntimeProbeKind Kind, string Target, string[] Providers, string Observation, string Decides)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TweakRuntimeEvidence? TweakRuntimeEvidence { get; init; }
+}
 
 public sealed record RuntimeProbeManifest(int SchemaVersion, string ProfileName, DateTimeOffset CreatedAtUtc, RuntimeProbeRequest[] Requests, string? InstallationId = null);
 
@@ -12,7 +18,14 @@ public static class RuntimeProbeManifestBuilder
     {
         ArgumentNullException.ThrowIfNull(receipt);
         List<RuntimeProbeRequest> requests = [];
-        foreach (TweakOverlap overlap in receipt.TweakOverlaps.Where(value => value.Kind is TweakOverlapKind.ScalarOverwrite or TweakOverlapKind.MixedArrayOperations or TweakOverlapKind.DuplicateMutation))
+        HashSet<string> runtimeTargets = new(StringComparer.Ordinal);
+        foreach (InteractionFinding finding in receipt.InteractionFindings.Where(value => value.TweakRuntimeEvidence is not null))
+        {
+            runtimeTargets.Add(finding.Target);
+            Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, finding.Target, finding.Providers, $"Record the post-initialization snapshot of {finding.Target}, five seconds after CET updates begin, then manually observe its value after the relevant runtime path.", "The snapshot measures only that moment. Later runtime writes require a separate final-value observation; no winner, value equality, or incompatibility is established.") { TweakRuntimeEvidence = finding.TweakRuntimeEvidence });
+            Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.SharedStateValue, finding.Target, finding.Providers, $"Manually record the value of {finding.Target} after exercising the relevant runtime write path in this exact profile.", "The observed value at the recorded gameplay point. This remains unresolved until a manual answer is recorded; it does not establish a final winner or incompatibility.") { TweakRuntimeEvidence = finding.TweakRuntimeEvidence });
+        }
+        foreach (TweakOverlap overlap in receipt.TweakOverlaps.Where(value => !runtimeTargets.Contains(value.Target) && value.Kind is TweakOverlapKind.ScalarOverwrite or TweakOverlapKind.MixedArrayOperations or TweakOverlapKind.DuplicateMutation))
         {
             string[] providers = overlap.Operations.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, overlap.Target, providers, $"Record the post-initialization snapshot of {overlap.Target}, five seconds after CET updates begin.", "The final observed value after TweakXL initialization. This source fact does not establish compatibility, compilation, loader success, or a runtime defect; later gameplay writes remain a separate manual check."));
@@ -27,7 +40,7 @@ public static class RuntimeProbeManifestBuilder
         {
             string methodBase = InteractionReportBuilder.MethodBase(finding.Target);
             LuaCallbackEvidence[] callbacks = receipt.LuaCallbacks.Where(value => (value.Target == finding.Target || value.Target == methodBase) && value.Impact == EvidenceImpact.Review).ToArray();
-            if (callbacks.Length > 0) Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.CallbackDelivery, finding.Target, finding.Providers, $"Manually record the named mods' visible behavior when {finding.Target} is invoked in the exact active profile.", "The recorded manual observation, which remains unresolved until an answer is recorded. It does not establish callback order or isolate one provider."));
+            if (callbacks.Length > 0) Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.CallbackDelivery, finding.Target, finding.Providers, $"Manually record {(finding.Providers.Length == 1 ? "the named provider's" : "the named mods'")} visible behavior when {finding.Target} is invoked in the exact active profile.", "The recorded manual observation, which remains unresolved until an answer is recorded. It does not establish callback order or isolate one provider."));
             RedScriptFlowEvidence[] flows = receipt.RedScriptFlows.Where(value => value.Target == finding.Target && value.Impact == EvidenceImpact.Review).ToArray();
             if (flows.Length > 0) Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.BehaviorCheck, finding.Target, finding.Providers, $"Manually record the exact active-profile behavior when the flagged path reaches {finding.Target}.", "The recorded manual observation, which remains unresolved until an answer is recorded. It does not isolate one provider."));
         }

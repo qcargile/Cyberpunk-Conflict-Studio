@@ -25,9 +25,10 @@ public static class ModSourceScanner
         ArgumentNullException.ThrowIfNull(manifest);
         string[] exclusions = PhysicalPathExclusions.Normalize(excludedPhysicalPaths);
         DeploymentProvider[] providers = manifest.Providers;
-        PhysicalPathReservation[] reservations = PhysicalPathExclusions.Reservations(providers.Select(value => value.RootPath).ToArray(), exclusions, relative => new[] { ".reds", ".lua", ".yaml", ".yml" }.Contains(Path.GetExtension(relative), StringComparer.OrdinalIgnoreCase));
+        PhysicalPathReservation[] reservations = PhysicalPathExclusions.Reservations(providers.Select(value => value.RootPath).ToArray(), exclusions, relative => new[] { ".reds", ".lua", ".tweak", ".yaml", ".yml" }.Contains(Path.GetExtension(relative), StringComparer.OrdinalIgnoreCase));
         Dictionary<string, Candidate> redScripts = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, Candidate> luaSources = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, Candidate> redTweaks = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, Candidate> tweakSources = new(StringComparer.OrdinalIgnoreCase);
         List<SourceAnalysisFailure> failures = manifest.Failures.SelectMany(Failures).ToList();
         foreach (DeploymentFileEntry file in manifest.Files)
@@ -35,6 +36,7 @@ public static class ModSourceScanner
             cancellationToken.ThrowIfCancellationRequested();
             if (IsRedScriptPath(file.RelativePath)) Set(redScripts, file, deployedWinners, exclusions, reservations);
             else if (IsLuaPath(file.RelativePath)) Set(luaSources, file, deployedWinners, exclusions, reservations);
+            else if (IsRedTweakPath(file.RelativePath)) Set(redTweaks, file, deployedWinners, exclusions, reservations);
             else if (IsTweakPath(file.RelativePath)) Set(tweakSources, file, deployedWinners, exclusions, reservations);
             else if (IsUnregisteredRed4ExtScriptPath(file.RelativePath)) failures.Add(new SourceAnalysisFailure(file.Provider.Name, file.RelativePath, "RedScript registration", "This .reds file is under a RED4ext plugin, but Conflict Studio has no source evidence that the plugin registers this file or folder. It was not analyzed as active source."));
         }
@@ -42,12 +44,16 @@ public static class ModSourceScanner
         {
             AddMissingWinners(redScripts, providers, deployedWinners, failures, IsRedScriptPath, "RedScript");
             AddMissingWinners(luaSources, providers, deployedWinners, failures, IsLuaPath, "CET Lua");
+            AddMissingWinners(redTweaks, providers, deployedWinners, failures, IsRedTweakPath, "TweakXL RED");
             AddMissingWinners(tweakSources, providers, deployedWinners, failures, IsTweakPath, "TweakXL");
         }
+        RequireCetLuaActivation(luaSources, failures);
 
         RedScriptSource[] redScriptInventory = Read(redScripts.Values, "RedScript", value => new RedScriptSource(value.Provider, value.RelativePath, manifest.ReadText(value.File, cancellationToken)), failures, cancellationToken);
         LuaSource[] luaInventory = Read(luaSources.Values, "CET Lua", value => new LuaSource(value.Provider, value.RelativePath, manifest.ReadText(value.File, cancellationToken)), failures, cancellationToken);
+        luaInventory = LuaSourceReachability.Select(luaInventory, luaSources.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase), failures, cancellationToken);
         TweakSource[] tweakInventory = Read(tweakSources.Values, "TweakXL", value => new TweakSource(value.Provider, value.RelativePath, manifest.ReadText(value.File, cancellationToken)), failures, cancellationToken);
+        foreach (Candidate tweak in redTweaks.Values.Where(value => !value.Excluded)) failures.Add(new SourceAnalysisFailure(tweak.Provider, tweak.RelativePath, "TweakXL RED", "RED .tweak source is captured as an effective deployment file, but Conflict Studio does not parse it as TweakXL YAML."));
         failures.AddRange(RedScriptConditionalSourceFilter.Failures(redScriptInventory));
         return new ModSourceInventory(redScriptInventory, luaInventory, tweakInventory, failures.ToArray());
     }
@@ -77,6 +83,30 @@ public static class ModSourceScanner
         }
         if (PhysicalPathExclusions.ReservedBefore(reservations, file.ProviderPosition, relative)) return;
         candidates.TryAdd(relative, candidate);
+    }
+
+    private static void RequireCetLuaActivation(Dictionary<string, Candidate> candidates, List<SourceAnalysisFailure> failures)
+    {
+        foreach (Candidate loose in candidates.Values.Where(value => CetLuaRoot(value.RelativePath) is null).ToArray())
+        {
+            candidates.Remove(loose.RelativePath);
+            failures.Add(new SourceAnalysisFailure(loose.Provider, loose.RelativePath, "CET Lua activation", "This Lua file is directly under the CET mods root, so no activated CET mod root could be established."));
+        }
+        foreach (IGrouping<string, Candidate> root in candidates.Values.Select(value => new { Root = CetLuaRoot(value.RelativePath), Candidate = value }).Where(value => value.Root is not null).GroupBy(value => value.Root!, value => value.Candidate, StringComparer.OrdinalIgnoreCase))
+        {
+            if (root.Any(value => !value.Excluded && string.Equals(value.RelativePath, root.Key + "\\init.lua", StringComparison.OrdinalIgnoreCase))) continue;
+            foreach (Candidate candidate in root) candidates.Remove(candidate.RelativePath);
+            Candidate source = root.First();
+            failures.Add(new SourceAnalysisFailure(source.Provider, root.Key, "CET Lua activation", "The effective CET mod root has no nonexcluded init.lua, so its Lua source was not analyzed as active."));
+        }
+    }
+
+    internal static string? CetLuaRoot(string relative)
+    {
+        const string prefix = "bin\\x64\\plugins\\cyber_engine_tweaks\\mods\\";
+        string remainder = relative[prefix.Length..];
+        int separator = remainder.IndexOf('\\');
+        return separator < 0 ? null : prefix + remainder[..separator];
     }
 
     private static IEnumerable<SourceAnalysisFailure> Failures(DeploymentFileEnumerationFailure failure)
@@ -118,6 +148,9 @@ public static class ModSourceScanner
         string extension = Path.GetExtension(relative);
         return relative.StartsWith("r6\\tweaks\\", StringComparison.OrdinalIgnoreCase) && (string.Equals(extension, ".yaml", StringComparison.OrdinalIgnoreCase) || string.Equals(extension, ".yml", StringComparison.OrdinalIgnoreCase));
     }
+    private static bool IsRedTweakPath(string relative)
+        => relative.StartsWith("r6\\tweaks\\", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Path.GetExtension(relative), ".tweak", StringComparison.OrdinalIgnoreCase);
 
     private sealed record Candidate(string Provider, string RelativePath, DeploymentFileEntry File, bool Excluded);
 }

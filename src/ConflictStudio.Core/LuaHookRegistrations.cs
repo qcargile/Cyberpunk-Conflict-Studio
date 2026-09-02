@@ -10,7 +10,9 @@ internal sealed record LuaHookRegistration(
     int Line,
     bool DefinitionSite = false,
     bool ResolvedHelper = false,
-    string? CallbackEvidence = null);
+    string? CallbackEvidence = null,
+    int InvocationIndex = 0,
+    int RegistrationIndex = 0);
 
 internal static class LuaHookRegistrationAnalyzer
 {
@@ -42,7 +44,7 @@ internal static class LuaHookRegistrationAnalyzer
             LuaCallbackEvidenceKind kind = Enum.Parse<LuaCallbackEvidenceKind>(call.Name);
             string callback = call.Arguments.Length > 2 ? call.Arguments[2] : string.Empty;
             string? callbackEvidence = ResolveCallbackEvidence(callback, code, definitions);
-            registrations.Add(new LuaHookRegistration(kind, className + "." + methodName, classLiteral && methodLiteral ? EvidenceConfidence.Literal : EvidenceConfidence.Dynamic, Continuation(callbackEvidence ?? callback, kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, call.Index), definitions.Any(value => call.Index >= value.BodyStart && call.Index < value.BodyEnd), false, callbackEvidence));
+            registrations.Add(new LuaHookRegistration(kind, className + "." + methodName, classLiteral && methodLiteral ? EvidenceConfidence.Literal : EvidenceConfidence.Dynamic, Continuation(callbackEvidence ?? callback, kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, call.Index), definitions.Any(value => call.Index >= value.BodyStart && call.Index < value.BodyEnd), false, callbackEvidence, call.Index, call.Index));
         }
 
         foreach ((string name, List<Template> values) in templates)
@@ -59,7 +61,7 @@ internal static class LuaHookRegistrationAnalyzer
                     if (className is null || methodName is null) continue;
                     string callback = Resolve(template.Callback, call.Arguments) ?? string.Empty;
                     string? callbackEvidence = ResolveCallbackEvidence(callback, code, definitions);
-                    registrations.Add(new LuaHookRegistration(template.Kind, className + "." + methodName, EvidenceConfidence.Literal, Continuation(callbackEvidence ?? callback, template.Kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, call.Index), false, true, callbackEvidence));
+                    registrations.Add(new LuaHookRegistration(template.Kind, className + "." + methodName, EvidenceConfidence.Literal, Continuation(callbackEvidence ?? callback, template.Kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, call.Index), false, true, callbackEvidence, call.Index, template.RegistrationIndex));
                 }
             }
         }
@@ -72,14 +74,14 @@ internal static class LuaHookRegistrationAnalyzer
                 if (template.Class.Literal is null || template.Method.Literal is null) continue;
                 string callback = template.Callback.Inline ?? string.Empty;
                 string? callbackEvidence = ResolveCallbackEvidence(callback, code, definitions);
-                registrations.Add(new LuaHookRegistration(template.Kind, template.Class.Literal + "." + template.Method.Literal, EvidenceConfidence.Literal, Continuation(callbackEvidence ?? callback, template.Kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, template.RegistrationIndex), false, true, callbackEvidence));
+                registrations.Add(new LuaHookRegistration(template.Kind, template.Class.Literal + "." + template.Method.Literal, EvidenceConfidence.Literal, Continuation(callbackEvidence ?? callback, template.Kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, template.RegistrationIndex), false, true, callbackEvidence, template.RegistrationIndex, template.RegistrationIndex));
             }
         }
 
         HashSet<(LuaCallbackEvidenceKind Kind, string Target)> resolvedTargets = registrations.Where(value => value.ResolvedHelper).Select(value => (value.Kind, value.Target)).ToHashSet();
         return registrations
             .Where(value => !value.DefinitionSite || !resolvedTargets.Contains((value.Kind, value.Target)))
-            .GroupBy(value => (value.Kind, value.Target, value.Line))
+            .GroupBy(value => (value.Kind, value.Target, value.InvocationIndex, value.RegistrationIndex))
             .Select(group => group.OrderBy(value => value.Confidence).First())
             .OrderBy(value => value.Line)
             .ToArray();
@@ -195,6 +197,7 @@ internal static class LuaHookRegistrationAnalyzer
         List<FunctionDefinition> definitions = [];
         foreach (Match match in Function.Matches(code))
         {
+            if (structure[match.Index] != code[match.Index]) continue;
             int end = FunctionEnd(structure, match.Index + match.Length);
             if (end < 0) continue;
             string[] parameters = match.Groups["parameters"].Value.Split(',').Select(value => value.Trim()).Where(value => value.Length > 0).ToArray();
@@ -219,8 +222,10 @@ internal static class LuaHookRegistrationAnalyzer
     {
         if (names.Length == 0) yield break;
         Regex callPattern = new("\\b(?<name>" + string.Join("|", names.Select(Regex.Escape).OrderByDescending(value => value.Length)) + ")\\s*\\(", RegexOptions.CultureInvariant);
+        string structure = SourceTextMask.Lua(code, true);
         foreach (Match match in callPattern.Matches(code))
         {
+            if (structure[match.Index] != code[match.Index]) continue;
             int open = code.IndexOf('(', match.Index + match.Groups["name"].Length);
             string[]? arguments = Arguments(code, open);
             if (arguments is not null) yield return new Call(match.Groups["name"].Value, arguments, match.Index);
@@ -243,6 +248,11 @@ internal static class LuaHookRegistrationAnalyzer
             {
                 if (value == '\\') index++;
                 else if (value == quote) quote = '\0';
+                continue;
+            }
+            if (SourceTextMask.LuaLongStringEnd(code, index) is int longEnd)
+            {
+                index = longEnd - 1;
                 continue;
             }
             if (value is '\'' or '"') quote = value;
@@ -296,6 +306,7 @@ internal static class LuaHookRegistrationAnalyzer
     private static LuaContinuationEvidence Continuation(string callback, LuaCallbackEvidenceKind kind)
     {
         if (kind != LuaCallbackEvidenceKind.Override) return LuaContinuationEvidence.NotApplicable;
+        callback = SourceTextMask.Lua(callback, true);
         Match declaration = Regex.Match(callback, "^\\s*function\\s*\\((?<parameters>[^)]*)\\)", RegexOptions.CultureInvariant);
         if (!declaration.Success) return LuaContinuationEvidence.Unknown;
         string[] parameters = declaration.Groups["parameters"].Value.Split(',').Select(value => value.Trim()).Where(value => value.Length > 0).ToArray();
