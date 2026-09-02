@@ -8,11 +8,11 @@ namespace ConflictStudio.Core.Tests;
 public sealed class TweakRuntimeJoinTests
 {
     [TestMethod]
-    [DataRow(false, false)]
-    [DataRow(false, true)]
-    [DataRow(true, false)]
-    [DataRow(true, true)]
-    public void SingleDeclarativeSourceJoinsSingleRuntimeSource(bool redscript, bool sameProvider)
+    [DataRow(false, false, InteractionFindingKind.Review)]
+    [DataRow(false, true, InteractionFindingKind.Informational)]
+    [DataRow(true, false, InteractionFindingKind.Review)]
+    [DataRow(true, true, InteractionFindingKind.Informational)]
+    public void SingleDeclarativeSourceJoinsSingleRuntimeSource(bool redscript, bool sameProvider, InteractionFindingKind expectedKind)
     {
         string provider = sameProvider ? "Alpha" : "Beta";
         ModSourceInventory inventory = Inventory(redscript ? "TweakDBManager.SetFlat(t\"Items.Test.value\", 2);" : "TweakDB:SetFlat('Items.Test.value', 2)", redscript, provider);
@@ -20,7 +20,7 @@ public sealed class TweakRuntimeJoinTests
         InteractionFinding[] findings = InteractionReportBuilder.Build(inventory);
 
         Assert.HasCount(1, findings);
-        Assert.AreEqual(InteractionFindingKind.Review, findings[0].Kind);
+        Assert.AreEqual(expectedKind, findings[0].Kind);
         Assert.AreEqual("Items.Test.value", findings[0].Target);
         Assert.HasCount(sameProvider ? 1 : 2, findings[0].Providers);
         JsonElement evidence = JsonSerializer.SerializeToElement(findings[0]).GetProperty("TweakRuntimeEvidence");
@@ -29,30 +29,27 @@ public sealed class TweakRuntimeJoinTests
     }
 
     [TestMethod]
-    public void RuntimeJoinOverridesRedundantDeclarativeClassificationAndRequestsObservation()
+    public void MatchingRuntimeValuePreservesRedundantDeclarationsWithoutProbes()
     {
         ModSourceInventory inventory = Inventory("TweakDB:SetFlat('Items.Test.value', 1)");
         inventory = inventory with { TweakSources = [.. inventory.TweakSources, new("Gamma", "g.yaml", "Items.Test.value: 1")] };
         ProfileScanReceipt receipt = Receipt(inventory);
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single();
 
-        Assert.AreEqual(EvidenceClassification.Review, item.Classification);
-        Assert.IsFalse(receipt.InteractionFindings.Single().Summary.Contains("same value", StringComparison.Ordinal));
+        Assert.AreEqual(EvidenceClassification.Composable, item.Classification);
+        Assert.IsNotNull(receipt.InteractionFindings.Single().TweakRuntimeEvidence);
         Assert.IsNull(item.Winner);
-        Assert.IsFalse(item.ClassificationLabel.Contains("No action", StringComparison.Ordinal));
-        StringAssert.Contains(item.NextAction, "value");
+        Assert.IsFalse(item.IsActionable);
         RuntimeProbeManifest probes = RuntimeProbeManifestBuilder.Build(receipt);
-        RuntimeProbeRequest request = probes.Requests.Single(value => value.Kind == RuntimeProbeKind.PostInitializationTweakValue);
-        Assert.HasCount(3, request.Providers);
-        Assert.HasCount(1, probes.Requests.Where(value => value.Kind == RuntimeProbeKind.SharedStateValue).ToArray());
+        Assert.IsEmpty(probes.Requests);
     }
 
     [TestMethod]
-    [DataRow("TweakDB:SetFlat('Items.Test.value', 2)", "TweakDB:SetFlat('Items.Test.value', 3)")]
-    [DataRow("TweakDB:SetFlat('Items.Test.value', 2)", "TweakDB:SetFlat('Items.Test.value', 2)\nTweakDB:SetFlat('Items.Test.value', 2)")]
-    [DataRow("TweakDB:SetFlat('Items.Test.value', compute(2))", "TweakDB:SetFlat('Items.Test.value', compute(3))")]
-    [DataRow("TweakDB:SetFlat('Items.Test.value', compute(2)", "TweakDB:SetFlat('Items.Test.value', compute(3)")]
-    public void RuntimeSemanticOrCountChangesInvalidateSavedReview(string original, string changed)
+    [DataRow("TweakDB:SetFlat('Items.Test.value', 2)", "TweakDB:SetFlat('Items.Test.value', 3)", ConflictWorkState.ReviewWhenRelevant)]
+    [DataRow("TweakDB:SetFlat('Items.Test.value', 2)", "TweakDB:SetFlat('Items.Test.value', 2)\nTweakDB:SetFlat('Items.Test.value', 2)", ConflictWorkState.ReviewWhenRelevant)]
+    [DataRow("TweakDB:SetFlat('Items.Test.value', compute(2))", "TweakDB:SetFlat('Items.Test.value', compute(3))", ConflictWorkState.NoActionNeeded)]
+    [DataRow("TweakDB:SetFlat('Items.Test.value', compute(2)", "TweakDB:SetFlat('Items.Test.value', compute(3)", ConflictWorkState.NoActionNeeded)]
+    public void RuntimeSemanticOrCountChangesInvalidateSavedReview(string original, string changed, ConflictWorkState expectedState)
     {
         ProfileScanReceipt first = Receipt(Inventory(original));
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(first, []).Single();
@@ -60,7 +57,7 @@ public sealed class TweakRuntimeJoinTests
         ConflictWorkItem next = ConflictWorkQueueBuilder.Build(Receipt(Inventory(changed)), [decision]).Single();
 
         Assert.AreNotEqual(item.EvidenceSha256, next.EvidenceSha256);
-        Assert.AreEqual(ConflictWorkState.ReviewWhenRelevant, next.State);
+        Assert.AreEqual(expectedState, next.State);
     }
 
     [TestMethod]
@@ -163,7 +160,7 @@ public sealed class TweakRuntimeJoinTests
     [TestMethod]
     [DataRow("Items.Test.value: [ !append A ]", "Items.Test.value: [ !append B ]")]
     [DataRow("Items.Test.value: [ A ]", "Items.Test.value: [ !append B ]")]
-    public void RuntimeJoinRemainsReviewAlongsideComposableArrayOperations(string first, string second)
+    public void RuntimeArrayClearCompetesWithAnotherProvidersArrayChanges(string first, string second)
     {
         ModSourceInventory inventory = Inventory("TweakDB:SetFlat('Items.Test.value', {})") with
         {
@@ -171,8 +168,8 @@ public sealed class TweakRuntimeJoinTests
         };
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(Receipt(inventory), []).Single();
 
-        Assert.AreEqual(EvidenceClassification.Review, item.Classification);
-        Assert.IsFalse(item.ClassificationLabel.Contains("No action", StringComparison.Ordinal));
+        Assert.AreEqual(EvidenceClassification.CompetingDeclaration, item.Classification);
+        Assert.IsTrue(item.IsActionable);
     }
 
     [TestMethod]

@@ -6,10 +6,10 @@ namespace ConflictStudio.Core.Tests;
 public sealed class RuntimeProbeManifestBuilderTests
 {
     [TestMethod]
-    public void FixRoundOneProviderCallbackManifestUsesSingularWording()
+    public void SingleProviderCompetingOverridesHaveOneCallbackProbe()
     {
         string registration = "Override('PlayerPuppet', 'Value', function() return 1 end)";
-        ModSourceInventory inventory = new([], [new("Alpha", "one.lua", registration + "\n" + registration)], [], []);
+        ModSourceInventory inventory = new([], [new("Alpha", "one.lua", registration + "\nOverride('PlayerPuppet', 'Value', function() return 2 end)")], [], []);
         ProfileScanReceipt receipt = new(1, "Standard", DateTimeOffset.UtcNow, ["Alpha"], [], [], [], [],
             InteractionReportBuilder.Build(inventory), [], [], LuaCallbackEvidenceAnalyzer.Analyze(inventory.LuaSources), [], [], []);
 

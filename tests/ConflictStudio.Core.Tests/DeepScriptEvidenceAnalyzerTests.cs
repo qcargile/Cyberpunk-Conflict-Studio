@@ -273,7 +273,7 @@ public sealed class DeepScriptEvidenceAnalyzerTests
 
         LuaCallbackEvidence evidence = LuaCallbackEvidenceAnalyzer.Analyze([source]).Single();
 
-        Assert.AreEqual(LuaContinuationEvidence.Missing, evidence.Continuation);
+        Assert.AreEqual(LuaContinuationEvidence.Conditional, evidence.Continuation);
     }
 
     [TestMethod]

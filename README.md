@@ -18,12 +18,14 @@ Conflict Studio does not decide that two mods are compatible or incompatible. A 
 ## How to read code results
 
 - **Confirmed conflicts** identify one exact boundary where active changes cannot coexist.
-- **Needs review** identifies one unanswered question. It is not a compatibility verdict.
+- **Needs review** identifies competing changes and the specific outcome that remains unresolved. It is not a compatibility verdict.
 - **No action / information** contains identical source, changes that can combine, and related targets that may matter only while troubleshooting.
 - File ownership proves which deployed file is selected. It does not prove that the selected file is the version you intended.
 - Competing values prove that active sources assign different values. They do not prove the final in-game value without a runtime observation.
 
 Conflict Studio can read literal CET callbacks and deployed DLL ownership. It does not resolve dynamically constructed CET callbacks or inspect native DLL hooks and internal behavior.
+
+A default followed by the same mod's settings update is not a conflict. Declarative/runtime warnings currently cover different numeric or boolean literals requested by different providers, and literal array clears that oppose another provider's additions. Other runtime writes remain source context, not automatic requests to test or repair a mod.
 
 When one TweakXL record uses another as its `$base`, the relationship is shown as information. It does not tell you the final inherited value.
 

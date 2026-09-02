@@ -34,6 +34,7 @@ internal static class LuaHookRegistrationAnalyzer
         FunctionDefinition[] definitions = Definitions(code, structure);
         Dictionary<string, List<Template>> templates = BuildTemplates(code, definitions);
         List<LuaHookRegistration> registrations = [];
+        HashSet<string> invokedDefinitions = new(StringComparer.Ordinal);
 
         foreach (Call call in Calls(code, HookNames))
         {
@@ -62,12 +63,14 @@ internal static class LuaHookRegistrationAnalyzer
                     string callback = Resolve(template.Callback, call.Arguments) ?? string.Empty;
                     string? callbackEvidence = ResolveCallbackEvidence(callback, code, definitions);
                     registrations.Add(new LuaHookRegistration(template.Kind, className + "." + methodName, EvidenceConfidence.Literal, Continuation(callbackEvidence ?? callback, template.Kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, call.Index), false, true, callbackEvidence, call.Index, template.RegistrationIndex));
+                    invokedDefinitions.Add(name);
                 }
             }
         }
 
         foreach (FunctionDefinition definition in RootDefinitions(code, definitions, templates.Keys.ToArray()))
         {
+            if (invokedDefinitions.Contains(definition.Name)) continue;
             if (!templates.TryGetValue(definition.Name, out List<Template>? values)) continue;
             foreach (Template template in values)
             {
@@ -310,7 +313,7 @@ internal static class LuaHookRegistrationAnalyzer
         Match declaration = Regex.Match(callback, "^\\s*function\\s*\\((?<parameters>[^)]*)\\)", RegexOptions.CultureInvariant);
         if (!declaration.Success) return LuaContinuationEvidence.Unknown;
         string[] parameters = declaration.Groups["parameters"].Value.Split(',').Select(value => value.Trim()).Where(value => value.Length > 0).ToArray();
-        if (parameters.Length == 0) return LuaContinuationEvidence.Unknown;
+        if (parameters.Length == 0) return LuaContinuationEvidence.Missing;
         string wrapped = parameters[^1];
         Regex continuation = new("\\b" + Regex.Escape(wrapped) + "\\s*\\(", RegexOptions.CultureInvariant);
         if (!continuation.IsMatch(callback)) return LuaContinuationEvidence.Missing;
@@ -325,7 +328,7 @@ internal static class LuaHookRegistrationAnalyzer
             if (continuation.IsMatch(statement)) continue;
             string beforeReturn = callback[..returnToken.Index];
             Match immediatelyBefore = Regex.Match(beforeReturn, "\\b" + Regex.Escape(wrapped) + "\\s*\\([^;\\r\\n]*\\)\\s*;?\\s*$", RegexOptions.CultureInvariant);
-            if (!immediatelyBefore.Success) return LuaContinuationEvidence.Missing;
+            if (!immediatelyBefore.Success) return LuaContinuationEvidence.Conditional;
         }
         return LuaContinuationEvidence.Continues;
     }

@@ -183,9 +183,9 @@ public static class ConflictWorkQueueBuilder
         foreach (ArchiveXlSourceFailure failure in receipt.ArchiveXlFailures.Where(value => value.Kind != ArchiveXlFailureKind.Coverage)) Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.FilePath, EvidenceClassification.Unresolved, failure.Message, "The scan could not read this ArchiveXL provider or file. Fix the named problem, then rescan.", null, [failure.Provider], [failure.FilePath, failure.Message]);
         foreach (SourceAnalysisFailure failure in (receipt.SourceFailures ?? []).Where(value => !IsParserCoverageLimitation(value)))
         {
-            if (failure.Surface is "TweakXL RED" or "RedScript registration" or "CET Lua activation" or "CET Lua reachability" or "CET Lua import")
+            if (failure.Surface is "TweakXL RED" or "TweakXL interpretation" or "RedScript registration" or "CET Lua activation" or "CET Lua reachability" or "CET Lua import")
             {
-                Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.FilePath, EvidenceClassification.Informational, failure.Message, "Inspect this coverage limit when troubleshooting the named source. It does not by itself require a repair.", null, [failure.Provider], [failure.Surface, failure.FilePath, failure.Message], null, "Information: source coverage limit", "The source could not be admitted to this analysis", failure.Message, "This does not establish a conflict or a broken installation.");
+                Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.FilePath, EvidenceClassification.Informational, failure.Message, "Source interpretation and coverage details are available here when needed.", null, [failure.Provider], [failure.Surface, failure.FilePath, failure.Message], null, "Information: source coverage limit", "The scan records how this source was interpreted or excluded", failure.Message, "This does not establish a conflict or a broken installation.");
                 continue;
             }
             bool invalidRedmod = failure.Surface == "REDmod" && failure.Message.StartsWith("This folder will not load as a REDmod", StringComparison.Ordinal);
@@ -286,9 +286,18 @@ public static class ConflictWorkQueueBuilder
     {
         if (finding.TweakRuntimeEvidence is { } runtime)
         {
-            string initialChanges = string.Join(" ", runtime.Declarations.Select(value => $"{value.Provider} declares {value.Kind} ({value.FilePath}:{value.LineNumber})."));
-            string writes = string.Join(" ", runtime.Writes.Select(value => $"{value.Provider} calls {value.Operation} ({value.FilePath}:{value.Line})."));
-            return ($"{initialChanges} {writes} Declarative source establishes an initial change; runtime code may write later. Dynamic targets are excluded.", "Observe the final value after the relevant runtime path in this exact profile. An initialization snapshot alone cannot decide later gameplay writes.");
+            var competing = runtime.CompetingValues().ToArray();
+            if (competing.Length > 0)
+            {
+                string opposition = string.Join(" ", competing.Select(value => $"{value.Declaration.Provider} assigns {value.Declaration.Value} ({value.Declaration.FilePath}:{value.Declaration.LineNumber}); {value.Write.Provider} writes {value.Value} ({value.Write.FilePath}:{value.Write.Line})."));
+                return (opposition, "Compare these requested values and choose the behavior you want. The runtime write can replace the declared value when that path runs; no final in-game value is claimed.");
+            }
+            if (classification is EvidenceClassification.Informational or EvidenceClassification.Composable)
+            {
+                string initialChanges = string.Join(" ", runtime.Declarations.Select(value => $"{value.Provider} declares {value.Kind} ({value.FilePath}:{value.LineNumber})."));
+                string writes = string.Join(" ", runtime.Writes.Select(value => $"{value.Provider} calls {value.Operation} ({value.FilePath}:{value.Line})."));
+                return ($"{initialChanges} {writes} No competing value is established by this relationship alone.", "No conflict action follows from this shared target. These source locations are available as context.");
+            }
         }
         if (finding.DeclarationEvidence is { Length: > 0 } declarations)
         {
@@ -300,7 +309,7 @@ public static class ConflictWorkQueueBuilder
         if (flows.Any(value => value.Kind == RedScriptFlowKind.Add) && callbacks.Any(value => value.Kind == LuaCallbackEvidenceKind.Override))
         {
             string summary = string.Join(" ", flows.Select(value => $"{value.Provider} adds the method ({value.FilePath}:{value.Line}).")) + " " + string.Join(" ", callbacks.Where(value => value.Kind == LuaCallbackEvidenceKind.Override).Select(value => $"{string.Join(", ", value.Copies.Select(copy => copy.Provider))} registers a CET override ({string.Join(", ", value.Copies.Select(copy => copy.FilePath))}:{value.Line})."));
-            return (summary, "Use the RedScript compiler log to establish method availability, then check CET registration and the affected feature in this exact profile. Compilation alone cannot decide the override's behavior.");
+            return (summary, classification == EvidenceClassification.Informational ? "An added method and its extension do not by themselves require conflict investigation." : "The CET override has no forwarding call to the added method. Compare the replacement behavior with the method's intended use.");
         }
         if (flows.Length > 0)
         {
@@ -350,6 +359,11 @@ public static class ConflictWorkQueueBuilder
 
     private static (string Summary, string Action) DescribeTweak(TweakOverlap tweak, EvidenceClassification classification)
     {
+        if (tweak.Kind == TweakOverlapKind.InternalContext)
+        {
+            string definitions = string.Join(" ", tweak.Operations.Select(value => $"{value.Kind}: {Truncate(value.Value, 72)} ({value.FilePath}:{value.LineNumber})."));
+            return (definitions, "These definitions are available as source context. No competing active component or required change is established.");
+        }
         if (tweak.Kind == TweakOverlapKind.BaseRecordDependency)
         {
             string declarations = string.Join(" ", tweak.Operations.Select(value => $"{value.Provider}: {value.Target} {value.Kind} {Truncate(value.Value, 72)} ({value.FilePath}:{value.LineNumber})."));
@@ -372,7 +386,7 @@ public static class ConflictWorkQueueBuilder
                 : ($"{operations} The operations affect distinct values, so no operation cancels another.", "No action is needed unless the final array differs in game.");
         }
         if (tweak.Kind == TweakOverlapKind.ScalarOverwrite) return ($"{operations} The active sources assign different values; the final in-game value is not observed here.", "Open Technical details to compare the values. Then capture the in-game value after startup before deciding which value should apply.");
-        if (tweak.Kind == TweakOverlapKind.DuplicateMutation) return ($"{operations} The same value can be inserted more than once.", "Use an append-once operation or remove the unintended duplicate addition in a compatibility patch.");
+        if (tweak.Kind == TweakOverlapKind.DuplicateMutation) return ($"{operations} The same value can be inserted more than once.", "Compare the additions and the array's intended use. Repeated values can be intentional; do not remove them or add uniqueness guards without establishing a competing effect.");
         if (tweak.Kind == TweakOverlapKind.RecordDefinitionCollision) return ($"{operations} TweakXL keeps the first construction it encounters; the normal-file discovery order is not established here.", "Keep one record definition or install a compatibility patch that owns the record construction.");
         if (tweak.Kind == TweakOverlapKind.SourceArrayDependency) return ($"{operations} The copied source array is changed by another provider, and source-copy operations discard duplicates already present in the target.", "Capture the final source and target arrays before deciding whether the interaction needs a patch.");
         if (tweak.Operations.Any(value => value.Kind == TweakOperationKind.ArrayReplacement)) return ($"{operations} Different whole-array assignments compete; TweakXL applies mutations after the selected assignment.", "Choose one whole-array owner or replace the competing assignments with compatible mutations.");
@@ -401,12 +415,19 @@ public static class ConflictWorkQueueBuilder
 
     private static (string? Result, string? Proof, string? Meaning, string? Boundary) InteractionLabels(InteractionFinding finding, InteractionLookup interactions, EvidenceClassification classification)
     {
-        if (finding.TweakRuntimeEvidence is not null)
-            return ("Review: runtime value must be checked", "Declarative changes and literal runtime writes share an exact target", "Declarative source establishes an initial change; runtime code may write later.", "No final winner, value equality, or incompatibility is established. Dynamic targets are excluded.");
+        if (finding.TweakRuntimeEvidence is { } runtime)
+        {
+            if (runtime.CompetingValues().Any())
+                return ("Review: different declared and runtime values", "Different providers request different literal values", "The runtime write can replace another provider's declared value.", "This proves differing requested values, not the final in-game value or a gameplay failure.");
+            if (classification is EvidenceClassification.Informational or EvidenceClassification.Composable)
+                return ("Information: shared TweakDB target", "Declarations and runtime writes refer to the same field", "The source relationship does not establish competing values.", "Settings updates, integrations, and unknown expressions are not conflicts by themselves.");
+        }
         RedScriptFlowEvidence[] flows = interactions.Flows(finding.Target);
         LuaCallbackEvidence[] callbacks = interactions.Callbacks(finding.Target);
-        if (classification == EvidenceClassification.Review && flows.Any(value => value.Kind == RedScriptFlowKind.Add) && callbacks.Any(value => value.Kind == LuaCallbackEvidenceKind.Override))
-            return ("Review: CET override needs runtime evidence", "An added RedScript method and a CET override share a target", "The compiler can establish the added method's availability; CET registration and behavior are separate runtime boundaries.", "The compiler alone cannot establish whether the override registered or behaves as intended.");
+        if (classification == EvidenceClassification.Review && flows.Any(value => value.Kind == RedScriptFlowKind.Add) && callbacks.Any(value => value.Kind == LuaCallbackEvidenceKind.Override && value.Continuation == LuaContinuationEvidence.Missing))
+            return ("Review: extension replaces an added method", "The CET override contains no forwarding call to the added implementation", "One provider can replace a method supplied by another.", "This does not prove a gameplay failure or that the replacement is unwanted.");
+        if (classification == EvidenceClassification.Informational && flows.Any(value => value.Kind == RedScriptFlowKind.Add) && callbacks.Any(value => value.Kind == LuaCallbackEvidenceKind.Override))
+            return ("Information: added method and extension", "An added RedScript method and a CET override share a target", "This can be ordinary extension or compatibility wiring.", "Their shared target alone does not establish a conflict or a runtime outcome.");
         if (classification == EvidenceClassification.Informational && flows.Any(value => value.Kind == RedScriptFlowKind.Wrap))
             return ("Information: continuation paths found", "Each analyzed wrapper contains a continuation path", "The next implementation is not statically suppressed by these wrappers.", "A continuation path does not prove behavioral compatibility, argument preservation, or an unchanged result.");
         if (finding.Providers.Length == 1 && HasIdenticalReplacementBodies(interactions.Flows(finding.Target)))
@@ -414,6 +435,8 @@ public static class ConflictWorkQueueBuilder
         if (HasIdenticalReplacementBodies(interactions.Flows(finding.Target))) return ("No action: same replacement", "The replacement bodies are identical", "Both mods declare the same replacement body. The analyzed method result is identical in both sources.", "This proves identical replacement source, not a competing method result. It does not prove the mods are compatible elsewhere.");
         TweakOverlap? tweak = interactions.Tweak(finding.Target);
         if (tweak is null) return (null, null, null, null);
+        if (tweak.Kind == TweakOverlapKind.InternalContext)
+            return ("Information: internal source definitions", "Differing definitions occur within the same provider", "The source difference alone does not establish competing active components.", "This does not establish a gameplay failure or require a compatibility patch.");
         if (tweak.Kind == TweakOverlapKind.BaseRecordDependency)
             return ("Information: direct base-record relationship", "A $base declaration names a record changed by another provider", "The evidence includes changed base properties and matching explicit derived-property writes.", "This does not resolve final inherited values, recursive dependencies, or prove that the relationship is a conflict.");
         (string? result, string? proof) = tweak.Kind switch
@@ -438,7 +461,6 @@ public static class ConflictWorkQueueBuilder
 
     private static EvidenceClassification ClassifyInteraction(InteractionFinding finding, InteractionLookup interactions)
     {
-        if (finding.TweakRuntimeEvidence is not null) return EvidenceClassification.Review;
         if (finding.DeclarationEvidence is { Length: > 0 }) return EvidenceClassification.CompilerEvidence;
         if (finding.Kind == InteractionFindingKind.Exclusive)
         {
@@ -448,6 +470,8 @@ public static class ConflictWorkQueueBuilder
                 : HasDocumentedExclusiveMechanism(replacements);
             return competingReplacements ? EvidenceClassification.Exclusive : EvidenceClassification.Review;
         }
+        if (finding.TweakRuntimeEvidence?.CompetingValues().Any() == true) return EvidenceClassification.CompetingDeclaration;
+        if (finding.Kind == InteractionFindingKind.Informational) return EvidenceClassification.Informational;
         TweakOverlap? tweak = interactions.Tweak(finding.Target);
         if (tweak is not null) return tweak.Kind == TweakOverlapKind.BaseRecordDependency ? EvidenceClassification.Informational
             : tweak.Kind == TweakOverlapKind.ScalarOverwrite || HasCompetingWholeArrayReplacements(tweak) ? EvidenceClassification.CompetingDeclaration
