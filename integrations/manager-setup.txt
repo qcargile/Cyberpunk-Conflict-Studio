@@ -4,14 +4,14 @@ Conflict Studio is a portable external tool. Keep the complete extracted package
 
 Nexus package
 
-Download the same ZIP manually for MO2 or Vortex. It contains one `ConflictStudio.exe` under Conflict Studio and the Vortex extension at the top level of the ZIP. The beta release is unsigned, so Windows may show its normal unknown-publisher warning on first launch.
+Download the same ZIP manually for MO2 or Vortex. ConflictStudio.exe and the Vortex extension files are at the top level. Licenses is the only subfolder. The beta release is unsigned, so Windows may show its normal unknown-publisher warning on first launch.
 
 MO2
 
 1. Do not install the ZIP as an MO2 mod. Extract it anywhere outside the MO2 instance's `mods` directory. A folder such as `<MO2 instance>\tools\Conflict Studio` works.
 2. Open Settings > Workarounds > Executables Blacklist and add ConflictStudio.exe. Conflict Studio needs to read the real profile and mod folders, without MO2's virtual file system combining them.
 3. Open the executable list beside Run and choose Edit.
-4. Add the extracted Conflict Studio\ConflictStudio.exe as a custom executable.
+4. Add ConflictStudio.exe from the top level of the extracted folder as a custom executable. If updating from the older package layout, update the existing executable entry to this new location.
 5. Set Start in to the MO2 instance root containing ModOrganizer.ini.
 6. Use arguments: --manager mo2 --profile current
 7. Leave Force load libraries and Create files in mod instead of overwrite unchecked.
@@ -32,7 +32,7 @@ Keep Vortex running when saving archive order. The extension checks that the req
 
 Manual installation
 
-1. Extract the downloaded Nexus ZIP anywhere you prefer and run Conflict Studio\ConflictStudio.exe.
+1. Extract the downloaded Nexus ZIP anywhere you prefer and run ConflictStudio.exe from that folder.
 2. Choose Manual in the manager selector.
 3. Browse to the Cyberpunk 2077 installation folder containing bin and archive.
 4. Scan the deployed game. Archive order writes go directly to archive\pc\mod\modlist.txt with the same preview, backup, game-process guard, verification, and undo protections.

@@ -27,7 +27,7 @@ if ($bridgeInfo.version -ne $metadata.version -or $bridgeInfo.id -ne 'conflict-s
 $actualFiles = @(Get-ChildItem -LiteralPath $resolvedPackage -File -Recurse | Where-Object Name -ne 'package-manifest.json' | ForEach-Object { $_.FullName.Substring($resolvedPackage.Length).TrimStart('\').Replace('\','/') } | Sort-Object)
 $expectedFiles = @($manifest.files | ForEach-Object path | Sort-Object)
 if ((ConvertTo-Json $actualFiles -Compress) -ne (ConvertTo-Json $expectedFiles -Compress)) { throw 'Package file inventory does not match the manifest.' }
-$allowedFiles = @('Conflict Studio/ConflictStudio.exe', 'ConflictStudio.png', 'Licenses/Conflict-Studio-LICENSE.txt', 'Licenses/DOTNET-LICENSE.txt', 'Licenses/DOTNET-THIRD-PARTY-NOTICES.txt', 'Licenses/THIRD-PARTY-NOTICES.txt', 'bridge.js', 'index.js', 'info.json') | Sort-Object
+$allowedFiles = @($metadata.entryPoint, 'ConflictStudio.png', 'Licenses/Conflict-Studio-LICENSE.txt', 'Licenses/DOTNET-LICENSE.txt', 'Licenses/DOTNET-THIRD-PARTY-NOTICES.txt', 'Licenses/THIRD-PARTY-NOTICES.txt', 'bridge.js', 'index.js', 'info.json') | Sort-Object
 if ((ConvertTo-Json $actualFiles -Compress) -ne (ConvertTo-Json $allowedFiles -Compress)) { throw 'The Nexus package does not match the one-executable public layout.' }
 foreach ($entry in $manifest.files) {
     $filePath = Join-Path $resolvedPackage ($entry.path -replace '/', '\')

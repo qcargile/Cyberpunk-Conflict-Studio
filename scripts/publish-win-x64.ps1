@@ -43,7 +43,7 @@ $stageRoot = Join-Path ([IO.Path]::GetTempPath()) "cyberpunk-conflict-studio-$Ve
 
 try {
     New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
-    $appStage = Join-Path $stageRoot 'Conflict Studio'
+    $appStage = $stageRoot
     if ((Invoke-PublisherCommand dotnet @('test', $coreTests, '--configuration', 'Release')) -ne 0) { throw 'Core regression tests failed.' }
     if ((Invoke-PublisherCommand dotnet @('test', $appTests, '--configuration', 'Release')) -ne 0) { throw 'App regression tests failed.' }
     if ((Invoke-PublisherCommand dotnet @('restore', $appProject, '--runtime', 'win-x64')) -ne 0) { throw 'dotnet restore failed.' }
@@ -99,7 +99,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Package verification failed.' }
     $nexusArchive = Join-Path (Split-Path -Parent $packageRoot) "Cyberpunk-Conflict-Studio-$Version-Nexus.zip"
     if (Test-Path -LiteralPath $nexusArchive) { if (-not $Force) { throw "Nexus archive already exists. Use -Force to replace it: $nexusArchive" }; Remove-Item -LiteralPath $nexusArchive -Force }
-    $archiveInputs = @('Conflict Studio', 'Licenses', 'ConflictStudio.png', 'bridge.js', 'index.js', 'info.json') | ForEach-Object { Join-Path $packageRoot $_ }
+    $archiveInputs = @('ConflictStudio.exe', 'Licenses', 'ConflictStudio.png', 'bridge.js', 'index.js', 'info.json') | ForEach-Object { Join-Path $packageRoot $_ }
     Compress-Archive -Path $archiveInputs -DestinationPath $nexusArchive -CompressionLevel Optimal
     & (Join-Path $PSScriptRoot 'verify-package.ps1') -PackageRoot $packageRoot -MetadataPath $metadataPath -ArchivePath $nexusArchive
     if ($LASTEXITCODE -ne 0) { throw 'Nexus archive verification failed.' }
