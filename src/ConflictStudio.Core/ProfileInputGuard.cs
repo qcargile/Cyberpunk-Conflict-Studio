@@ -64,7 +64,7 @@ public static class ProfileInputGuard
         if (snapshot.Sha256 is null)
         {
             bool metadataChanged = current.Length != snapshot.Length || current.LastWriteTimeUtc != snapshot.LastWriteTimeUtc;
-            if (metadataChanged) throw new ProfileInputChangedException($"An active file's metadata changed during the scan: {snapshot.Path}. Start length={snapshot.Length}, last write UTC={snapshot.LastWriteTimeUtc:O}; final length={current.Length}, last write UTC={current.LastWriteTimeUtc:O}.");
+            if (metadataChanged) throw new ProfileInputChangedException($"A file's size or last-modified time changed during the scan: {snapshot.Path}. Start length={snapshot.Length}, last write UTC={snapshot.LastWriteTimeUtc:O}; final length={current.Length}, last write UTC={current.LastWriteTimeUtc:O}.");
             return;
         }
         FileSha256Result fingerprint = FileSha256.Fingerprint(snapshot.Path, progress, cancellationToken);

@@ -262,7 +262,7 @@ public sealed class VortexManagerContextTests
 
             CrossManagerDeploymentException exception = Assert.ThrowsExactly<CrossManagerDeploymentException>(() => VortexDeploymentGuard.RequireNoDeployment(game, contextPath));
 
-            StringAssert.Contains(exception.Message, "cannot prove");
+            StringAssert.Contains(exception.Message, "cannot confirm");
         }
         finally
         {
@@ -289,7 +289,7 @@ public sealed class VortexManagerContextTests
 
             CrossManagerDeploymentException exception = Assert.ThrowsExactly<CrossManagerDeploymentException>(() => VortexDeploymentGuard.RequireNoDeployment(game, contextPath));
 
-            StringAssert.Contains(exception.Message, "cannot prove");
+            StringAssert.Contains(exception.Message, "cannot confirm");
         }
         finally
         {

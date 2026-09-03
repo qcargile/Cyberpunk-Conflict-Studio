@@ -55,6 +55,6 @@ public partial class App : Application
         bool recorded = _diagnostics.TryWriteStartupFailure(exception);
         if (!showMessage) return;
         string detail = recorded ? $"Details were saved to {_diagnostics.DirectoryPath}\\startup-failure.log." : "Conflict Studio could not write its startup-failure log.";
-        MessageBox.Show($"Conflict Studio could not start. {detail}", "Conflict Studio startup failure", MessageBoxButton.OK, MessageBoxImage.Error);
+        MessageBox.Show($"Conflict Studio encountered an error and must close. {detail}", "Conflict Studio error", MessageBoxButton.OK, MessageBoxImage.Error);
     }
 }

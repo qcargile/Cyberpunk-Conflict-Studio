@@ -92,7 +92,7 @@ public sealed class ResultAdmissionTests
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single();
         Assert.AreEqual(EvidenceClassification.CompilerEvidence, item.Classification);
         Assert.AreEqual(InteractionFindingKind.Review, receipt.InteractionFindings.Single().Kind);
-        StringAssert.Contains(item.NextAction, "compiler");
+        StringAssert.Contains(item.NextAction, "RedScript errors");
         Assert.IsFalse(item.NextAction.Contains("no forwarding", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(item.Summary.Contains("Gamma", StringComparison.Ordinal));
         Assert.IsFalse(item.Summary.Contains("Delta", StringComparison.Ordinal));

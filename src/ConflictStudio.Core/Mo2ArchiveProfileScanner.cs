@@ -221,8 +221,8 @@ public static class Mo2ArchiveProfileScanner
             catch (ArchiveOrderException exception)
             {
                 List<string> reasons = [];
-                if (missing.Length > 0) reasons.Add($"missing active archives: {string.Join(", ", missing)}");
-                if (duplicates.Length > 0) reasons.Add($"duplicate active archives: {string.Join(", ", duplicates)}");
+                if (missing.Length > 0) reasons.Add($"enabled archives missing from the load-order list: {string.Join(", ", missing)}");
+                if (duplicates.Length > 0) reasons.Add($"archives listed more than once: {string.Join(", ", duplicates)}");
                 if (ignored.Length > 0) reasons.Add($"inactive entries ignored: {string.Join(", ", ignored)}");
                 if (reasons.Count == 0) reasons.Add(exception.Message);
                 string[] repaired = ArchiveOrderPlanner.CreateRepairOrder(discovered, activeOrder);

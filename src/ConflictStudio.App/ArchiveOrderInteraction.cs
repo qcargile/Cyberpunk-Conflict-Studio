@@ -93,8 +93,8 @@ public sealed class ArchiveOrderCloseDialog : Window
         FontFamily = new FontFamily("Segoe UI");
         Border body = new() { Padding = new Thickness(20), BorderBrush = Brush("#8C8500"), BorderThickness = new Thickness(1) };
         StackPanel stack = new();
-        stack.Children.Add(new TextBlock { Text = canApply ? "The proposed archive order has not been applied." : "The proposed archive order cannot be applied with the current evidence.", FontSize = 17, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
-        stack.Children.Add(new TextBlock { Text = canApply ? "Apply and verify it before exit, discard it, or keep editing." : "Discard it to exit, or keep editing.", Margin = new Thickness(0, 8, 0, 18), Foreground = Brush("#B7C6C4"), TextWrapping = TextWrapping.Wrap });
+        stack.Children.Add(new TextBlock { Text = canApply ? "The proposed archive order has not been applied." : "The proposed archive order is not ready to apply.", FontSize = 17, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+        stack.Children.Add(new TextBlock { Text = canApply ? "Apply and verify it before exit, discard it, or keep editing." : "Choose Keep editing to check what is blocking it, or Discard to exit.", Margin = new Thickness(0, 8, 0, 18), Foreground = Brush("#B7C6C4"), TextWrapping = TextWrapping.Wrap });
         StackPanel actions = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         if (canApply) actions.Children.Add(ActionButton("Apply and exit", ArchiveOrderCloseAction.ApplyAndClose, "#1D4B46", "#3D8C7E"));
         actions.Children.Add(ActionButton("Discard", ArchiveOrderCloseAction.DiscardAndClose, "#321701", "#8A4200"));

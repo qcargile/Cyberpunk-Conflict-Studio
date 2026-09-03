@@ -253,7 +253,7 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         {
             _preview = null;
             CanApply = false;
-            PreviewStatus = "Packed-resource evidence is unavailable for this profile. Run the complete profile scan before changing archive order.";
+            PreviewStatus = "File-conflict information is missing for this profile. Run the complete profile scan before changing archive order.";
             return;
         }
         _preview = ArchiveOrderPlanner.CreatePreview(_observation, _proposedOrder);
@@ -276,13 +276,13 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         if (unknownImpact == UnknownArchiveOrderImpact.BlockedCrossing)
         {
             CanApply = false;
-            PreviewStatus = "The proposed order crosses an unreadable archive, so its impact cannot be bounded. Repair that archive before applying this change.";
+            PreviewStatus = "This move passes an archive that Conflict Studio cannot read, so it cannot check which files would win. Repair that archive before applying this change.";
             return;
         }
         if (unknownImpact == UnknownArchiveOrderImpact.RequiresAcknowledgement && !UnknownImpactAcknowledged)
         {
             CanApply = false;
-            PreviewStatus = "An unreadable archive leaves part of this change's impact unknown. Explicitly acknowledge the unknown impact before applying.";
+            PreviewStatus = "Some effects of this change cannot be previewed because an archive could not be read. Use the checkbox to acknowledge this before applying.";
             return;
         }
         if (_profileTarget?.WriteBlockedReason is not null)
@@ -293,8 +293,8 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         }
         if (repairRequired)
         {
-            PreviewStatus = _winnerDeltas.Length == 0 ? "This repair completes the archive order without changing the proposed winners." : $"This repair completes the archive order and changes {_winnerDeltas.Length:N0} contested resource winners.";
-            if (unknownImpact == UnknownArchiveOrderImpact.RequiresAcknowledgement) PreviewStatus += " Unknown impact acknowledged.";
+            PreviewStatus = _winnerDeltas.Length == 0 ? "This repair completes the archive order without changing which archives supply the shared files in the preview." : $"This repair completes the archive order and changes which archives supply {_winnerDeltas.Length:N0} shared files.";
+            if (unknownImpact == UnknownArchiveOrderImpact.RequiresAcknowledgement) PreviewStatus += " You acknowledged that some effects cannot be previewed.";
             CanApply = true;
             return;
         }
@@ -306,9 +306,9 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         }
         int changed = _preview.ChangedArchives.Length;
         string positions = changed == 1 ? "1 archive position" : $"{changed} archive positions";
-        string winners = _winnerDeltas.Length == 1 ? "1 contested resource winner" : $"{_winnerDeltas.Length} contested resource winners";
-        PreviewStatus = $"This changes {positions} and {winners}. Review both before applying.";
-        if (unknownImpact == UnknownArchiveOrderImpact.RequiresAcknowledgement) PreviewStatus += " Unknown impact acknowledged.";
+        string winners = _winnerDeltas.Length == 1 ? "1 shared file" : $"{_winnerDeltas.Length} shared files";
+        PreviewStatus = $"This changes {positions} and which archives supply {winners}. Review the before-and-after changes before applying.";
+        if (unknownImpact == UnknownArchiveOrderImpact.RequiresAcknowledgement) PreviewStatus += " You acknowledged that some effects cannot be previewed.";
         CanApply = true;
     }
 
@@ -333,8 +333,8 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
     {
         if (_preview is null || _observation is null || _decisionDirectory is null) throw new ArchiveOrderException("Preview an archive order before applying it.");
         UnknownArchiveOrderImpact unknownImpact = ArchiveUnknownImpactPolicy.Evaluate(_observation.EffectiveOrder, _preview.ProposedOrder, _unreadableArchives);
-        if (unknownImpact == UnknownArchiveOrderImpact.BlockedCrossing) throw new ArchiveOrderException("The proposed order crosses an unreadable archive. Repair that archive before applying.");
-        if (unknownImpact == UnknownArchiveOrderImpact.RequiresAcknowledgement && !UnknownImpactAcknowledged) throw new ArchiveOrderException("Acknowledge the unknown unreadable-archive impact before applying.");
+        if (unknownImpact == UnknownArchiveOrderImpact.BlockedCrossing) throw new ArchiveOrderException("This move passes an archive that Conflict Studio cannot read. Repair that archive before applying.");
+        if (unknownImpact == UnknownArchiveOrderImpact.RequiresAcknowledgement && !UnknownImpactAcknowledged) throw new ArchiveOrderException("Use the checkbox to acknowledge that some effects cannot be previewed because an archive could not be read.");
         if (_profileTarget?.WriteBlockedReason is not null) throw new ArchiveOrderException(_profileTarget.WriteBlockedReason);
         RefreshAndRequireWriteTarget();
         IArchiveOrderWriter writer = _writerFactory(_profileTarget);

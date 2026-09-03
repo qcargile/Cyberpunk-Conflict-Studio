@@ -125,7 +125,7 @@ function rollbackOrder(response, context) {
   const orderPath = path.join(context.gameRoot, "archive", "pc", "mod", "modlist.txt");
   const current = fs.existsSync(orderPath) ? fs.readFileSync(orderPath) : null;
   const currentSha = current === null ? null : sha(current);
-  if (currentSha !== response.writtenSha256) throw new Error("The Vortex archive order changed before rollback; the concurrent edit was preserved.");
+  if (currentSha !== response.writtenSha256) throw new Error("The Vortex archive order changed again before the previous order could be restored. The newer change was left untouched.");
   const restoredBytes = restoreBytes(response.backupPath, orderPath);
   if (response.backupPath === null)
   {
@@ -154,7 +154,7 @@ async function completeOrder(response, context, refresh, publish) {
 }
 
 function requireRequest(request, context, now) {
-  if (request.schemaVersion !== 1 || !/^[0-9a-f]{32}$/.test(request.requestId) || request.contextId !== context.contextId || request.profileId !== context.profileId) throw new Error("The archive order request does not belong to the active Vortex profile context.");
+  if (request.schemaVersion !== 1 || !/^[0-9a-f]{32}$/.test(request.requestId) || request.contextId !== context.contextId || request.profileId !== context.profileId) throw new Error("The archive order request is invalid or does not match the current Vortex profile information.");
   if (!context.deploymentFresh) throw new Error("Deploy the active Vortex profile before applying an archive order.");
   if (!Array.isArray(request.inventory) || !Array.isArray(request.proposedOrder)) throw new Error("The archive order request is incomplete.");
   const requestedAt = new Date(request.requestedAtUtc);

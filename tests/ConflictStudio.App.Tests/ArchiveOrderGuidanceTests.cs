@@ -8,7 +8,7 @@ public sealed class ArchiveOrderGuidanceTests
 {
     [TestMethod]
     [DataRow(ArchiveOrderProblemLane.Legacy, "Repair legacy load order", "Add every named active archive once to the legacy load order, then re-check conflicts.")]
-    [DataRow(ArchiveOrderProblemLane.Redmod, "Re-deploy REDmods", "Re-deploy REDmods from this active MO2 profile, then re-check conflicts.")]
+    [DataRow(ArchiveOrderProblemLane.Redmod, "Show REDmod deployment steps", "Re-deploy REDmods from this active MO2 profile, then re-check conflicts.")]
     [DataRow(ArchiveOrderProblemLane.Combined, "Show repair steps", "Repair the named legacy archive-order entries and re-deploy REDmods, then re-check conflicts.")]
     public void ActionLabelNamesTheBlockingOwner(ArchiveOrderProblemLane lane, string expectedLabel, string expectedInstruction)
     {

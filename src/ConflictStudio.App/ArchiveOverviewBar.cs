@@ -121,8 +121,8 @@ internal sealed class ArchiveOverviewAutomationPeer : FrameworkElementAutomation
         List<string> parts = ["Selected: " + string.Join(", ", OwnerBar.SelectedArchives.Select(DescribePosition))];
         AddRelationships(parts, "Selection wins over", OwnerBar.Entries.Where(value => value.SelectedWins));
         AddRelationships(parts, "Selection loses to", OwnerBar.Entries.Where(value => value.SelectedLoses));
-        AddRelationships(parts, "Identical payloads", OwnerBar.Entries.Where(value => value.HasSame));
-        AddRelationships(parts, "Direction can't be determined", OwnerBar.Entries.Where(value => value.HasUnknown));
+        AddRelationships(parts, "Matching file content", OwnerBar.Entries.Where(value => value.HasSame));
+        AddRelationships(parts, "Cannot tell which archive wins", OwnerBar.Entries.Where(value => value.HasUnknown));
         return string.Join(". ", parts) + ".";
     }
 

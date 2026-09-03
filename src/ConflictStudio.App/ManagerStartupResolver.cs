@@ -66,7 +66,7 @@ public static class ManagerStartupResolver
         string path = Path.GetFullPath(options.VortexContext ?? defaultContextPath);
         if (!File.Exists(path))
         {
-            if (string.Equals(options.Manager, "vortex", StringComparison.OrdinalIgnoreCase)) throw new FileNotFoundException("The Vortex bridge context is missing. Open Vortex with the Conflict Studio bridge enabled, then try again.", path);
+            if (string.Equals(options.Manager, "vortex", StringComparison.OrdinalIgnoreCase)) throw new FileNotFoundException("The Vortex profile information is missing. Enable the Conflict Studio extension in Vortex, open Vortex, then try again.", path);
             return null;
         }
         VortexManagerContext context = VortexManagerContextStore.Read(path);

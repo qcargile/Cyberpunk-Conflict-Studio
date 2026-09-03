@@ -79,7 +79,7 @@ public sealed class ManagerStartupResolverTests
 
         FileNotFoundException exception = Assert.ThrowsExactly<FileNotFoundException>(() => ManagerStartupResolver.ResolveVortex(options, path));
 
-        StringAssert.Contains(exception.Message, "Vortex bridge context");
+        StringAssert.Contains(exception.Message, "Vortex profile information");
     }
 
     [TestMethod]

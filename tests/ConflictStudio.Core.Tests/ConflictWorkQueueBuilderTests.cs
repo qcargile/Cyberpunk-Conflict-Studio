@@ -162,7 +162,7 @@ public sealed class ConflictWorkQueueBuilderTests
         Assert.AreNotEqual(original.EvidenceSha256, changed.EvidenceSha256);
         Assert.AreNotEqual(ConflictWorkState.Reviewed, changed.State);
         Assert.AreEqual(EvidenceClassification.CompilerEvidence, original.Classification);
-        StringAssert.Contains(original.NextAction, "compiler");
+        StringAssert.Contains(original.NextAction, "RedScript errors");
     }
 
     [TestMethod]
@@ -180,7 +180,7 @@ public sealed class ConflictWorkQueueBuilderTests
         Assert.AreEqual(expected, item.Classification);
         Assert.AreEqual("Alpha", item.Providers.Single());
         AssertSingleProviderWording(finding, item);
-        if (expected == EvidenceClassification.Exclusive) StringAssert.Contains(item.NextAction, "declaration");
+        if (expected == EvidenceClassification.Exclusive) StringAssert.Contains(item.NextAction, "replacement");
     }
 
     [TestMethod]
@@ -414,7 +414,7 @@ public sealed class ConflictWorkQueueBuilderTests
         Assert.AreEqual(EvidenceClassification.CompetingDeclaration, item.Classification);
         Assert.AreEqual(ConflictCaseKind.CompetingDeclaration, item.CaseKind);
         Assert.AreEqual("Review: different values assigned", item.ClassificationLabel);
-        Assert.AreEqual("Two active sources assign different values to one field", item.ProofLabel);
+        Assert.AreEqual("The files set the same game value differently", item.ProofLabel);
         StringAssert.Contains(item.Summary, "10");
         StringAssert.Contains(item.Summary, "20");
     }
@@ -435,7 +435,7 @@ public sealed class ConflictWorkQueueBuilderTests
         StringAssert.Contains(item.Summary, "Items.StockA");
         StringAssert.Contains(item.Summary, "adds");
         StringAssert.Contains(item.Summary, "removes");
-        StringAssert.Contains(item.MeaningLabel, "array");
+        StringAssert.Contains(item.MeaningLabel, "list");
         Assert.IsFalse(item.BoundaryLabel.Contains("different source values", StringComparison.Ordinal));
     }
 
@@ -477,9 +477,9 @@ public sealed class ConflictWorkQueueBuilderTests
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == finding.Target);
 
         Assert.AreEqual(EvidenceClassification.Review, item.Classification);
-        Assert.AreEqual("Review: same record is built differently", item.ClassificationLabel);
-        Assert.AreEqual("Several mods construct the same record with different source", item.ProofLabel);
-        StringAssert.Contains(item.NextAction, "one record definition");
+        Assert.AreEqual("Review: different definitions for one game entry", item.ClassificationLabel);
+        Assert.AreEqual("Several mods define the same game entry differently", item.ProofLabel);
+        StringAssert.Contains(item.NextAction, "compatibility patch");
     }
 
     [TestMethod]
@@ -494,8 +494,8 @@ public sealed class ConflictWorkQueueBuilderTests
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == finding.Target);
 
         Assert.AreEqual(EvidenceClassification.Review, item.Classification);
-        Assert.AreEqual("Review: copied array needs verification", item.ClassificationLabel);
-        Assert.AreEqual("One mod copies an array that another mod changes", item.ProofLabel);
+        Assert.AreEqual("Review: a copied list may change", item.ClassificationLabel);
+        Assert.AreEqual("One mod copies a list that another mod changes", item.ProofLabel);
     }
 
     [TestMethod]
@@ -627,7 +627,7 @@ public sealed class ConflictWorkQueueBuilderTests
 
         Assert.AreEqual("Review when relevant", item.StateLabel);
         Assert.AreEqual("Packed archive file", item.SurfaceLabel);
-        Assert.AreEqual("One deployed file is selected", item.ClassificationLabel);
+        Assert.AreEqual("One installed copy takes priority", item.ClassificationLabel);
     }
 
     [TestMethod]
@@ -639,7 +639,7 @@ public sealed class ConflictWorkQueueBuilderTests
 
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.VirtualFile);
 
-        Assert.AreEqual("The deployed order selects one file", item.ProofLabel);
+        Assert.AreEqual("The current mod order selects one copy of this file", item.ProofLabel);
         StringAssert.Contains(item.Summary, "Vortex");
         StringAssert.Contains(item.NextAction, "Vortex");
         Assert.IsFalse(item.NextAction.Contains("MO2", StringComparison.Ordinal));

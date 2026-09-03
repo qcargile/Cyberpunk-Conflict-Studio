@@ -45,7 +45,7 @@ public sealed class ArchiveOrderWorkspaceViewModelTests
             Assert.IsFalse(viewModel.UnknownImpactAcknowledged);
             viewModel.PreviewOrder();
             Assert.IsFalse(viewModel.CanApply);
-            StringAssert.Contains(viewModel.PreviewStatus, "crosses");
+            StringAssert.Contains(viewModel.PreviewStatus, "passes an archive");
         }
         finally
         {

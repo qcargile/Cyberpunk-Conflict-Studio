@@ -70,8 +70,8 @@ public sealed class ArchiveOverviewBarTests
 
                 StringAssert.Contains(value.Value, "Selection wins over: B.archive");
                 StringAssert.Contains(value.Value, "Selection loses to: C.archive");
-                StringAssert.Contains(value.Value, "Identical payloads: D.archive");
-                StringAssert.Contains(value.Value, "Direction can't be determined: E.archive");
+                StringAssert.Contains(value.Value, "Matching file content: D.archive");
+                StringAssert.Contains(value.Value, "Cannot tell which archive wins: E.archive");
                 window.Close();
             }
             catch (Exception exception)
