@@ -21,10 +21,10 @@ public sealed record CodeCoverageReceipt(
             unsupported, unreadable,
             callbacks.Where(value => value.Confidence != EvidenceConfidence.Dynamic).Sum(value => value.Copies.Length),
             callbacks.Where(value => value.Confidence == EvidenceConfidence.Dynamic).Sum(value => value.Copies.Length),
-            ["Partial static coverage: counts are effective source files submitted to analysis, not proof of execution or complete language coverage.",
-             "RedScript declaration coverage is annotation-only; literal runtime TweakDB writes are also collected. No complete symbol analysis.",
-             "CET Lua reachability follows literal imports from effective init.lua files. Unresolved loading retains the mod's files as candidates; function execution and dynamic callback targets are not established.",
-             "RED .tweak files are unsupported. Unreadable inputs count distinct file or directory diagnostics, not conflict findings; parser and activation limitations remain in scan diagnostics.",
-             "Native plugin internals are unexamined."]);
+            ["These counts show files included in the scan. Conflict Studio reads code without running it and cannot understand every language feature, so inclusion does not prove that the code runs.",
+             "RedScript checks cover code definitions marked with annotations such as @replaceMethod, not every definition or use of a name. The scan also collects code that changes a directly named game database value while running.",
+             "CET Lua checks start at the selected init.lua and follow other files loaded by name. If the scan cannot tell which files are loaded, it keeps the mod's other files as possible inputs. It cannot confirm that a function runs or identify every event or method whose name is calculated by code.",
+             "RED .tweak files are listed but not analyzed. The unreadable count is the number of distinct files or folders with reported read problems, not the number of conflicts. Scan diagnostics explain other limits on reading code or determining whether it loads.",
+             "The scan does not inspect code inside native plugin DLLs."]);
     }
 }

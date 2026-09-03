@@ -188,13 +188,13 @@ function init(context) {
   function watchRequests() {
     fs.mkdirSync(bridgeRoot, { recursive: true });
     const watcher = fs.watch(bridgeRoot, () => scheduleRequests().catch(reportRequestFailure));
-    watcher.on("error", (error) => context.api.showErrorNotification("Conflict Studio bridge request listener failed", error, { allowReport: false }));
+    watcher.on("error", (error) => context.api.showErrorNotification("The Vortex extension could not listen for requests from Conflict Studio", error, { allowReport: false }));
     bridgeLog("info", "Conflict Studio bridge request listener ready", { path: bridgeRoot });
     if (fs.existsSync(contextRequestPath) || fs.existsSync(orderRequestPath)) scheduleRequests().catch(reportRequestFailure);
   }
 
   function reportRequestFailure(error) {
-    context.api.showErrorNotification("Conflict Studio bridge request failed", error, { allowReport: false });
+    context.api.showErrorNotification("The Vortex extension could not complete a request from Conflict Studio", error, { allowReport: false });
   }
 
   function invalidateState() {

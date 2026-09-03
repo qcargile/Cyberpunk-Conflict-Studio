@@ -99,8 +99,8 @@ public static class VortexManagerContextStore
     {
         ArgumentNullException.ThrowIfNull(content);
         VortexManagerContext context;
-        try { context = JsonSerializer.Deserialize<VortexManagerContext>(content, Options) ?? throw new InvalidDataException("The Vortex context is empty."); }
-        catch (JsonException exception) { throw new InvalidDataException("The Vortex context is invalid.", exception); }
+        try { context = JsonSerializer.Deserialize<VortexManagerContext>(content, Options) ?? throw new InvalidDataException("The saved Vortex profile information is empty."); }
+        catch (JsonException exception) { throw new InvalidDataException("The saved Vortex profile information could not be read.", exception); }
         Validate(context);
         string gameRoot = Path.GetFullPath(context.GameRoot);
         string stagingRoot = Path.GetFullPath(context.StagingRoot);
@@ -113,11 +113,11 @@ public static class VortexManagerContextStore
 
     private static void Validate(VortexManagerContext context)
     {
-        if (context.SchemaVersion != 1 || !IsSha256(context.ContextId) || context.CapturedAtUtc == default || context.CapturedAtUtc.Offset != TimeSpan.Zero || string.IsNullOrWhiteSpace(context.ProfileId) || string.IsNullOrWhiteSpace(context.ProfileName)) throw new InvalidDataException("The Vortex context header is invalid.");
+        if (context.SchemaVersion != 1 || !IsSha256(context.ContextId) || context.CapturedAtUtc == default || context.CapturedAtUtc.Offset != TimeSpan.Zero || string.IsNullOrWhiteSpace(context.ProfileId) || string.IsNullOrWhiteSpace(context.ProfileName)) throw new InvalidDataException("The saved Vortex profile information has an unsupported format or missing or invalid profile details.");
         if (context.HeartbeatAtUtc is DateTimeOffset heartbeat && (heartbeat == default || heartbeat.Offset != TimeSpan.Zero)) throw new InvalidDataException("The Vortex heartbeat timestamp is invalid.");
-        if (!Path.IsPathRooted(context.GameRoot) || !Path.IsPathRooted(context.StagingRoot) || !Directory.Exists(context.GameRoot) || !Directory.Exists(context.StagingRoot)) throw new InvalidDataException("The Vortex context paths are invalid.");
-        if (context.Providers is null || context.DeployedWinners is null || context.ArchiveOrder is null) throw new InvalidDataException("The Vortex context is incomplete.");
-        if (!string.Equals(context.ContextId, ComputeContextId(context), StringComparison.Ordinal)) throw new InvalidDataException("The Vortex context identity does not match its contents.");
+        if (!Path.IsPathRooted(context.GameRoot) || !Path.IsPathRooted(context.StagingRoot) || !Directory.Exists(context.GameRoot) || !Directory.Exists(context.StagingRoot)) throw new InvalidDataException("The saved Vortex game folder or mod staging folder has an invalid path or does not exist.");
+        if (context.Providers is null || context.DeployedWinners is null || context.ArchiveOrder is null) throw new InvalidDataException("The saved Vortex profile information is missing its mod list, installed-file selections, or archive order.");
+        if (!string.Equals(context.ContextId, ComputeContextId(context), StringComparison.Ordinal)) throw new InvalidDataException("The saved Vortex profile information does not match its verification code. Refresh it through the Conflict Studio extension in Vortex.");
         if (context.DeploymentFileCount < 0 || context.RelevantDeploymentFileCount < 0 || context.UnmappedRelevantFileCount < 0 || context.BridgeRefreshMilliseconds < 0 || context.TargetRelocatedFileCount < 0) throw new InvalidDataException("The Vortex deployment metrics are invalid.");
         if (context.DeploymentInventoryComplete && (context.RelevantDeploymentFileCount > context.DeploymentFileCount || context.UnmappedRelevantFileCount > context.RelevantDeploymentFileCount || context.DeployedWinners.Count > context.RelevantDeploymentFileCount || context.TargetRelocatedFileCount > context.UnmappedRelevantFileCount)) throw new InvalidDataException("The Vortex deployment counts are inconsistent.");
         HashSet<string> providerIds = new(StringComparer.OrdinalIgnoreCase);
@@ -204,7 +204,7 @@ public static class VortexDeploymentGuard
         {
             string? contextGameRoot = TryReadGameRoot(contextPath);
             if (contextGameRoot is null || !string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(gameRoot)), Path.TrimEndingDirectorySeparator(contextGameRoot), StringComparison.OrdinalIgnoreCase)) return;
-            throw new CrossManagerDeploymentException($"The Vortex bridge context is unreadable, so Conflict Studio cannot prove that this Cyberpunk installation is free of a Vortex deployment: {exception.Message}");
+            throw new CrossManagerDeploymentException($"The saved Vortex profile information could not be read, so Conflict Studio cannot confirm that Vortex's deployed files have been removed from this Cyberpunk installation: {exception.Message}");
         }
         string root = Path.GetFullPath(gameRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         if (!string.Equals(root, context.GameRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) return;
@@ -243,8 +243,8 @@ public static class VortexDeploymentGuard
             }
         });
         if (!deployedFile && !ownershipUnresolved) return;
-        if (!deployedFile) throw new CrossManagerDeploymentException($"Vortex profile '{context.ProfileName}' still names files in this Cyberpunk installation, but the staged provider bytes are unavailable. Conflict Studio cannot prove that the Vortex deployment was purged.");
-        throw new CrossManagerDeploymentException($"Vortex profile '{context.ProfileName}' still has 1 deployed file byte-matched in this Cyberpunk installation. Purge the Vortex deployment before scanning an MO2 profile, or switch Conflict Studio to Vortex mode.");
+        if (!deployedFile) throw new CrossManagerDeploymentException($"Vortex profile '{context.ProfileName}' still lists files in this Cyberpunk installation, but their original copies in Vortex's mod folders are unavailable for comparison. Conflict Studio cannot confirm that Vortex's deployed files have been removed.");
+        throw new CrossManagerDeploymentException($"Vortex profile '{context.ProfileName}' still has at least 1 deployed file with matching content in this Cyberpunk installation. Purge the Vortex deployment before scanning an MO2 profile, or switch Conflict Studio to Vortex mode.");
     }
 
     private static string? TryReadGameRoot(string contextPath)

@@ -60,7 +60,7 @@ public static class DiagnosticReportBuilder
     {
         if (actions.Count == 0)
         {
-            text.AppendLine("No material actions have been recorded in this session.");
+            text.AppendLine("No actions have been recorded in this session.");
             return;
         }
         foreach (DiagnosticAction action in actions.TakeLast(100))

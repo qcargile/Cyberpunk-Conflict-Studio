@@ -11,7 +11,7 @@ public static class ArchiveOrderGuidance
         if (evidence.IsRepairableLegacyOrder) return "Review repair draft";
         return evidence.ProblemLane switch
         {
-            ArchiveOrderProblemLane.Redmod => "Re-deploy REDmods",
+            ArchiveOrderProblemLane.Redmod => "Show REDmod deployment steps",
             ArchiveOrderProblemLane.Combined => "Show repair steps",
             _ => "Repair legacy load order"
         };

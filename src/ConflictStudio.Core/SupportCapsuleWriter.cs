@@ -33,11 +33,11 @@ public static class SupportCapsuleWriter
         html.Append("<h2>Code coverage</h2>");
         if (capsule.Evidence.CodeCoverage is { } coverage)
         {
-            html.Append("<p>Effective files submitted to analysis: ").Append(E(string.Join(" · ", coverage.Sources.Select(value => $"{value.Surface}: {value.AnalyzedFiles}")))).Append("</p>");
-            html.Append("<p>Unsupported .tweak: ").Append(coverage.UnsupportedTweakFiles).Append(" · Unreadable inputs: ").Append(coverage.UnreadableInputs).Append(" · CET callbacks: ").Append(coverage.LiteralCallbacks).Append(" literal / ").Append(coverage.DynamicCallbacks).Append(" dynamic</p>");
+            html.Append("<p>Files included in the scan: ").Append(E(string.Join(" · ", coverage.Sources.Select(value => $"{value.Surface}: {value.AnalyzedFiles}")))).Append("</p>");
+            html.Append("<p>.tweak files not analyzed: ").Append(coverage.UnsupportedTweakFiles).Append(" · Files or folders that could not be read: ").Append(coverage.UnreadableInputs).Append(" · CET code linked to events or methods: ").Append(coverage.LiteralCallbacks).Append(" with directly named targets / ").Append(coverage.DynamicCallbacks).Append(" with targets calculated by code</p>");
             foreach (string limitation in coverage.Limitations) html.Append("<p class=\"muted\">").Append(E(limitation)).Append("</p>");
         }
-        else html.Append("<p>Coverage was not recorded in this receipt. Rescan to capture it.</p>");
+        else html.Append("<p>These scan results do not include a record of which files were checked. Scan again to include it.</p>");
         html.Append("<h2>Archive order</h2><ol>");
         foreach (string archive in capsule.Casefile.ArchiveOrder) html.Append("<li><code>").Append(E(archive)).Append("</code></li>");
         html.Append("</ol><h2>Scan metrics</h2>");

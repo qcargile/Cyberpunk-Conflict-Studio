@@ -17,12 +17,12 @@ public sealed record ArchiveResourceNode(ArchiveResourceOutcome Outcome, Archive
         ArchiveTreeTone.Unknown => "Winner cannot be determined",
         _ => "Only in this archive"
     };
-    public string PlainMeaning => Outcome.PayloadRelation == ArchivePayloadRelation.Identical ? "This archive's cooked resource is byte-identical to the effective winner. Other providers in the chain may still differ." : Outcome.Disposition switch
+    public string PlainMeaning => Outcome.PayloadRelation == ArchivePayloadRelation.Identical ? "This file has exactly the same content as the winning copy. Copies in other archives may still differ." : Outcome.Disposition switch
     {
         ArchiveResourceDisposition.Winning => "Cyberpunk uses this archive's file. Lower archives are ignored for this resource.",
         ArchiveResourceDisposition.Losing => $"Cyberpunk uses {Outcome.WinnerArchive ?? "a higher archive"} instead of this archive's file.",
         ArchiveResourceDisposition.WinningAndLosing => $"{Outcome.WinnerArchive ?? "A higher archive"} wins overall. This archive still overrides lower archives.",
-        ArchiveResourceDisposition.Unresolved when Outcome.WinnerArchive is not null => $"The provider {Outcome.WinnerArchive} is effective, but the exact archive inside it cannot be determined.",
+        ArchiveResourceDisposition.Unresolved when Outcome.WinnerArchive is not null => $"The winning file comes from {Outcome.WinnerArchive}, but Conflict Studio cannot identify which archive inside it contains that file.",
         ArchiveResourceDisposition.Unresolved => "The winner cannot be determined until the named archive problem is fixed.",
         _ => "Only this archive contains the resource, so there is no conflict."
     };

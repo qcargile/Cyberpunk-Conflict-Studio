@@ -188,7 +188,7 @@ public partial class MainWindow : Window, IDisposable
         InvalidateReceipt();
         ProfileBadgeTextBlock.Text = profile.Name.ToUpperInvariant();
         WorkspaceStatusTextBlock.Text = "Profile selected. Preparing the conflict scan…";
-        if (Directory.Exists(Mo2RootTextBox.Text) && !_preferences.TrySave(new WorkspacePreference(Mo2RootTextBox.Text, profile.Name))) FooterStatusTextBlock.Text = "Profile selected; workspace preference could not be saved.";
+        if (Directory.Exists(Mo2RootTextBox.Text) && !_preferences.TrySave(new WorkspacePreference(Mo2RootTextBox.Text, profile.Name))) FooterStatusTextBlock.Text = "Profile selected, but this choice could not be saved for next time.";
         if (!_restoringWorkspace && Directory.Exists(Mo2RootTextBox.Text)) await ScanSelectedProfileAsync();
     }
 
@@ -203,7 +203,7 @@ public partial class MainWindow : Window, IDisposable
         if (ManagerModeComboBox?.SelectedItem is not ComboBoxItem item || item.Tag is not string value || !Enum.TryParse(value, true, out ModManagerKind kind)) return;
         _managerKind = kind;
         if (ManagerLocationLabel is null || ProfileComboBox is null) return;
-        ManagerLocationLabel.Text = kind switch { ModManagerKind.Vortex => "VORTEX BRIDGE CONTEXT", ModManagerKind.Manual => "CYBERPUNK INSTALLATION", _ => "MO2 INSTALLATION" };
+        ManagerLocationLabel.Text = kind switch { ModManagerKind.Vortex => "VORTEX PROFILE INFORMATION", ModManagerKind.Manual => "CYBERPUNK INSTALLATION", _ => "MO2 INSTALLATION" };
         InvalidateReceipt();
         ProfileComboBox.ItemsSource = null;
         if (kind == ModManagerKind.Vortex && File.Exists(DefaultVortexContextPath))
@@ -217,7 +217,7 @@ public partial class MainWindow : Window, IDisposable
             ProfileComboBox.ItemsSource = new[] { option };
             ProfileComboBox.SelectedItem = option;
         }
-        else WorkspaceStatusTextBlock.Text = kind == ModManagerKind.Manual ? "Choose the Cyberpunk installation folder." : kind == ModManagerKind.Vortex ? "Open Vortex with the Conflict Studio bridge enabled, or browse to context.json." : "Choose or launch from an MO2 installation.";
+        else WorkspaceStatusTextBlock.Text = kind == ModManagerKind.Manual ? "Choose the Cyberpunk installation folder." : kind == ModManagerKind.Vortex ? "Open Vortex with the Conflict Studio extension enabled, or select its context.json profile information file." : "Choose or launch from an MO2 installation.";
     }
 
     private async void RestoreWorkspacePreference(object sender, RoutedEventArgs e)
@@ -289,7 +289,7 @@ public partial class MainWindow : Window, IDisposable
             _scanCancellation = new CancellationTokenSource();
             SetScanLocked(true);
             ExportButton.IsEnabled = false;
-            WorkspaceStatusTextBlock.Text = "Scanning the effective profile…";
+            WorkspaceStatusTextBlock.Text = "Scanning the current profile…";
             Progress<ScanProgress> progress = new(UpdateProgress);
             ProfileScanReceipt receipt;
             if (_managerKind == ModManagerKind.Vortex)
@@ -302,7 +302,7 @@ public partial class MainWindow : Window, IDisposable
                 _restoringWorkspace = true;
                 try { LoadVortexContext(contextPath, false); }
                 finally { _restoringWorkspace = wasRestoring; }
-                WorkspaceStatusTextBlock.Text = "Scanning the effective profile…";
+                WorkspaceStatusTextBlock.Text = "Scanning the current profile…";
                 receipt = await Task.Run(() => ProfileScanCoordinator.ScanVortex(contextPath, DateTimeOffset.UtcNow, progress, _scanCancellation.Token));
                 LoadReceipt(receipt, contextPath, ProfileComboBox.SelectedItem ?? throw new InvalidOperationException("Select a Vortex profile first."), preserveArchiveUndo);
             }
@@ -324,7 +324,7 @@ public partial class MainWindow : Window, IDisposable
         }
         catch (OperationCanceledException)
         {
-            WorkspaceStatusTextBlock.Text = "Scan cancelled. No partial receipt was saved.";
+            WorkspaceStatusTextBlock.Text = "Scan cancelled. No incomplete scan results were saved.";
             FooterStatusTextBlock.Text = "Cancelled";
             RecordAction("profile-scan", "cancelled", "No partial receipt was saved");
         }
@@ -388,12 +388,12 @@ public partial class MainWindow : Window, IDisposable
             string[] providers = selected.SelectMany(value => value.Providers).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray();
             SelectedClassificationTextBlock.Text = "MULTIPLE CASES";
             SelectedTargetTextBlock.Text = $"{selected.Length:N0} cases selected";
-            SelectedMeaningTextBlock.Text = "The selected rows may contain different evidence types and different unanswered questions.";
+            SelectedMeaningTextBlock.Text = "The selected items may describe different kinds of overlap and need different decisions.";
             SelectedSummaryTextBlock.Text = string.Join(" · ", selected.GroupBy(value => value.ClassificationLabel).OrderBy(value => value.Key, StringComparer.OrdinalIgnoreCase).Select(value => $"{value.Count():N0} {value.Key}"));
-            SelectedProofTextBlock.Text = "A bulk review saves the same outcome for every selected case.";
-            SelectedBoundaryTextBlock.Text = "Do not apply one technical conclusion to mixed rows. Open individual cases when their evidence differs.";
+            SelectedProofTextBlock.Text = "Saving applies the same review choice to every selected item.";
+            SelectedBoundaryTextBlock.Text = "Do not give different problems the same answer. Check each item separately if you are unsure.";
             SelectedProvidersTextBlock.Text = string.Join("  ↔  ", providers);
-            SelectedActionTextBlock.Text = "Use one bulk outcome only when it is true for every selected row. Otherwise, reduce the selection first.";
+            SelectedActionTextBlock.Text = "Save one review choice only if it fits every selected item. Otherwise, select fewer items first.";
             SelectedHashTextBlock.Text = $"{selected.Length:N0} case IDs selected";
             ReviewRationaleTextBox.Text = string.Empty;
             ReviewOutcomeComboBox.SelectedIndex = -1;
@@ -612,7 +612,7 @@ public partial class MainWindow : Window, IDisposable
                 break;
             case ArchiveConflictGroupNode group:
                 ArchiveSelectedTitleTextBlock.Text = group.Header;
-                ArchiveSelectedMeaningTextBlock.Text = group.Tone switch { ArchiveTreeTone.Winning => "These files come from this archive in the effective game view.", ArchiveTreeTone.Losing => "A higher archive supplies these files instead.", ArchiveTreeTone.Same => "These providers contain byte-identical cooked resources.", ArchiveTreeTone.Unknown => "Fix the named archive evidence problem before choosing a winner.", _ => "Only this archive contains these files." };
+                ArchiveSelectedMeaningTextBlock.Text = group.Tone switch { ArchiveTreeTone.Winning => "The current order selects this archive's copies of these files.", ArchiveTreeTone.Losing => "A higher archive supplies these files instead.", ArchiveTreeTone.Same => "These files have exactly the same content as the winning copies.", ArchiveTreeTone.Unknown => "Resolve the named archive problem before deciding which copy should take priority.", _ => "Only this archive contains these files." };
                 ArchiveSelectedTechnicalTextBlock.Text = string.Empty;
                 break;
             case ArchiveResourceNode resource:
@@ -724,7 +724,7 @@ public partial class MainWindow : Window, IDisposable
             ConflictWorkItem[] selected = WorkQueueDataGrid.SelectedItems.Cast<ConflictWorkItem>().ToArray();
             if (selected.Length == 0) throw new InvalidOperationException("Select at least one code case first.");
             Clipboard.SetText(SelectedActionTextBlock.Text);
-            FooterStatusTextBlock.Text = selected.Length == 1 ? "Copied the deciding next step" : $"Copied the bulk-review guidance for {selected.Length:N0} cases";
+            FooterStatusTextBlock.Text = selected.Length == 1 ? "Copied the next step" : $"Copied the review instructions for {selected.Length:N0} items";
         });
     }
 
@@ -900,7 +900,7 @@ public partial class MainWindow : Window, IDisposable
         ExportButton.IsEnabled = true;
         ScanProfileButton.Content = "Refresh";
         CodeCaseCounts codeCounts = CodeCaseWorkspace.Counts(codeItems);
-        WorkspaceStatusTextBlock.Text = $"Scan complete: {receipt.ResourceConflicts.Length:N0} archive conflicts; {codeCounts.ProvenConflicts} proven code conflicts; {codeCounts.NeedsDecision} code cases need a decision.";
+        WorkspaceStatusTextBlock.Text = $"Scan complete: {receipt.ResourceConflicts.Length:N0} archive conflicts; {codeCounts.ProvenConflicts} confirmed code conflicts; {codeCounts.NeedsDecision} code items to review.";
         FooterStatusTextBlock.Text = receipt.Metrics is null ? "Scan complete" : $"Scan complete in {receipt.Metrics.TotalElapsedMilliseconds:N0} ms";
         if (receipt.Metrics?.RefreshedArchiveFingerprints > 0) FooterStatusTextBlock.Text += " · archive fingerprint cache refreshed";
         if (receipt.Metrics is { PackedCacheHits: > 0, CodeCacheHits: > 0 }) FooterStatusTextBlock.Text += " · unchanged analysis reused";
@@ -1158,7 +1158,7 @@ public partial class MainWindow : Window, IDisposable
         _selectedArchiveNames = [];
         ArchiveConflictTreeView.ItemsSource = null;
         ArchiveOrderListBox.ItemsSource = null;
-        ArchiveOrderEvidenceTextBlock.Text = "Run a profile scan to index packed resources.";
+        ArchiveOrderEvidenceTextBlock.Text = "Run a profile scan to check the files inside your archives.";
         ArchiveOrderEvidenceTitleTextBlock.Text = "Archive order not loaded";
         ArchiveConflictCountTextBlock.Text = "Run a scan to inspect conflicts.";
         ArchiveSelectedTitleTextBlock.Text = "Select an archive or file";
@@ -1192,12 +1192,12 @@ public partial class MainWindow : Window, IDisposable
         _managerKind = ModManagerKind.Vortex;
         _vortexContextPath = fullPath;
         SelectManagerMode(ModManagerKind.Vortex);
-        ManagerLocationLabel.Text = "VORTEX BRIDGE CONTEXT";
+        ManagerLocationLabel.Text = "VORTEX PROFILE INFORMATION";
         Mo2RootTextBox.Text = fullPath;
         VortexProfileOption option = new(context.ProfileName, fullPath);
         ProfileComboBox.ItemsSource = new[] { option };
         ProfileComboBox.SelectedItem = option;
-        WorkspaceStatusTextBlock.Text = context.DeploymentFresh ? "Vortex bridge context loaded." : "Vortex has pending deployment changes. The scan will use deployed game files only.";
+        WorkspaceStatusTextBlock.Text = context.DeploymentFresh ? "Vortex profile information loaded." : "Vortex has pending deployment changes. The scan will use deployed game files only.";
         if (announce) RecordAction("profile-discovery", "completed", $"Loaded Vortex profile {context.ProfileName}");
     }
 
@@ -1226,7 +1226,7 @@ public partial class MainWindow : Window, IDisposable
         {
             ManagerModeComboBox.SelectedItem = ManagerModeComboBox.Items.Cast<ComboBoxItem>().First(value => string.Equals(value.Tag?.ToString(), kind.ToString(), StringComparison.OrdinalIgnoreCase));
             _managerKind = kind;
-            ManagerLocationLabel.Text = kind switch { ModManagerKind.Vortex => "VORTEX BRIDGE CONTEXT", ModManagerKind.Manual => "CYBERPUNK INSTALLATION", _ => "MO2 INSTALLATION" };
+            ManagerLocationLabel.Text = kind switch { ModManagerKind.Vortex => "VORTEX PROFILE INFORMATION", ModManagerKind.Manual => "CYBERPUNK INSTALLATION", _ => "MO2 INSTALLATION" };
         }
         finally { _syncingManagerMode = false; }
     }
@@ -1391,7 +1391,7 @@ public partial class MainWindow : Window, IDisposable
             if (target is null || !_workspace.ProposedOrder.Contains(target, StringComparer.OrdinalIgnoreCase))
             {
                 _draggedArchives = [];
-                WorkspaceStatusTextBlock.Text = "REDmod positions are fixed by the active REDmod lane.";
+                WorkspaceStatusTextBlock.Text = "REDmods cannot be moved here. Change their order through REDmod deployment.";
                 RecordAction("archive-order-drag", "blocked", "REDmod positions are fixed by the active REDmod lane");
                 return;
             }
@@ -1493,13 +1493,13 @@ public partial class MainWindow : Window, IDisposable
         ArchiveOrderEvidence? evidence = _receipt.ArchiveOrderEvidence;
         if (evidence?.Kind == ArchiveOrderEvidenceKind.Unresolved && !evidence.IsRepairableLegacyOrder || _receipt.ArchiveFailures.Length > 0)
         {
-            string reason = _receipt.ArchiveFailures.Length > 0 ? "Conflict preview is unavailable because an archive could not be read. Fix that archive or reset the proposed order." : evidence?.Message ?? "Conflict preview is unavailable because archive order evidence is unresolved.";
+            string reason = _receipt.ArchiveFailures.Length > 0 ? "Conflict preview is unavailable because an archive could not be read. Fix that archive or reset the proposed order." : evidence?.Message ?? "The preview is unavailable because the archive load order could not be determined.";
             if (!_workspace.CanApply) _workspace.BlockPreview(reason);
             _previewingArchiveOrder = false;
             _archivePreviewUnavailable = true;
             ApplyArchiveTreeFilter();
             ArchiveOrderEvidenceTitleTextBlock.Text = "Preview unavailable · order not applied";
-            ArchiveOrderEvidenceTextBlock.Text = _workspace.CanApply ? "The conflict pane still shows the scanned order because an archive could not be read. The order can be applied only with the explicit unknown-impact acknowledgement." : "The conflict pane still shows the scanned order because an archive could not be read. Reset the proposal or fix that archive first.";
+            ArchiveOrderEvidenceTextBlock.Text = _workspace.CanApply ? "The results still show the scanned order because an archive could not be read. Tick the acknowledgement box before applying a change whose full effects cannot be previewed." : "The conflict pane still shows the scanned order because an archive could not be read. Reset the proposal or fix that archive first.";
             ArchiveOrderEvidenceTextBlock.Visibility = Visibility.Visible;
             ArchiveOrderEvidenceTitleTextBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FCEE0A"));
             ArchiveOrderEvidenceBorder.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#292600"));

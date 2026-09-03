@@ -97,7 +97,7 @@ public static class ModSourceScanner
             if (root.Any(value => !value.Excluded && string.Equals(value.RelativePath, root.Key + "\\init.lua", StringComparison.OrdinalIgnoreCase))) continue;
             foreach (Candidate candidate in root) candidates.Remove(candidate.RelativePath);
             Candidate source = root.First();
-            failures.Add(new SourceAnalysisFailure(source.Provider, root.Key, "CET Lua activation", "The effective CET mod root has no nonexcluded init.lua, so its Lua source was not analyzed as active."));
+            failures.Add(new SourceAnalysisFailure(source.Provider, root.Key, "CET Lua activation", "This CET mod folder has no available init.lua after scan exclusions. That file is required to start the mod, so its Lua code was not analyzed as active."));
         }
     }
 
@@ -122,7 +122,7 @@ public static class ModSourceScanner
         {
             if (candidates.ContainsKey(relative)) continue;
             DeploymentProvider? winner = providers.FirstOrDefault(value => string.Equals(value.ManagerId, winnerId, StringComparison.OrdinalIgnoreCase));
-            if (winner is not null) failures.Add(new SourceAnalysisFailure(winner.Name, relative, surface, "The deployed winner is absent from the captured provider, so no source claim was made."));
+            if (winner is not null) failures.Add(new SourceAnalysisFailure(winner.Name, relative, surface, "Vortex's selected file was missing from the scanned mod folder, so its code was not analyzed."));
         }
     }
 

@@ -24,25 +24,25 @@ public static class RuntimeProbeManifestBuilder
         {
             string[] providers = finding.CompetingValues().SelectMany(value => new[] { value.First.Provider, value.Second.Provider }).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, finding.Target, providers,
-                $"Record the post-initialization snapshot of {finding.Target}, five seconds after CET updates begin.",
-                "The observed value at that point, not a guaranteed final winner or a gameplay-failure diagnosis."));
+                $"The automatic check records {finding.Target} once, five seconds after CET starts updating.",
+                "This shows the value only at that moment. It does not show which mod sets it last or prove a gameplay bug."));
         }
         foreach (InteractionFinding finding in receipt.InteractionFindings.Where(value => value.TweakRuntimeEvidence?.CompetingValues().Any() == true && conflictTargets.Contains(value.Target)))
         {
             runtimeTargets.Add(finding.Target);
-            Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, finding.Target, finding.Providers, $"Record the post-initialization snapshot of {finding.Target}, five seconds after CET updates begin, then manually observe its value after the relevant runtime path.", "The snapshot measures only that moment. Later runtime writes require a separate final-value observation; no winner, value equality, or incompatibility is established.") { TweakRuntimeEvidence = finding.TweakRuntimeEvidence });
-            Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.SharedStateValue, finding.Target, finding.Providers, $"Manually record the value of {finding.Target} after exercising the relevant runtime write path in this exact profile.", "The observed value at the recorded gameplay point. This remains unresolved until a manual answer is recorded; it does not establish a final winner or incompatibility.") { TweakRuntimeEvidence = finding.TweakRuntimeEvidence });
+            Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, finding.Target, finding.Providers, $"The automatic check records {finding.Target} once, five seconds after CET starts updating. Ask the mod author how to trigger the later code change and measure this value again.", "This measures only one moment. A later change needs a separate measurement; this check does not show which mod sets the value last, whether the values agree, or whether the mods are incompatible.") { TweakRuntimeEvidence = finding.TweakRuntimeEvidence });
+            Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.SharedStateValue, finding.Target, finding.Providers, $"Ask the mod author how to trigger the code that changes {finding.Target} and measure the value afterward in this same profile. This is a technical check: record the measured value, not a guess based on gameplay.", "This records the value at the gameplay moment you tested. The check remains unanswered until a manual result is recorded. It does not show which mod sets the value last or prove that the mods are incompatible.") { TweakRuntimeEvidence = finding.TweakRuntimeEvidence });
         }
         foreach (TweakOverlap overlap in receipt.TweakOverlaps.Where(value => conflictTargets.Contains(value.Target) && !runtimeTargets.Contains(value.Target) && value.Kind is TweakOverlapKind.ScalarOverwrite or TweakOverlapKind.MixedArrayOperations or TweakOverlapKind.DuplicateMutation or TweakOverlapKind.OpposingMutation))
         {
             string[] providers = overlap.Operations.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, overlap.Target, providers, $"Record the post-initialization snapshot of {overlap.Target}, five seconds after CET updates begin.", "The final observed value after TweakXL initialization. This source fact does not establish compatibility, compilation, loader success, or a runtime defect; later gameplay writes remain a separate manual check."));
+            Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, overlap.Target, providers, $"The automatic check records {overlap.Target} once, five seconds after CET starts updating.", "This shows the value only at that moment. It does not prove that the mods work together, pass startup code checks, load successfully, or cause a gameplay bug. Later gameplay changes need a separate manual measurement, with the mod author's help if needed."));
         }
         foreach (TweakOverlap overlap in receipt.TweakOverlaps.Where(value => value.Kind == TweakOverlapKind.SourceArrayDependency && conflictTargets.Contains(value.Target)))
         {
             string[] providers = overlap.Operations.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             string[] targets = overlap.Operations.Select(value => value.Target).Concat(overlap.Operations.Where(value => value.Kind is TweakOperationKind.ArrayAppendFrom or TweakOperationKind.ArrayPrependFrom).Select(value => value.Value)).Distinct(StringComparer.Ordinal).ToArray();
-            foreach (string target in targets) Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, target, providers, $"Record the post-initialization snapshot of {target}, five seconds after CET updates begin.", "The final observed value after TweakXL initialization. This source fact does not establish compatibility, compilation, loader success, or a runtime defect."));
+            foreach (string target in targets) Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, target, providers, $"The automatic check records {target} once, five seconds after CET starts updating.", "This shows the value only at that moment. It does not prove that the mods work together, pass startup code checks, load successfully, or cause a gameplay bug."));
         }
         return new RuntimeProbeManifest(1, receipt.ProfileName, DateTimeOffset.UtcNow, requests.ToArray(), receipt.InstallationId);
     }

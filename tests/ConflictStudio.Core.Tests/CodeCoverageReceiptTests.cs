@@ -56,9 +56,9 @@ public sealed class CodeCoverageReceiptTests
         Assert.AreEqual(1, coverage.UnsupportedTweakFiles);
         Assert.AreEqual(1, coverage.LiteralCallbacks);
         Assert.AreEqual(1, coverage.DynamicCallbacks);
-        StringAssert.Contains(string.Join(" ", coverage.Limitations), "annotation-only");
-        StringAssert.Contains(string.Join(" ", coverage.Limitations), "reachability");
-        StringAssert.Contains(string.Join(" ", coverage.Limitations), "Native");
+        StringAssert.Contains(string.Join(" ", coverage.Limitations), "marked with annotations");
+        StringAssert.Contains(string.Join(" ", coverage.Limitations), "follow other files loaded by name");
+        StringAssert.Contains(string.Join(" ", coverage.Limitations), "native plugin DLLs");
     }
 
     [TestMethod]
@@ -96,7 +96,7 @@ public sealed class CodeCoverageReceiptTests
         Assert.AreEqual(JsonSerializer.Serialize(restored.CodeCoverage), JsonSerializer.Serialize(support.Evidence.CodeCoverage));
         string html = File.ReadAllText(Path.Combine(fixture.Root, "support", "conflict-casefile.html"));
         StringAssert.Contains(html, "Code coverage");
-        StringAssert.Contains(html, "annotation-only");
+        StringAssert.Contains(html, "marked with annotations");
         Assert.IsFalse(JsonSerializer.Serialize(support).Contains("frameworkArtifacts", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(html.Contains("Framework observations", StringComparison.Ordinal));
     }
