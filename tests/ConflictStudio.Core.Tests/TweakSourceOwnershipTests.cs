@@ -8,6 +8,41 @@ public sealed class TweakSourceOwnershipTests
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
+    public void ReservedAttributesAreNotFlatsButConstructionAndInstancesRemain(bool loose)
+    {
+        string prefix = loose ? "Items.Other.value: 1\nItems.Other.value: 1\n" : "";
+        TweakSource source = new("Alpha", "one.yaml", prefix + """
+            Vendors.Test${tier}:
+              $instances:
+                - {tier: Rare}
+              $type: Vendor
+              $base: Vendors.Base$(tier)
+              $dlc: EP1
+              $unknown: [Items.NotAFlat]
+              $metadata: {value: 3}
+              itemStock: [!append Items.Stock$(tier)]
+              nested:
+                $type: Vendor
+                $dlc: EP1
+                $unknown: true
+                value: 2
+            """);
+
+        TweakAnalysisResult result = TweakInteractionAnalyzer.AnalyzeDetailed([source]);
+
+        Assert.IsEmpty(result.Failures);
+        Assert.IsEmpty(result.Overlaps);
+        TweakOperation[] operations = result.Operations.Where(value => value.Target.StartsWith("Vendors.", StringComparison.Ordinal)).ToArray();
+        string[] targets = ["Vendors.TestRare.$definition", "Vendors.TestRare.itemStock", "Vendors.TestRare.nested.$definition", "Vendors.TestRare.nested.value"];
+        string[] values = ["Vendors.BaseRare", "Items.StockRare", "Vendor", "2"];
+        CollectionAssert.AreEqual(targets, operations.Select(value => value.Target).ToArray());
+        CollectionAssert.AreEqual(values, operations.Select(value => value.Value).ToArray());
+        CollectionAssert.AreEqual(new[] { TweakOperationKind.BaseDeclaration, TweakOperationKind.ArrayAppend, TweakOperationKind.TypeDeclaration, TweakOperationKind.ScalarAssignment }, operations.Select(value => value.Kind).ToArray());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     public void BraceAndParenthesisTemplatesKeepDistinctInstanceTargets(bool loose)
     {
         string prefix = loose ? "Items.Other.value: 1\nItems.Other.value: 1\n" : "";

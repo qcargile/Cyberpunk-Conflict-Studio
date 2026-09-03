@@ -5,7 +5,7 @@ namespace ConflictStudio.Core;
 
 public sealed record TweakSource(string Provider, string FilePath, string Text);
 
-public enum TweakOverlapKind { Redundant, ScalarOverwrite, ComposableMutation, AssignmentThenMutation, MixedArrayOperations, DuplicateMutation, RecordDefinitionCollision, SourceArrayDependency, BaseRecordDependency, InternalContext }
+public enum TweakOverlapKind { Redundant, ScalarOverwrite, ComposableMutation, AssignmentThenMutation, MixedArrayOperations, DuplicateMutation, RecordDefinitionCollision, SourceArrayDependency, BaseRecordDependency, InternalContext, OpposingMutation }
 
 public enum TweakOperationKind
 {
@@ -57,7 +57,8 @@ public static class TweakInteractionAnalyzer
         List<TweakOverlap> overlaps = operations.GroupBy(value => value.Target, StringComparer.Ordinal)
             .Select(group =>
             {
-                if (group.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1) return InternalOverlap(group);
+                if (group.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1
+                    && !group.GroupBy(value => value.Value, StringComparer.Ordinal).Any(ValueHasOpposingMutations)) return InternalOverlap(group);
                 TweakOverlapKind kind = Classify(group);
                 return new TweakOverlap(group.Key, kind, RelevantOperations(group, kind));
             })
@@ -70,7 +71,7 @@ public static class TweakInteractionAnalyzer
 
     private static bool ShouldReport(TweakOverlap overlap)
         => overlap.Operations.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1
-            || overlap.Kind is TweakOverlapKind.ScalarOverwrite or TweakOverlapKind.MixedArrayOperations or TweakOverlapKind.DuplicateMutation or TweakOverlapKind.RecordDefinitionCollision or TweakOverlapKind.InternalContext;
+            || overlap.Kind is TweakOverlapKind.ScalarOverwrite or TweakOverlapKind.MixedArrayOperations or TweakOverlapKind.DuplicateMutation or TweakOverlapKind.RecordDefinitionCollision or TweakOverlapKind.InternalContext or TweakOverlapKind.OpposingMutation;
 
     private static TweakOverlap InternalOverlap(IGrouping<string, TweakOperation> group)
     {
@@ -170,6 +171,7 @@ public static class TweakInteractionAnalyzer
 
     private static void AddLooseOperations(TweakSource source, string target, string property, LooseYamlNode value, List<TweakOperation> operations, List<SourceAnalysisFailure> failures)
     {
+        if (property.StartsWith('$') && property is not ("$type" or "$base")) return;
         if (value is LooseYamlSequence sequence)
         {
             LooseYamlNode[] mutations = sequence.Children.Where(item => LooseMutationKind(item) is not null).ToArray();
@@ -340,6 +342,7 @@ public static class TweakInteractionAnalyzer
 
     private static void AddOperations(TweakSource source, string target, string property, YamlNode value, List<TweakOperation> operations, List<SourceAnalysisFailure> failures)
     {
+        if (property.StartsWith('$') && property is not ("$type" or "$base")) return;
         if (value is YamlSequenceNode sequence)
         {
             YamlNode[] mutations = sequence.Children.Where(item => MutationKind(item) is not null).ToArray();
@@ -437,6 +440,14 @@ public static class TweakInteractionAnalyzer
     private static TweakOverlapKind Classify(IGrouping<string, TweakOperation> group)
     {
         TweakOperation[] operations = group.ToArray();
+        if (operations.GroupBy(value => value.Value, StringComparer.Ordinal).Any(ValueHasOpposingMutations))
+        {
+            TweakOperation[] assignments = operations.Where(value => !value.IsMutation).ToArray();
+            if (assignments.Any(value => value.Kind is TweakOperationKind.TypeDeclaration or TweakOperationKind.BaseDeclaration)) return TweakOverlapKind.RecordDefinitionCollision;
+            if (assignments.Select(OperationIdentity).Distinct(StringComparer.Ordinal).Count() > 1)
+                return assignments.Any(value => value.Kind == TweakOperationKind.ArrayReplacement) ? TweakOverlapKind.MixedArrayOperations : TweakOverlapKind.ScalarOverwrite;
+            return TweakOverlapKind.OpposingMutation;
+        }
         if (operations.All(value => !value.IsMutation) && operations.Select(OperationIdentity).Distinct(StringComparer.Ordinal).Count() == 1) return TweakOverlapKind.Redundant;
         if (operations.Select(OperationIdentity).Distinct(StringComparer.Ordinal).Count() == 1)
         {
@@ -478,6 +489,15 @@ public static class TweakInteractionAnalyzer
     private static TweakOperation[] RelevantOperations(IGrouping<string, TweakOperation> group, TweakOverlapKind kind)
     {
         TweakOperation[] operations = group.ToArray();
+        if (operations.GroupBy(value => value.Value, StringComparer.Ordinal).Any(ValueHasOpposingMutations))
+        {
+            if (operations.Any(value => !value.IsMutation)) return operations;
+            HashSet<string> competingValues = operations.GroupBy(value => value.Value, StringComparer.Ordinal)
+                .Where(values => ValueHasOpposingMutations(values) || ValueIsOrderSensitive(values) || ValueHasDuplicatePlainAdds(values))
+                .Select(values => values.Key)
+                .ToHashSet(StringComparer.Ordinal);
+            return operations.Where(value => competingValues.Contains(value.Value)).ToArray();
+        }
         if (kind is not (TweakOverlapKind.MixedArrayOperations or TweakOverlapKind.DuplicateMutation)) return operations;
         if (operations.All(value => value.Kind == TweakOperationKind.ArrayReplacement)) return operations;
         bool replacementAndMutation = operations.Any(value => !value.IsMutation && operations.Any(other => other.IsMutation && !string.Equals(value.Provider, other.Provider, StringComparison.OrdinalIgnoreCase)));
@@ -488,6 +508,16 @@ public static class TweakInteractionAnalyzer
             .ToHashSet(StringComparer.Ordinal);
         return operations.Where(value => contestedValues.Contains(value.Value)).ToArray();
     }
+
+    private static bool ValueHasOpposingMutations(IGrouping<string, TweakOperation> values)
+        => values.Any(removal => removal.Kind == TweakOperationKind.ArrayRemove
+            && !values.Any(addition => IsAddition(addition.Kind) && !IsArrayCopy(addition.Kind) && SameComponent(removal, addition))
+            && values.Any(addition => IsAddition(addition.Kind) && !IsArrayCopy(addition.Kind)
+                && !SameComponent(removal, addition)));
+
+    private static bool SameComponent(TweakOperation first, TweakOperation second)
+        => string.Equals(first.Provider, second.Provider, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(first.FilePath, second.FilePath, StringComparison.OrdinalIgnoreCase);
 
     private static bool ValueIsOrderSensitive(IGrouping<string, TweakOperation> values)
     {

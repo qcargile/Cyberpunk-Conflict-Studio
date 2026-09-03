@@ -8,7 +8,7 @@ public sealed class InteractionReportBuilderTests
     private static readonly string[] CrossLanguageProviders = ["Depeche", "WMCO"];
 
     [TestMethod]
-    public void BuildSeparatesExclusiveOrderSensitiveAndComposableFindings()
+    public void BuildSeparatesIdenticalReplacementsCallbacksAndCompetingValues()
     {
         ModSourceInventory inventory = new(
             [new RedScriptSource("Alpha", "alpha.reds", "@replaceMethod(DamageSystem)\npublic func ProcessHit() -> Void {}"), new RedScriptSource("Beta", "beta.reds", "@replaceMethod(DamageSystem)\npublic func ProcessHit() -> Void {}")],
@@ -19,12 +19,12 @@ public sealed class InteractionReportBuilderTests
         InteractionFinding[] findings = InteractionReportBuilder.Build(inventory);
 
         Assert.AreEqual(InteractionFindingKind.Composable, findings.Single(value => value.Target == "DamageSystem.ProcessHit()").Kind);
-        Assert.AreEqual(InteractionFindingKind.Review, findings.Single(value => value.Target == "PlayerPuppet.OnAction").Kind);
+        Assert.AreEqual(InteractionFindingKind.Informational, findings.Single(value => value.Target == "PlayerPuppet.OnAction").Kind);
         Assert.AreEqual(InteractionFindingKind.Review, findings.Single(value => value.Target == "Items.Base_HMG.value").Kind);
     }
 
     [TestMethod]
-    public void BuildTreatsContinuingWrappersAsComposableAndEarlyReturnAsReview()
+    public void WrapperContinuationMarkersRemainInformation()
     {
         ModSourceInventory inventory = new(
             [
@@ -34,12 +34,12 @@ public sealed class InteractionReportBuilderTests
 
         InteractionFinding[] findings = InteractionReportBuilder.Build(inventory);
 
-        Assert.AreEqual(InteractionFindingKind.Composable, findings.Single(value => value.Target == "DamageSystem.ProcessHit()").Kind);
-        Assert.AreEqual(InteractionFindingKind.Review, findings.Single(value => value.Target == "DamageSystem.ProcessValue()").Kind);
+        Assert.AreEqual(InteractionFindingKind.Informational, findings.Single(value => value.Target == "DamageSystem.ProcessHit()").Kind);
+        Assert.AreEqual(InteractionFindingKind.Informational, findings.Single(value => value.Target == "DamageSystem.ProcessValue()").Kind);
     }
 
     [TestMethod]
-    public void BuildRequiresReviewWhenAnOverrideCanSuppressTheUnderlyingCall()
+    public void ConditionalCallbackDoesNotEstablishAConflictWithAnObserver()
     {
         ModSourceInventory inventory = new(
             [],
@@ -52,12 +52,11 @@ public sealed class InteractionReportBuilderTests
 
         InteractionFinding finding = InteractionReportBuilder.Build(inventory).Single();
 
-        Assert.AreEqual(InteractionFindingKind.Review, finding.Kind);
-        StringAssert.Contains(finding.Summary, "does not establish");
+        Assert.AreEqual(InteractionFindingKind.Informational, finding.Kind);
     }
 
     [TestMethod]
-    public void BuildStatesTheDefinedCetChainAndUnknownCrossModRegistrationOrder()
+    public void ForwardingCallbacksDoNotEstablishCompatibility()
     {
         ModSourceInventory inventory = new(
             [],
@@ -70,8 +69,7 @@ public sealed class InteractionReportBuilderTests
 
         InteractionFinding finding = InteractionReportBuilder.Build(inventory).Single();
 
-        Assert.AreEqual(InteractionFindingKind.Review, finding.Kind);
-        StringAssert.Contains(finding.Summary, "does not establish");
+        Assert.AreEqual(InteractionFindingKind.Informational, finding.Kind);
     }
 
     [TestMethod]

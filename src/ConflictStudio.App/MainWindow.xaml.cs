@@ -1016,8 +1016,6 @@ public partial class MainWindow : Window, IDisposable
 
     private void UpdateCodeCaseCounts(IReadOnlyList<ConflictWorkItem> items)
     {
-        CodeCoverageSummaryTextBlock.Text = CodeCoveragePresentation.Summary(_receipt);
-        CodeCoverageDetailsTextBlock.Text = CodeCoveragePresentation.Details(_receipt);
         CodeCaseCounts counts = CodeCaseWorkspace.Counts(items);
         AttentionCountTextBlock.Text = counts.ProvenConflicts.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ReviewCountTextBlock.Text = counts.NeedsDecision.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -1169,8 +1167,6 @@ public partial class MainWindow : Window, IDisposable
         LoadOrderOverviewBar.Entries = [];
         ConflictOverviewBar.Entries = [];
         SetOverviewSelection((string?)null);
-        CodeCoverageSummaryTextBlock.Text = CodeCoveragePresentation.Summary(null);
-        CodeCoverageDetailsTextBlock.Text = CodeCoveragePresentation.Details(null);
         AttentionCountTextBlock.Text = "0";
         ReviewCountTextBlock.Text = "0";
         ReviewedCountTextBlock.Text = "0";

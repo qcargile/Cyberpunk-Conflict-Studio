@@ -66,6 +66,53 @@ public sealed class CodeCaseWorkspaceTests
     }
 
     [TestMethod]
+    [DataRow("Compatible")]
+    [DataRow("All")]
+    public void InformationalDiagnosticsDoNotInflateIdenticalOverlapResults(string view)
+    {
+        ConflictWorkItem overlap = Item("identical files", EvidenceClassification.Informational, "Alpha", "Beta") with { Surface = ConflictSurface.VirtualFile };
+        ConflictWorkItem diagnostic = Item("scan information", EvidenceClassification.Informational, "Alpha") with { Surface = ConflictSurface.Diagnostic };
+        ConflictWorkItem[] items = [overlap, diagnostic];
+
+        ConflictWorkItem[] filtered = CodeCaseWorkspace.Filter(items, string.Empty, view, "All", "All mods");
+        CodeCaseCounts counts = CodeCaseWorkspace.Counts(items);
+
+        Assert.AreEqual("identical files", filtered.Single().Target);
+        Assert.AreEqual(1, counts.CompatibleEvidence);
+    }
+
+    [TestMethod]
+    [DataRow("Compatible")]
+    [DataRow("All")]
+    public void InformationalDiagnosticsRemainVisibleInScanProblems(string view)
+    {
+        ConflictWorkItem overlap = Item("identical files", EvidenceClassification.Informational, "Alpha", "Beta") with { Surface = ConflictSurface.VirtualFile };
+        ConflictWorkItem diagnostic = Item("scan information", EvidenceClassification.Informational, "Alpha") with { Surface = ConflictSurface.Diagnostic };
+
+        ConflictWorkItem[] filtered = CodeCaseWorkspace.Filter([overlap, diagnostic], string.Empty, view, "Diagnostic", "All mods");
+
+        Assert.AreEqual("scan information", filtered.Single().Target);
+    }
+
+    [TestMethod]
+    [DataRow("Actionable", EvidenceClassification.Review)]
+    [DataRow("Proven", EvidenceClassification.Exclusive)]
+    [DataRow("NeedsDecision", EvidenceClassification.Review)]
+    [DataRow("Reviewed", EvidenceClassification.Intentional)]
+    [DataRow("Compatible", EvidenceClassification.Informational)]
+    [DataRow("All", EvidenceClassification.Review)]
+    public void CodeViewsExcludeDiagnosticsAndPackedResources(string view, EvidenceClassification classification)
+    {
+        ConflictWorkItem code = Item("code", classification, "Alpha", "Beta");
+        ConflictWorkItem diagnostic = code with { Target = "diagnostic", Surface = ConflictSurface.Diagnostic };
+        ConflictWorkItem packed = code with { Target = "packed", Surface = ConflictSurface.PackedResource };
+
+        ConflictWorkItem[] filtered = CodeCaseWorkspace.Filter([code, diagnostic, packed], string.Empty, view, "All", "All mods");
+
+        Assert.AreEqual("code", filtered.Single().Target);
+    }
+
+    [TestMethod]
     public void StructuredReviewRoundTripsOutcomeAndNotesWithoutDuplicatingTheOutcome()
     {
         string rationale = CodeCaseWorkspace.ReviewRationale("Works as intended", "Both features passed.");

@@ -34,12 +34,8 @@ public sealed class TweakRuntimeJoinTests
         ModSourceInventory inventory = Inventory("TweakDB:SetFlat('Items.Test.value', 1)");
         inventory = inventory with { TweakSources = [.. inventory.TweakSources, new("Gamma", "g.yaml", "Items.Test.value: 1")] };
         ProfileScanReceipt receipt = Receipt(inventory);
-        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single();
-
-        Assert.AreEqual(EvidenceClassification.Composable, item.Classification);
+        Assert.IsEmpty(ConflictWorkQueueBuilder.Build(receipt, []));
         Assert.IsNotNull(receipt.InteractionFindings.Single().TweakRuntimeEvidence);
-        Assert.IsNull(item.Winner);
-        Assert.IsFalse(item.IsActionable);
         RuntimeProbeManifest probes = RuntimeProbeManifestBuilder.Build(receipt);
         Assert.IsEmpty(probes.Requests);
     }
@@ -52,6 +48,16 @@ public sealed class TweakRuntimeJoinTests
     public void RuntimeSemanticOrCountChangesInvalidateSavedReview(string original, string changed, ConflictWorkState expectedState)
     {
         ProfileScanReceipt first = Receipt(Inventory(original));
+        if (expectedState == ConflictWorkState.NoActionNeeded)
+        {
+            ProfileScanReceipt nextEvidence = Receipt(Inventory(changed));
+            Assert.IsEmpty(ConflictWorkQueueBuilder.Build(first, []));
+            Assert.IsEmpty(ConflictWorkQueueBuilder.Build(nextEvidence, []));
+            SharedStateWrite beforeWrite = first.InteractionFindings.Single().TweakRuntimeEvidence!.Writes.Single();
+            SharedStateWrite afterWrite = nextEvidence.InteractionFindings.Single().TweakRuntimeEvidence!.Writes.Single();
+            Assert.AreNotEqual(beforeWrite.CallSha256 ?? beforeWrite.SourceHash, afterWrite.CallSha256 ?? afterWrite.SourceHash);
+            return;
+        }
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(first, []).Single();
         EvidenceDecision decision = new(first.ProfileName, item.Target, item.Providers, item.EvidenceSha256, "Observed", DateTimeOffset.UtcNow, first.InstallationId!, item.Surface);
         ConflictWorkItem next = ConflictWorkQueueBuilder.Build(Receipt(Inventory(changed)), [decision]).Single();
@@ -63,8 +69,8 @@ public sealed class TweakRuntimeJoinTests
     [TestMethod]
     public void LineOnlyShiftsPreserveReviewAndUnrelatedFindingOmitsOptionalEvidence()
     {
-        ProfileScanReceipt first = Receipt(Inventory("TweakDB:SetFlat('Items.Test.value', compute(2))"));
-        ProfileScanReceipt shifted = Receipt(Inventory("\n\nTweakDB:SetFlat('Items.Test.value', compute(2))"));
+        ProfileScanReceipt first = Receipt(Inventory("TweakDB:SetFlat('Items.Test.value', 2)"));
+        ProfileScanReceipt shifted = Receipt(Inventory("\n\nTweakDB:SetFlat('Items.Test.value', 2)"));
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(first, []).Single();
         EvidenceDecision decision = new(first.ProfileName, item.Target, item.Providers, item.EvidenceSha256, "Observed", DateTimeOffset.UtcNow, first.InstallationId!, item.Surface);
 
@@ -138,10 +144,10 @@ public sealed class TweakRuntimeJoinTests
     [TestMethod]
     public void LongStringValueContentChangesInvalidateRuntimeEvidence()
     {
-        ConflictWorkItem first = ConflictWorkQueueBuilder.Build(Receipt(Inventory("TweakDB:SetFlat('Items.Test.value', [[a  b]])")), []).Single();
-        ConflictWorkItem changed = ConflictWorkQueueBuilder.Build(Receipt(Inventory("TweakDB:SetFlat('Items.Test.value', [[a b]])")), []).Single();
+        SharedStateWrite first = SharedStateWriteAnalyzer.Collect([], [new("Alpha", "init.lua", "TweakDB:SetFlat('Items.Test.value', [[a  b]])")]).Single();
+        SharedStateWrite changed = SharedStateWriteAnalyzer.Collect([], [new("Alpha", "init.lua", "TweakDB:SetFlat('Items.Test.value', [[a b]])")]).Single();
 
-        Assert.AreNotEqual(first.EvidenceSha256, changed.EvidenceSha256);
+        Assert.AreNotEqual(first.CallSha256, changed.CallSha256);
     }
 
     [TestMethod]
@@ -205,7 +211,9 @@ public sealed class TweakRuntimeJoinTests
             SharedStateWrites = SharedStateWriteAnalyzer.Analyze([], [new("Alpha", "a.lua", "TweakDB:SetFlat('Items.Test.value', compute(3)"), new("Beta", "b.lua", "TweakDB:SetFlat('Items.Test.value', 5)")])
         };
 
-        Assert.AreNotEqual(ConflictWorkQueueBuilder.Build(first, []).Single().EvidenceSha256, ConflictWorkQueueBuilder.Build(changed, []).Single().EvidenceSha256);
+        Assert.IsEmpty(ConflictWorkQueueBuilder.Build(first, []));
+        Assert.IsEmpty(ConflictWorkQueueBuilder.Build(changed, []));
+        Assert.AreNotEqual(first.SharedStateWrites.Single().Writes[0].SourceHash, changed.SharedStateWrites.Single().Writes[0].SourceHash);
     }
 
     private static ModSourceInventory Inventory(string text, bool redscript = false, string provider = "Beta")

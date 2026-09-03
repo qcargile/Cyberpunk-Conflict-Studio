@@ -9,8 +9,8 @@ public static class CodeCaseWorkspace
     public static ConflictWorkItem[] Filter(IReadOnlyList<ConflictWorkItem> items, string query, string view, string surface, string provider)
     {
         ArgumentNullException.ThrowIfNull(items);
-        IEnumerable<ConflictWorkItem> filtered = items;
         bool scanProblems = string.Equals(surface, nameof(ConflictSurface.Diagnostic), StringComparison.Ordinal);
+        IEnumerable<ConflictWorkItem> filtered = scanProblems ? items : items.Where(value => value.IsCodeCase);
         filtered = view switch
         {
             "Proven" => filtered.Where(value => value.CaseKind == ConflictCaseKind.ProvenConflict && value.State != ConflictWorkState.Reviewed),

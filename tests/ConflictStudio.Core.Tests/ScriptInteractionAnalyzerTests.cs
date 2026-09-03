@@ -343,7 +343,7 @@ public sealed class ScriptInteractionAnalyzerTests
     }
 
     [TestMethod]
-    public void TweakAnalyzerAppliesRemovalsBeforeAddsForTheSameElement()
+    public void TweakAnalyzerReportsOpposingMembershipAcrossComponents()
     {
         TweakSource[] sources =
         [
@@ -353,7 +353,7 @@ public sealed class ScriptInteractionAnalyzerTests
 
         TweakOverlap overlap = TweakInteractionAnalyzer.Analyze(sources).Single();
 
-        Assert.AreEqual(TweakOverlapKind.ComposableMutation, overlap.Kind);
+        Assert.AreEqual(TweakOverlapKind.OpposingMutation, overlap.Kind);
     }
 
     [TestMethod]
@@ -574,9 +574,6 @@ public sealed class ScriptInteractionAnalyzerTests
 
         Assert.AreEqual(RedScriptOverlapKind.AddedMemberInteraction, overlap.Kind);
         InteractionFinding finding = InteractionReportBuilder.Build(new ModSourceInventory(sources, [], [], [])).Single();
-        Assert.AreEqual(InteractionFindingKind.Review, finding.Kind);
-        StringAssert.Contains(finding.Summary, "adds");
-        StringAssert.Contains(finding.Summary, "wraps or replaces");
-        Assert.IsFalse(finding.Summary.Contains("Multiple active providers add", StringComparison.Ordinal));
+        Assert.AreEqual(InteractionFindingKind.Informational, finding.Kind);
     }
 }

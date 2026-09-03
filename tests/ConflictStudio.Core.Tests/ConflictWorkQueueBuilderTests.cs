@@ -22,23 +22,19 @@ public sealed class ConflictWorkQueueBuilderTests
     }
 
     [TestMethod]
-    public void BaseRelationshipIsInformationAndPropertyChangeInvalidatesReview()
+    public void BaseRelationshipsRemainEvidenceWithoutCreatingReviewCases()
     {
         ProfileScanReceipt BuildReceipt(string property, string prefix)
         {
             ModSourceInventory inventory = new([], [], [new("Base edit", "base.yaml", prefix + "Items.Base." + property + ": 2"), new("Clone", "clone.yaml", "Items.Child:\n  $base: Items.Base")], []);
             return Receipt() with { InteractionFindings = InteractionReportBuilder.Build(inventory), TweakOverlaps = TweakInteractionAnalyzer.Analyze(inventory.TweakSources) };
         }
-        ConflictWorkItem first = ConflictWorkQueueBuilder.Build(BuildReceipt("value", ""), []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
-        ConflictWorkItem shifted = ConflictWorkQueueBuilder.Build(BuildReceipt("value", "\n\n"), []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
-        ConflictWorkItem changed = ConflictWorkQueueBuilder.Build(BuildReceipt("other", ""), []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
-
-        Assert.AreEqual(EvidenceClassification.Informational, first.Classification);
-        Assert.IsFalse(first.IsActionable);
-        StringAssert.Contains(first.Summary, "Items.Base.value");
-        StringAssert.Contains(first.BoundaryLabel, "final inherited values");
-        Assert.AreEqual(first.EvidenceSha256, shifted.EvidenceSha256);
-        Assert.AreNotEqual(first.EvidenceSha256, changed.EvidenceSha256);
+        ProfileScanReceipt first = BuildReceipt("value", "");
+        ProfileScanReceipt changed = BuildReceipt("other", "");
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(first, []).Any(value => value.Surface == ConflictSurface.ScriptAndTweak));
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(changed, []).Any(value => value.Surface == ConflictSurface.ScriptAndTweak));
+        Assert.IsTrue(first.TweakOverlaps.Single().Operations.Any(value => value.Target == "Items.Base.value"));
+        Assert.IsTrue(changed.TweakOverlaps.Single().Operations.Any(value => value.Target == "Items.Base.other"));
     }
 
     [TestMethod]
@@ -101,7 +97,7 @@ public sealed class ConflictWorkQueueBuilderTests
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public void FixRoundCetOccurrenceCountInvalidatesReview(bool crossProvider)
+    public void CetOccurrenceCountsRemainAvailableInSourceEvidence(bool crossProvider)
     {
         string registration = "Override('PlayerPuppet', 'Value', function(self, wrapped) return wrapped() end)";
         ProfileScanReceipt BuildReceipt(int count, string prefix)
@@ -112,19 +108,15 @@ public sealed class ConflictWorkQueueBuilderTests
             return Receipt() with { InteractionFindings = InteractionReportBuilder.Build(inventory), LuaCallbacks = LuaCallbackEvidenceAnalyzer.Analyze(sources) };
         }
         ProfileScanReceipt originalReceipt = BuildReceipt(2, "");
-        ConflictWorkItem original = ConflictWorkQueueBuilder.Build(originalReceipt, []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
-        EvidenceDecision decision = Decision(originalReceipt, original, original.EvidenceSha256, "Two callbacks reviewed.");
-        ConflictWorkItem shifted = ConflictWorkQueueBuilder.Build(BuildReceipt(2, "\n\n"), [decision]).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
-        ConflictWorkItem changed = ConflictWorkQueueBuilder.Build(BuildReceipt(3, ""), [decision]).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
-
-        Assert.AreEqual(original.EvidenceSha256, shifted.EvidenceSha256);
-        Assert.AreEqual(ConflictWorkState.Reviewed, shifted.State);
-        Assert.AreNotEqual(original.EvidenceSha256, changed.EvidenceSha256);
-        Assert.AreNotEqual(ConflictWorkState.Reviewed, changed.State);
+        ProfileScanReceipt shifted = BuildReceipt(2, "\n\n");
+        ProfileScanReceipt changed = BuildReceipt(3, "");
+        Assert.AreEqual(2, originalReceipt.LuaCallbacks.Count(value => value.Kind == LuaCallbackEvidenceKind.Override));
+        Assert.AreEqual(3, changed.LuaCallbacks.Count(value => value.Kind == LuaCallbackEvidenceKind.Override));
+        CollectionAssert.AreEqual(originalReceipt.LuaCallbacks.Select(value => value.CallbackSha256).ToArray(), shifted.LuaCallbacks.Select(value => value.CallbackSha256).ToArray());
     }
 
     [TestMethod]
-    public void FixRoundMixedLanguageCetCountsSameLineRegistrations()
+    public void MixedLanguageEvidenceRetainsSameLineRegistrationCounts()
     {
         string registration = "Override('PlayerPuppet', 'Value', function() return 1 end)";
         ProfileScanReceipt BuildReceipt(int count, string separator)
@@ -138,12 +130,14 @@ public sealed class ConflictWorkQueueBuilderTests
                 LuaCallbacks = LuaCallbackEvidenceAnalyzer.Analyze(inventory.LuaSources)
             };
         }
-        ConflictWorkItem original = ConflictWorkQueueBuilder.Build(BuildReceipt(2, " "), []).Single(value => value.Target == "PlayerPuppet.Value()");
-        ConflictWorkItem shifted = ConflictWorkQueueBuilder.Build(BuildReceipt(2, "\n"), []).Single(value => value.Target == original.Target);
-        ConflictWorkItem changed = ConflictWorkQueueBuilder.Build(BuildReceipt(3, " "), []).Single(value => value.Target == original.Target);
+        ProfileScanReceipt original = BuildReceipt(2, " ");
+        ProfileScanReceipt shifted = BuildReceipt(2, "\n");
+        ProfileScanReceipt changed = BuildReceipt(3, " ");
 
-        Assert.AreEqual(original.EvidenceSha256, shifted.EvidenceSha256);
-        Assert.AreNotEqual(original.EvidenceSha256, changed.EvidenceSha256);
+        Assert.HasCount(2, original.LuaCallbacks);
+        Assert.HasCount(3, changed.LuaCallbacks);
+        CollectionAssert.AreEqual(original.LuaCallbacks.Select(value => value.CallbackSha256).ToArray(), shifted.LuaCallbacks.Select(value => value.CallbackSha256).ToArray());
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(changed, []).Any(value => value.IsCodeCase && value.IsActionable));
     }
 
     [TestMethod]
@@ -173,7 +167,6 @@ public sealed class ConflictWorkQueueBuilderTests
 
     [TestMethod]
     [DataRow("replaceMethod", "return 2;", EvidenceClassification.Exclusive)]
-    [DataRow("replaceMethod", "return 1;", EvidenceClassification.Composable)]
     [DataRow("addMethod", "return 2;", EvidenceClassification.CompilerEvidence)]
     public void SameProviderMethodFindingsReachQueueWithDeclarationWording(string annotation, string secondBody, EvidenceClassification expected)
     {
@@ -201,27 +194,20 @@ public sealed class ConflictWorkQueueBuilderTests
         InteractionFinding finding = InteractionReportBuilder.Build(inventory).Single();
         ProfileScanReceipt receipt = Receipt() with { InteractionFindings = [finding], TweakOverlaps = overlaps };
 
-        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
-
-        Assert.AreEqual(EvidenceClassification.Informational, item.Classification);
-        Assert.IsFalse(item.IsActionable);
-        Assert.AreEqual("Alpha", item.Providers.Single());
-        AssertSingleProviderWording(finding, item);
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.Surface == ConflictSurface.ScriptAndTweak));
+        Assert.AreEqual("Alpha", finding.Providers.Single());
     }
 
     [TestMethod]
-    public void ForwardingInternalOverridesReachQueueAsContext()
+    public void ForwardingInternalOverridesRemainEvidenceWithoutCases()
     {
         string registration = "Override('PlayerPuppet', 'Value', function(self, wrapped) return wrapped() end)";
         ModSourceInventory inventory = new([], [new("Alpha", "one.lua", registration + "\n" + registration)], [], []);
         InteractionFinding finding = InteractionReportBuilder.Build(inventory).Single();
         ProfileScanReceipt receipt = Receipt() with { InteractionFindings = [finding], LuaCallbacks = LuaCallbackEvidenceAnalyzer.Analyze(inventory.LuaSources) };
 
-        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
-
-        Assert.AreEqual(EvidenceClassification.Informational, item.Classification);
-        Assert.AreEqual("Alpha", item.Providers.Single());
-        AssertSingleProviderWording(finding, item);
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.Surface == ConflictSurface.ScriptAndTweak));
+        Assert.HasCount(2, receipt.LuaCallbacks);
     }
 
     private static void AssertSingleProviderWording(InteractionFinding finding, ConflictWorkItem item)
@@ -234,7 +220,7 @@ public sealed class ConflictWorkQueueBuilderTests
     }
 
     [TestMethod]
-    public void SameProviderDuplicateReplacementsWithStoppingWrapperStillNeedAFeatureCheck()
+    public void StoppingWrapperDoesNotMakeIdenticalReplacementsAConflict()
     {
         string replacement = "@replaceMethod(PlayerPuppet)\npublic func Value() -> Int32 { return 1; }";
         string wrapper = "@wrapMethod(PlayerPuppet)\npublic func Value() -> Int32 { return 0; }";
@@ -242,11 +228,8 @@ public sealed class ConflictWorkQueueBuilderTests
         InteractionFinding finding = InteractionReportBuilder.Build(inventory).Single();
         ProfileScanReceipt receipt = Receipt() with { InteractionFindings = [finding], RedScriptFlows = RedScriptFlowEvidenceAnalyzer.Analyze(inventory.RedScripts) };
 
-        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
-
-        Assert.AreEqual(EvidenceClassification.OrderSensitive, item.Classification);
-        StringAssert.StartsWith(item.NextAction, "Test");
-        AssertSingleProviderWording(finding, item);
+        Assert.HasCount(3, receipt.RedScriptFlows);
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.Surface == ConflictSurface.ScriptAndTweak));
     }
 
     [TestMethod]
@@ -335,9 +318,10 @@ public sealed class ConflictWorkQueueBuilderTests
             InteractionFindings = [new InteractionFinding("DamageSystem.ProcessHit()", InteractionFindingKind.Exclusive, "suppressed", ["Alpha", "Beta"])],
             RedScriptFlows = [new RedScriptFlowEvidence("Alpha", "alpha.reds", "DamageSystem.ProcessHit()", RedScriptFlowKind.Replace, RedScriptContinuationEvidence.NotApplicable, EvidenceConfidence.ExactToken, EvidenceImpact.Review, 1, new string('a', 64), new string('c', 64))]
         };
+        receipt = receipt with { RedScriptFlows = [receipt.RedScriptFlows[0], receipt.RedScriptFlows[0] with { Provider = "Beta", FilePath = "beta.reds", BodySha256 = new string('d', 64) }] };
         ConflictWorkItem original = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == "DamageSystem.ProcessHit()");
         EvidenceDecision decision = Decision(receipt, original, original.EvidenceSha256, "Alpha owns the method.");
-        ProfileScanReceipt changed = receipt with { RedScriptFlows = [receipt.RedScriptFlows[0] with { SourceHash = new string('b', 64) }] };
+        ProfileScanReceipt changed = receipt with { RedScriptFlows = [receipt.RedScriptFlows[0] with { SourceHash = new string('b', 64) }, receipt.RedScriptFlows[1]] };
 
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(changed, [decision]).Single(value => value.Target == original.Target);
 
@@ -348,7 +332,7 @@ public sealed class ConflictWorkQueueBuilderTests
     [TestMethod]
     public void BuildIncludesSharedStateAndUsesTheCurrentMatchingDecision()
     {
-        SharedStateWriteFinding shared = new(SharedStateSurface.Blackboard, "UI_System.IsInMenu", EvidenceConfidence.Literal, EvidenceImpact.Review, [new SharedStateWrite("Alpha", "a.reds", SharedStateSurface.Blackboard, "UI_System.IsInMenu", 1), new SharedStateWrite("Beta", "b.reds", SharedStateSurface.Blackboard, "UI_System.IsInMenu", 2)]);
+        SharedStateWriteFinding shared = SharedStateWriteAnalyzer.Analyze([], [new("Alpha", "a.lua", "TweakDB:SetFlat('Camera.limit', 1)"), new("Beta", "b.lua", "TweakDB:SetFlat('Camera.limit', 2)")]).Single();
         ProfileScanReceipt receipt = Receipt() with { SharedStateWrites = [shared] };
         ConflictWorkItem original = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.SharedState);
         EvidenceDecision expired = Decision(receipt, original, new string('a', 64), "Old review.");
@@ -363,9 +347,10 @@ public sealed class ConflictWorkQueueBuilderTests
     [TestMethod]
     public void BuildKeepsSharedStateReviewAcrossUnrelatedSourceContainerEdits()
     {
-        SharedStateWrite alpha = new("Alpha", "a.reds", SharedStateSurface.Blackboard, "UI_System.IsInMenu", 1, "SetBool", "SetBool(UI_System.IsInMenu", new string('a', 64));
-        SharedStateWrite beta = new("Beta", "b.reds", SharedStateSurface.Blackboard, "UI_System.IsInMenu", 2, "SetBool", "SetBool(UI_System.IsInMenu", new string('b', 64));
-        ProfileScanReceipt receipt = Receipt() with { SharedStateWrites = [new SharedStateWriteFinding(SharedStateSurface.Blackboard, "UI_System.IsInMenu", EvidenceConfidence.Literal, EvidenceImpact.Review, [alpha, beta])] };
+        SharedStateWriteFinding shared = SharedStateWriteAnalyzer.Analyze([], [new("Alpha", "a.lua", "TweakDB:SetFlat('Camera.limit', 1)"), new("Beta", "b.lua", "TweakDB:SetFlat('Camera.limit', 2)")]).Single();
+        SharedStateWrite alpha = shared.Writes[0];
+        SharedStateWrite beta = shared.Writes[1];
+        ProfileScanReceipt receipt = Receipt() with { SharedStateWrites = [shared] };
         ConflictWorkItem original = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.SharedState);
         EvidenceDecision decision = Decision(receipt, original, original.EvidenceSha256, "Reviewed state write.");
         ProfileScanReceipt changed = receipt with { SharedStateWrites = [receipt.SharedStateWrites[0] with { Writes = [alpha with { SourceHash = new string('c', 64) }, beta] }] };
@@ -377,26 +362,19 @@ public sealed class ConflictWorkQueueBuilderTests
     }
 
     [TestMethod]
-    public void BuildExplainsWrapperActionsAndContinuationInPlainLanguage()
+    public void ForwardingPathsAloneDoNotBecomeUserCases()
     {
         InteractionFinding finding = new("CraftingMainLogicController.OnUninitialize()", InteractionFindingKind.Review, "wrappers", ["Upgrade Weapons Unlocked", "Crafting Recipe Owned Labels"]);
         RedScriptFlowEvidence first = new("Upgrade Weapons Unlocked", "upgrade.reds", finding.Target, RedScriptFlowKind.Wrap, RedScriptContinuationEvidence.Continues, EvidenceConfidence.ExactToken, EvidenceImpact.None, 10, new string('a', 64));
         RedScriptFlowEvidence second = new("Crafting Recipe Owned Labels", "crafting.reds", finding.Target, RedScriptFlowKind.Wrap, RedScriptContinuationEvidence.Continues, EvidenceConfidence.ExactToken, EvidenceImpact.None, 20, new string('b', 64));
         ProfileScanReceipt receipt = Receipt() with { InteractionFindings = [finding], RedScriptFlows = [first, second] };
 
-        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == finding.Target);
-
-        Assert.IsTrue(item.Summary.Contains("continues", StringComparison.OrdinalIgnoreCase));
-        Assert.IsTrue(item.Summary.Contains("Upgrade Weapons Unlocked", StringComparison.Ordinal));
-        Assert.IsTrue(item.NextAction.Contains("No conflict", StringComparison.OrdinalIgnoreCase));
-        Assert.AreEqual(ConflictWorkState.NoActionNeeded, item.State);
-        Assert.AreEqual(EvidenceClassification.Informational, item.Classification);
-        Assert.AreEqual(ConflictCaseKind.SharedTarget, item.CaseKind);
-        StringAssert.Contains(item.BoundaryLabel, "does not prove behavioral compatibility");
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.Target == finding.Target));
+        Assert.HasCount(2, receipt.RedScriptFlows);
     }
 
     [TestMethod]
-    public void NonForwardingCetOverrideOfAnAddedMethodRemainsAConflictRisk()
+    public void NonForwardingCetOverrideOfAnAddedMethodRemainsSourceEvidence()
     {
         ModSourceInventory inventory = new([new("Alpha", "method.reds", "@addMethod(PlayerPuppet)\npublic func Value() -> Int32 { return 1; }")],
             [new("Beta", "init.lua", "Override('PlayerPuppet', 'Value', function(self, wrapped) return 2 end)")], [], []);
@@ -407,27 +385,20 @@ public sealed class ConflictWorkQueueBuilderTests
             LuaCallbacks = LuaCallbackEvidenceAnalyzer.Analyze(inventory.LuaSources)
         };
 
-        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
-
-        Assert.AreEqual(EvidenceClassification.Review, item.Classification);
-        Assert.AreEqual(ConflictCaseKind.RuntimeCheck, item.CaseKind);
-        Assert.IsTrue(item.IsActionable);
-        Assert.HasCount(2, item.Providers);
+        Assert.HasCount(2, receipt.InteractionFindings.Single().Providers);
+        Assert.AreEqual(LuaContinuationEvidence.Missing, receipt.LuaCallbacks.Single().Continuation);
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.Surface == ConflictSurface.ScriptAndTweak));
     }
 
     [TestMethod]
-    public void BuildKeepsNonContinuingWrapperAsOneRuntimeCheck()
+    public void LegacyWrapperReviewDoesNotBecomeAnAutomaticCase()
     {
         InteractionFinding finding = new("DamageSystem.ProcessHit()", InteractionFindingKind.Review, "wrapper can suppress", ["Alpha", "Beta"]);
         RedScriptFlowEvidence first = new("Alpha", "alpha.reds", finding.Target, RedScriptFlowKind.Wrap, RedScriptContinuationEvidence.EarlyReturnBeforeContinuation, EvidenceConfidence.ExactToken, EvidenceImpact.Review, 10, new string('a', 64));
         RedScriptFlowEvidence second = new("Beta", "beta.reds", finding.Target, RedScriptFlowKind.Wrap, RedScriptContinuationEvidence.Continues, EvidenceConfidence.ExactToken, EvidenceImpact.None, 20, new string('b', 64));
         ProfileScanReceipt receipt = Receipt() with { InteractionFindings = [finding], RedScriptFlows = [first, second] };
 
-        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == finding.Target);
-
-        Assert.AreEqual(ConflictWorkState.ReviewWhenRelevant, item.State);
-        Assert.AreEqual(EvidenceClassification.OrderSensitive, item.Classification);
-        Assert.AreEqual(ConflictCaseKind.OrderSensitive, item.CaseKind);
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.Target == finding.Target));
     }
 
     [TestMethod]
@@ -449,21 +420,23 @@ public sealed class ConflictWorkQueueBuilderTests
     }
 
     [TestMethod]
-    public void BuildExplainsThatTweakRemovesRunBeforeAdds()
+    public void OpposingMembershipDoesNotBecomeCompatibleBecauseOrderIsKnown()
     {
         TweakOperation alpha = new("Alpha", "alpha.yaml", "Vendors.Test.itemStock", "Items.StockA", true, TweakOperationKind.ArrayAppend);
         TweakOperation beta = new("Beta", "beta.yaml", "Vendors.Test.itemStock", "Items.StockA", true, TweakOperationKind.ArrayRemove);
-        TweakOverlap overlap = new(alpha.Target, TweakOverlapKind.ComposableMutation, [alpha, beta]);
-        InteractionFinding finding = new(alpha.Target, InteractionFindingKind.Composable, "phased", ["Alpha", "Beta"]);
+        TweakOverlap overlap = new(alpha.Target, TweakOverlapKind.OpposingMutation, [alpha, beta]);
+        InteractionFinding finding = new(alpha.Target, InteractionFindingKind.Review, "opposing membership", ["Alpha", "Beta"]);
         ProfileScanReceipt receipt = Receipt() with { InteractionFindings = [finding], TweakOverlaps = [overlap] };
 
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == finding.Target);
 
-        Assert.AreEqual("No action: remove happens before add", item.ClassificationLabel);
-        Assert.AreEqual("TweakXL's documented order decides membership", item.ProofLabel);
+        Assert.AreEqual(EvidenceClassification.CompetingDeclaration, item.Classification);
+        Assert.IsTrue(item.IsActionable);
         StringAssert.Contains(item.Summary, "Items.StockA");
         StringAssert.Contains(item.Summary, "adds");
         StringAssert.Contains(item.Summary, "removes");
+        StringAssert.Contains(item.MeaningLabel, "array");
+        Assert.IsFalse(item.BoundaryLabel.Contains("different source values", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -475,11 +448,8 @@ public sealed class ConflictWorkQueueBuilderTests
         InteractionFinding finding = new(alpha.Target, InteractionFindingKind.Composable, "compose", ["Alpha", "Beta"]);
         ProfileScanReceipt receipt = Receipt() with { InteractionFindings = [finding], TweakOverlaps = [overlap] };
 
-        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == finding.Target);
-
-        Assert.AreEqual(ConflictWorkState.NoActionNeeded, item.State);
-        Assert.AreEqual("No action: all additions apply", item.ClassificationLabel);
-        StringAssert.Contains(item.Summary, "applies every addition");
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.Target == finding.Target));
+        Assert.HasCount(2, receipt.TweakOverlaps.Single().Operations);
     }
 
     [TestMethod]
@@ -491,11 +461,8 @@ public sealed class ConflictWorkQueueBuilderTests
         InteractionFinding finding = new(alpha.Target, InteractionFindingKind.Composable, "compose", ["Alpha", "Beta"]);
         ProfileScanReceipt receipt = Receipt() with { InteractionFindings = [finding], TweakOverlaps = [overlap] };
 
-        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == finding.Target);
-
-        Assert.AreEqual("No action: array changes can coexist", item.ClassificationLabel);
-        Assert.AreEqual("The mods change different array values", item.ProofLabel);
-        StringAssert.Contains(item.Summary, "no operation cancels another");
+        Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.Target == finding.Target));
+        Assert.HasCount(2, receipt.TweakOverlaps.Single().Operations);
     }
 
     [TestMethod]
@@ -682,44 +649,39 @@ public sealed class ConflictWorkQueueBuilderTests
     public void InteractionDecisionHashIgnoresPresentationCopyButChangesWithEvidence()
     {
         string target = "DamageSystem.ProcessHit()";
-        RedScriptFlowEvidence flow = new("Alpha", "alpha.reds", target, RedScriptFlowKind.Wrap, RedScriptContinuationEvidence.EarlyReturnBeforeContinuation, EvidenceConfidence.ExactToken, EvidenceImpact.Review, 1, new string('a', 64));
-        ProfileScanReceipt first = Receipt() with { InteractionFindings = [new InteractionFinding(target, InteractionFindingKind.Review, "First wording", ["Alpha", "Beta"])], RedScriptFlows = [flow] };
+        ProfileScanReceipt first = ReplacementReceipt();
         ProfileScanReceipt rewritten = first with { InteractionFindings = [first.InteractionFindings[0] with { Summary = "Better wording" }] };
-        ProfileScanReceipt changed = first with { RedScriptFlows = [flow with { Continuation = RedScriptContinuationEvidence.Continues }] };
+        ProfileScanReceipt changed = first with { RedScriptFlows = [first.RedScriptFlows[0] with { BodySha256 = new string('d', 64) }, first.RedScriptFlows[1]] };
 
         string originalHash = ConflictWorkQueueBuilder.Build(first, []).Single(value => value.Target == target).EvidenceSha256;
         string rewrittenHash = ConflictWorkQueueBuilder.Build(rewritten, []).Single(value => value.Target == target).EvidenceSha256;
-        string changedHash = ConflictWorkQueueBuilder.Build(changed, []).Single(value => value.Target == target).EvidenceSha256;
-
         Assert.AreEqual(originalHash, rewrittenHash);
-        Assert.AreNotEqual(originalHash, changedHash);
+        Assert.AreNotEqual(originalHash, ConflictWorkQueueBuilder.Build(changed, []).Single(value => value.Target == target).EvidenceSha256);
     }
 
     [TestMethod]
-    public void InteractionDecisionHashIgnoresLineShiftsButChangesWithContinuation()
+    public void InteractionDecisionHashIgnoresLineShiftsButChangesWithReplacementBody()
     {
         string target = "DamageSystem.ProcessHit()";
-        RedScriptFlowEvidence flow = new("Alpha", "alpha.reds", target, RedScriptFlowKind.Wrap, RedScriptContinuationEvidence.EarlyReturnBeforeContinuation, EvidenceConfidence.ExactToken, EvidenceImpact.Review, 10, new string('a', 64), new string('c', 64));
-        ProfileScanReceipt first = Receipt() with { InteractionFindings = [new InteractionFinding(target, InteractionFindingKind.Review, "Review", ["Alpha", "Beta"])], RedScriptFlows = [flow] };
-        ProfileScanReceipt shifted = first with { RedScriptFlows = [flow with { Line = 25, SourceHash = new string('b', 64) }] };
-        ProfileScanReceipt changed = first with { RedScriptFlows = [flow with { Continuation = RedScriptContinuationEvidence.Continues }] };
+        ProfileScanReceipt first = ReplacementReceipt();
+        RedScriptFlowEvidence flow = first.RedScriptFlows[0];
+        ProfileScanReceipt shifted = first with { RedScriptFlows = [flow with { Line = 25, SourceHash = new string('b', 64) }, first.RedScriptFlows[1]] };
+        ProfileScanReceipt changed = first with { RedScriptFlows = [flow with { BodySha256 = new string('d', 64) }, first.RedScriptFlows[1]] };
 
         string originalHash = ConflictWorkQueueBuilder.Build(first, []).Single(value => value.Target == target).EvidenceSha256;
         string shiftedHash = ConflictWorkQueueBuilder.Build(shifted, []).Single(value => value.Target == target).EvidenceSha256;
-        string changedHash = ConflictWorkQueueBuilder.Build(changed, []).Single(value => value.Target == target).EvidenceSha256;
-
         Assert.AreEqual(originalHash, shiftedHash);
-        Assert.AreNotEqual(originalHash, changedHash);
+        Assert.AreNotEqual(originalHash, ConflictWorkQueueBuilder.Build(changed, []).Single(value => value.Target == target).EvidenceSha256);
     }
 
     [TestMethod]
     public void InteractionDecisionHashUsesTargetScopedRedScriptBodyEvidence()
     {
         string target = "DamageSystem.ProcessHit()";
-        RedScriptFlowEvidence flow = new("Alpha", @"C:\old\mods\Alpha\alpha.reds", target, RedScriptFlowKind.Wrap, RedScriptContinuationEvidence.Continues, EvidenceConfidence.ExactToken, EvidenceImpact.None, 10, new string('a', 64), new string('c', 64));
-        ProfileScanReceipt first = Receipt() with { InteractionFindings = [new InteractionFinding(target, InteractionFindingKind.Review, "Review", ["Alpha", "Beta"])], RedScriptFlows = [flow] };
-        ProfileScanReceipt relocated = first with { RedScriptFlows = [flow with { FilePath = @"D:\new\mods\Alpha\alpha.reds", Line = 30, SourceHash = new string('b', 64) }] };
-        ProfileScanReceipt changed = first with { RedScriptFlows = [flow with { BodySha256 = new string('d', 64) }] };
+        ProfileScanReceipt first = ReplacementReceipt();
+        RedScriptFlowEvidence flow = first.RedScriptFlows[0];
+        ProfileScanReceipt relocated = first with { RedScriptFlows = [flow with { FilePath = @"D:\new\mods\Alpha\alpha.reds", Line = 30, SourceHash = new string('b', 64) }, first.RedScriptFlows[1]] };
+        ProfileScanReceipt changed = first with { RedScriptFlows = [flow with { BodySha256 = new string('d', 64) }, first.RedScriptFlows[1]] };
 
         string originalHash = ConflictWorkQueueBuilder.Build(first, []).Single(value => value.Target == target).EvidenceSha256;
         string relocatedHash = ConflictWorkQueueBuilder.Build(relocated, []).Single(value => value.Target == target).EvidenceSha256;
@@ -732,9 +694,9 @@ public sealed class ConflictWorkQueueBuilderTests
     [TestMethod]
     public void InteractionDecisionHashUsesTargetScopedLuaCallbackEvidence()
     {
-        string target = "DamageSystem.ProcessHit";
-        LuaCallbackEvidence callback = new(LuaCallbackEvidenceKind.Override, target, EvidenceConfidence.Literal, EvidenceImpact.Review, LuaContinuationEvidence.Continues, 10, new string('a', 64), [new LuaSourceCopy("Alpha", @"C:\old\mods\Alpha\alpha.lua")], new string('c', 64));
-        ProfileScanReceipt first = Receipt() with { InteractionFindings = [new InteractionFinding(target, InteractionFindingKind.Review, "Review", ["Alpha", "Beta"])], LuaCallbacks = [callback] };
+        string target = "DamageSystem.ProcessHit()";
+        LuaCallbackEvidence callback = new(LuaCallbackEvidenceKind.Override, "DamageSystem.ProcessHit", EvidenceConfidence.Literal, EvidenceImpact.Review, LuaContinuationEvidence.Continues, 10, new string('a', 64), [new LuaSourceCopy("Alpha", @"C:\old\mods\Alpha\alpha.lua")], new string('c', 64));
+        ProfileScanReceipt first = ReplacementReceipt() with { LuaCallbacks = [callback] };
         ProfileScanReceipt relocated = first with { LuaCallbacks = [callback with { Line = 30, SourceHash = new string('b', 64), Copies = [new LuaSourceCopy("Alpha", @"D:\new\mods\Alpha\alpha.lua")] }] };
         ProfileScanReceipt changed = first with { LuaCallbacks = [callback with { CallbackSha256 = new string('d', 64) }] };
 
@@ -749,13 +711,13 @@ public sealed class ConflictWorkQueueBuilderTests
     [TestMethod]
     public void LuaInteractionDecisionHashIgnoresVendoredGroupingChangesFromUnrelatedEdits()
     {
-        string target = "DamageSystem.ProcessHit";
+        string target = "DamageSystem.ProcessHit()";
         string registration = "Override('DamageSystem', 'ProcessHit', function(self, wrapped) self.Record(); return wrapped() end)";
         LuaSource alpha = new("Alpha", "alpha.lua", registration);
         LuaSource beta = new("Beta", "beta.lua", registration);
         LuaCallbackEvidence[] grouped = LuaCallbackEvidenceAnalyzer.Analyze([alpha, beta]);
         LuaCallbackEvidence[] splitByUnrelatedEdit = LuaCallbackEvidenceAnalyzer.Analyze([alpha with { Text = registration + "\nlocal unrelated = true" }, beta]);
-        ProfileScanReceipt first = Receipt() with { InteractionFindings = [new InteractionFinding(target, InteractionFindingKind.Review, "Review", ["Alpha", "Beta"])], LuaCallbacks = grouped };
+        ProfileScanReceipt first = ReplacementReceipt() with { LuaCallbacks = grouped };
         ProfileScanReceipt changed = first with { LuaCallbacks = splitByUnrelatedEdit };
 
         string originalHash = ConflictWorkQueueBuilder.Build(first, []).Single(value => value.Target == target).EvidenceSha256;
@@ -768,14 +730,23 @@ public sealed class ConflictWorkQueueBuilderTests
     public void LegacyInteractionEvidenceFallsBackToWholeSourceHash()
     {
         string target = "DamageSystem.ProcessHit()";
-        RedScriptFlowEvidence flow = new("Alpha", "alpha.reds", target, RedScriptFlowKind.Wrap, RedScriptContinuationEvidence.Continues, EvidenceConfidence.ExactToken, EvidenceImpact.None, 10, new string('a', 64));
-        ProfileScanReceipt first = Receipt() with { InteractionFindings = [new InteractionFinding(target, InteractionFindingKind.Review, "Review", ["Alpha", "Beta"])], RedScriptFlows = [flow] };
-        ProfileScanReceipt changed = first with { RedScriptFlows = [flow with { SourceHash = new string('b', 64) }] };
+        ProfileScanReceipt first = ReplacementReceipt();
+        RedScriptFlowEvidence flow = first.RedScriptFlows[0] with { BodySha256 = null };
+        first = first with { RedScriptFlows = [flow, first.RedScriptFlows[1]] };
+        ProfileScanReceipt changed = first with { RedScriptFlows = [flow with { SourceHash = new string('b', 64) }, first.RedScriptFlows[1]] };
 
         string originalHash = ConflictWorkQueueBuilder.Build(first, []).Single(value => value.Target == target).EvidenceSha256;
         string changedHash = ConflictWorkQueueBuilder.Build(changed, []).Single(value => value.Target == target).EvidenceSha256;
 
         Assert.AreNotEqual(originalHash, changedHash);
+    }
+
+    private static ProfileScanReceipt ReplacementReceipt()
+    {
+        ModSourceInventory inventory = new([
+            new("Alpha", "alpha.reds", "@replaceMethod(DamageSystem)\npublic func ProcessHit() -> Void { First(); }"),
+            new("Beta", "beta.reds", "@replaceMethod(DamageSystem)\npublic func ProcessHit() -> Void { Second(); }")], [], [], []);
+        return Receipt() with { InteractionFindings = InteractionReportBuilder.Build(inventory), RedScriptFlows = RedScriptFlowEvidenceAnalyzer.Analyze(inventory.RedScripts) };
     }
 
     [TestMethod]
@@ -798,9 +769,10 @@ public sealed class ConflictWorkQueueBuilderTests
     [TestMethod]
     public void SharedStateDecisionHashChangesWithOperationButNotLineOrSourceHash()
     {
-        SharedStateWrite alpha = new("Alpha", "a.reds", SharedStateSurface.Blackboard, "UI_System.IsInMenu", 1, "SetBool", "SetBool(UI_System.IsInMenu", new string('a', 64));
-        SharedStateWrite beta = new("Beta", "b.reds", SharedStateSurface.Blackboard, "UI_System.IsInMenu", 2, "SetBool", "SetBool(UI_System.IsInMenu", new string('b', 64));
-        ProfileScanReceipt first = Receipt() with { SharedStateWrites = [new SharedStateWriteFinding(SharedStateSurface.Blackboard, "UI_System.IsInMenu", EvidenceConfidence.Literal, EvidenceImpact.Review, [alpha, beta])] };
+        SharedStateWriteFinding shared = SharedStateWriteAnalyzer.Analyze([], [new("Alpha", "a.lua", "TweakDB:SetFlat('Camera.limit', 1)"), new("Beta", "b.lua", "TweakDB:SetFlat('Camera.limit', 2)")]).Single();
+        SharedStateWrite alpha = shared.Writes[0];
+        SharedStateWrite beta = shared.Writes[1];
+        ProfileScanReceipt first = Receipt() with { SharedStateWrites = [shared] };
         ProfileScanReceipt shifted = first with { SharedStateWrites = [first.SharedStateWrites[0] with { Writes = [alpha with { Line = 20, SourceHash = new string('c', 64) }, beta] }] };
         ProfileScanReceipt changed = first with { SharedStateWrites = [first.SharedStateWrites[0] with { Writes = [alpha with { Operation = "SetInt" }, beta] }] };
 

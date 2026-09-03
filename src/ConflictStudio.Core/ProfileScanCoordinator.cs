@@ -49,7 +49,7 @@ public sealed record ProfileScanReceipt(
 public static class ProfileScanCoordinator
 {
     private const int PackedAnalysisSchema = 1;
-    private const int CodeAnalysisSchema = 4;
+    private const int CodeAnalysisSchema = 5;
 
     public static ProfileScanReceipt Scan(string mo2Root, Mo2Profile profile, DateTimeOffset scannedAtUtc)
         => Scan(mo2Root, profile, scannedAtUtc, null, CancellationToken.None);
