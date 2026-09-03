@@ -428,36 +428,39 @@ public sealed class TweakInteractionAnalyzerTests
     }
 
     [TestMethod]
-    public void AnalyzerUsesMutationPhasesAndFlagsPlainPlusUniqueAddsForReview()
+    public void AnalyzerDistinguishesOpposingMembershipFromPlainPlusUniqueAdds()
     {
         TweakSource[] opposing = [new("Alpha", "alpha.yaml", "Items.Test:\n  tags:\n    - !append Items.A\n"), new("Beta", "beta.yaml", "Items.Test:\n  tags:\n    - !remove Items.A\n")];
         TweakSource[] stateDependent = [new("Alpha", "alpha.yaml", "Items.Test:\n  tags:\n    - !append Items.A\n"), new("Beta", "beta.yaml", "Items.Test:\n  tags:\n    - !append-once Items.A\n")];
 
-        Assert.AreEqual(TweakOverlapKind.ComposableMutation, TweakInteractionAnalyzer.Analyze(opposing).Single().Kind);
+        Assert.AreEqual("OpposingMutation", TweakInteractionAnalyzer.Analyze(opposing).Single().Kind.ToString());
         Assert.AreEqual(TweakOverlapKind.MixedArrayOperations, TweakInteractionAnalyzer.Analyze(stateDependent).Single().Kind);
     }
 
     [TestMethod]
-    public void RepeatedIdenticalScalarAssignmentsRemainRedundantAcrossProviders()
+    public void RepeatedDlcAttributesDoNotCreateGameFlats()
     {
         TweakSource alpha = new("Alpha", "alpha.yaml", "Vendors.cz_stadium_ripperdoc_01:\n  $dlc: EP1\nVendors.cz_stadium_ripperdoc_01:\n  $dlc: EP1\n");
         TweakSource beta = new("Beta", "beta.yaml", "Vendors.cz_stadium_ripperdoc_01:\n  $dlc: EP1\n");
 
-        TweakOverlap overlap = TweakInteractionAnalyzer.Analyze([alpha, beta]).Single();
+        TweakAnalysisResult result = TweakInteractionAnalyzer.AnalyzeDetailed([alpha, beta]);
 
-        Assert.AreEqual(TweakOverlapKind.Redundant, overlap.Kind);
+        Assert.IsEmpty(result.Failures);
+        Assert.IsEmpty(result.Operations);
+        Assert.IsEmpty(result.Overlaps);
     }
 
     [TestMethod]
-    public void VendorRemoveThenAppendIsDeterministicAndKeepsRelevantOperations()
+    public void VendorOppositionKeepsOnlyCompetingMembershipOperations()
     {
         TweakSource alpha = new("Alpha", "alpha.yaml", "Vendors.Test:\n  itemStock:\n    - !append Items.Contested\n    - !append Items.AlphaOnly\n");
         TweakSource beta = new("Beta", "beta.yaml", "Vendors.Test:\n  itemStock:\n    - !remove Items.Contested\n    - !append Items.BetaOnly\n");
 
         TweakOverlap overlap = TweakInteractionAnalyzer.Analyze([alpha, beta]).Single();
 
-        Assert.AreEqual(TweakOverlapKind.ComposableMutation, overlap.Kind);
-        Assert.AreEqual(4, overlap.Operations.Length);
+        Assert.AreEqual("OpposingMutation", overlap.Kind.ToString());
+        Assert.AreEqual(2, overlap.Operations.Length);
+        Assert.IsTrue(overlap.Operations.All(value => value.Value == "Items.Contested"));
     }
 
     [TestMethod]

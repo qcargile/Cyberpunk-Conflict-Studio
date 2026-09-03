@@ -161,23 +161,22 @@ public static class ConflictWorkQueueBuilder
         foreach (InteractionFinding finding in receipt.InteractionFindings)
         {
             EvidenceClassification classification = ClassifyInteraction(finding, interactions);
+            if (classification is EvidenceClassification.Informational or EvidenceClassification.Composable or EvidenceClassification.Redundant) continue;
             (string summary, string action) = DescribeInteraction(finding, classification, interactions);
             (string? result, string? proof, string? meaning, string? boundary) = InteractionLabels(finding, interactions, classification);
             Add(items, receipt, decisions, ConflictSurface.ScriptAndTweak, finding.Target, classification, summary, action, null, InteractionProviders(finding, interactions), InteractionEvidence(finding, interactions), null, result, proof, meaning, boundary);
         }
         foreach (SharedStateWriteFinding finding in receipt.SharedStateWrites)
         {
-            string[] providers = finding.Writes.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            string summary = $"Multiple mods write the same {finding.Surface} target. The final in-game state cannot be determined here.";
-            Add(items, receipt, decisions, ConflictSurface.SharedState, finding.Target, EvidenceClassification.Informational, summary, "No conflict is proven. Inspect this only when troubleshooting the named runtime state.", null, providers, finding.Writes.Select(value => $"{value.Provider}|{CanonicalEvidencePath(value.FilePath)}|{value.Surface}|{value.Target}|{value.Operation}|{value.Evidence}" + (value.Surface == SharedStateSurface.TweakDb ? "|" + ScopedEvidence(value.CallSha256, value.SourceHash) : string.Empty)).ToArray());
-        }
-        foreach (ArchiveXlOperationChain chain in receipt.ArchiveXlChains.Where(value => value.Operations.Select(operation => operation.Provider).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
-        {
-            string[] providers = chain.Operations.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            EvidenceClassification classification = EvidenceClassification.Informational;
-            string summary = "Several mods change the same ArchiveXL target. The operation and keys decide whether they combine; order alone does not prove a winner.";
-            string action = "No conflict is confirmed. Inspect the operation only when troubleshooting this target.";
-            Add(items, receipt, decisions, ConflictSurface.ArchiveXl, chain.Target, classification, summary, action, null, providers, chain.Operations.Select(value => $"{value.Provider}|{CanonicalEvidencePath(value.FilePath)}|{value.Kind}|{value.Target}|{value.Payload}").ToArray());
+            var competing = finding.CompetingValues().ToArray();
+            if (competing.Length == 0) continue;
+            string[] providers = competing.SelectMany(value => new[] { value.First.Provider, value.Second.Provider }).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            string summary = string.Join(" ", competing.Select(value => $"{value.First.Provider} writes {value.FirstValue} ({value.First.FilePath}:{value.First.Line}); {value.Second.Provider} writes {value.SecondValue} ({value.Second.FilePath}:{value.Second.Line})."));
+            Add(items, receipt, decisions, ConflictSurface.SharedState, finding.Target, EvidenceClassification.CompetingDeclaration, summary,
+                "Compare the requested values and choose the behavior you want. No runtime order or final value is claimed.", null, providers,
+                finding.Writes.Select(value => $"{value.Provider}|{CanonicalEvidencePath(value.FilePath)}|{value.Surface}|{value.Target}|{value.Operation}|{value.Evidence}|{ScopedEvidence(value.CallSha256, value.SourceHash)}").ToArray(),
+                null, "Review: runtime writers request different values", "Different providers assign different literal values to the same field",
+                "The runtime writes request competing values.", "This does not establish which write runs last or an observed gameplay failure.");
         }
         foreach (RdarArchiveFailure failure in receipt.ArchiveFailures) Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.ArchiveName, EvidenceClassification.Unresolved, failure.Message, "Repair or remove the unreadable archive, then rescan.", null, [failure.Provider], [failure.ArchiveName, failure.Message]);
         foreach (ArchiveXlSourceFailure failure in receipt.ArchiveXlFailures.Where(value => value.Kind != ArchiveXlFailureKind.Coverage)) Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.FilePath, EvidenceClassification.Unresolved, failure.Message, "The scan could not read this ArchiveXL provider or file. Fix the named problem, then rescan.", null, [failure.Provider], [failure.FilePath, failure.Message]);
@@ -306,6 +305,11 @@ public static class ConflictWorkQueueBuilder
         }
         RedScriptFlowEvidence[] flows = interactions.Flows(finding.Target);
         LuaCallbackEvidence[] callbacks = interactions.Callbacks(finding.Target);
+        if (classification == EvidenceClassification.CompilerEvidence)
+        {
+            string summary = string.Join(" ", flows.Where(value => value.Kind == RedScriptFlowKind.Add).Select(value => $"{value.Provider} adds the method ({value.FilePath}:{value.Line})."));
+            return (summary, "Check the RedScript compiler result for this profile before deciding which duplicate method declaration needs correction.");
+        }
         if (flows.Any(value => value.Kind == RedScriptFlowKind.Add) && callbacks.Any(value => value.Kind == LuaCallbackEvidenceKind.Override))
         {
             string summary = string.Join(" ", flows.Select(value => $"{value.Provider} adds the method ({value.FilePath}:{value.Line}).")) + " " + string.Join(" ", callbacks.Where(value => value.Kind == LuaCallbackEvidenceKind.Override).Select(value => $"{string.Join(", ", value.Copies.Select(copy => copy.Provider))} registers a CET override ({string.Join(", ", value.Copies.Select(copy => copy.FilePath))}:{value.Line})."));
@@ -359,6 +363,11 @@ public static class ConflictWorkQueueBuilder
 
     private static (string Summary, string Action) DescribeTweak(TweakOverlap tweak, EvidenceClassification classification)
     {
+        if (tweak.Kind == TweakOverlapKind.OpposingMutation)
+        {
+            string opposition = string.Join(" ", tweak.Operations.Select(value => $"{value.Provider} {OperationVerb(value.Kind)} {Truncate(value.Value, 72)} ({value.FilePath}:{value.LineNumber})."));
+            return (opposition, "Compare the source components and choose which entries should remain. Running removals before additions does not satisfy both requests.");
+        }
         if (tweak.Kind == TweakOverlapKind.InternalContext)
         {
             string definitions = string.Join(" ", tweak.Operations.Select(value => $"{value.Kind}: {Truncate(value.Value, 72)} ({value.FilePath}:{value.LineNumber})."));
@@ -439,6 +448,10 @@ public static class ConflictWorkQueueBuilder
             return ("Information: internal source definitions", "Differing definitions occur within the same provider", "The source difference alone does not establish competing active components.", "This does not establish a gameplay failure or require a compatibility patch.");
         if (tweak.Kind == TweakOverlapKind.BaseRecordDependency)
             return ("Information: direct base-record relationship", "A $base declaration names a record changed by another provider", "The evidence includes changed base properties and matching explicit derived-property writes.", "This does not resolve final inherited values, recursive dependencies, or prove that the relationship is a conflict.");
+        if (tweak.Kind == TweakOverlapKind.OpposingMutation)
+            return ("Review: additions oppose removals", "Separate source components add and remove the same array entries",
+                "One source adds an entry to this array while another removes that same entry.",
+                "This proves opposing membership operations, not an unwanted result or a gameplay failure.");
         (string? result, string? proof) = tweak.Kind switch
         {
             TweakOverlapKind.ScalarOverwrite => ("Review: different values assigned", "Two active sources assign different values to one field"),
@@ -462,33 +475,24 @@ public static class ConflictWorkQueueBuilder
     private static EvidenceClassification ClassifyInteraction(InteractionFinding finding, InteractionLookup interactions)
     {
         if (finding.DeclarationEvidence is { Length: > 0 }) return EvidenceClassification.CompilerEvidence;
+        if (interactions.Flows(finding.Target).Count(value => value.Kind == RedScriptFlowKind.Add) > 1) return EvidenceClassification.CompilerEvidence;
         if (finding.Kind == InteractionFindingKind.Exclusive)
         {
             RedScriptFlowEvidence[] replacements = interactions.Flows(finding.Target);
             bool competingReplacements = finding.Providers.Length == 1
                 ? replacements.Count(value => value.Kind == RedScriptFlowKind.Replace) > 1
                 : HasDocumentedExclusiveMechanism(replacements);
-            return competingReplacements ? EvidenceClassification.Exclusive : EvidenceClassification.Review;
+            return competingReplacements ? EvidenceClassification.Exclusive : EvidenceClassification.Informational;
         }
         if (finding.TweakRuntimeEvidence?.CompetingValues().Any() == true) return EvidenceClassification.CompetingDeclaration;
         if (finding.Kind == InteractionFindingKind.Informational) return EvidenceClassification.Informational;
         TweakOverlap? tweak = interactions.Tweak(finding.Target);
         if (tweak is not null) return tweak.Kind == TweakOverlapKind.BaseRecordDependency ? EvidenceClassification.Informational
-            : tweak.Kind == TweakOverlapKind.ScalarOverwrite || HasCompetingWholeArrayReplacements(tweak) ? EvidenceClassification.CompetingDeclaration
+            : tweak.Kind is TweakOverlapKind.ScalarOverwrite or TweakOverlapKind.OpposingMutation || HasCompetingWholeArrayReplacements(tweak) ? EvidenceClassification.CompetingDeclaration
             : tweak.Kind is TweakOverlapKind.ComposableMutation or TweakOverlapKind.AssignmentThenMutation or TweakOverlapKind.Redundant ? EvidenceClassification.Composable
             : tweak.Kind is TweakOverlapKind.DuplicateMutation or TweakOverlapKind.RecordDefinitionCollision or TweakOverlapKind.SourceArrayDependency ? EvidenceClassification.Review
             : EvidenceClassification.OrderSensitive;
-        RedScriptFlowEvidence[] flows = interactions.Flows(finding.Target);
-        LuaCallbackEvidence[] callbacks = interactions.Callbacks(finding.Target);
-        if (finding.Providers.Length == 1 && flows.Count(value => value.Kind == RedScriptFlowKind.Add) > 1) return EvidenceClassification.CompilerEvidence;
-        if (flows.Any(value => value.Kind == RedScriptFlowKind.Add) && callbacks.Any(value => value.Kind == LuaCallbackEvidenceKind.Override)) return EvidenceClassification.Review;
-        if (flows.Any(value => value.Kind == RedScriptFlowKind.Wrap && value.Continuation is RedScriptContinuationEvidence.EarlyReturnBeforeContinuation or RedScriptContinuationEvidence.Missing)) return EvidenceClassification.OrderSensitive;
-        if (callbacks.Length > 0 && flows.Length == 0 && callbacks.All(value => value.Kind != LuaCallbackEvidenceKind.Override)) return EvidenceClassification.Informational;
-        if (flows.Any(value => value.Kind == RedScriptFlowKind.Wrap) && flows.All(value => value.Kind != RedScriptFlowKind.Wrap || value.Continuation == RedScriptContinuationEvidence.Continues) && callbacks.All(value => value.Kind != LuaCallbackEvidenceKind.Override)) return EvidenceClassification.Informational;
-        if (finding.Kind == InteractionFindingKind.Composable) return EvidenceClassification.Composable;
-        if (flows.Length > 0 && flows.All(value => value.Kind != RedScriptFlowKind.Wrap || value.Continuation == RedScriptContinuationEvidence.Continues)) return EvidenceClassification.Composable;
-        if (callbacks.Length > 0 && callbacks.All(value => value.Kind != LuaCallbackEvidenceKind.Override)) return EvidenceClassification.Composable;
-        return EvidenceClassification.Review;
+        return EvidenceClassification.Informational;
     }
 
     private static bool HasCompetingWholeArrayReplacements(TweakOverlap tweak)

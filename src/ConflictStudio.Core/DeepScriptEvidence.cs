@@ -359,7 +359,27 @@ public sealed record SharedStateWriteFinding(
     string Target,
     EvidenceConfidence Confidence,
     EvidenceImpact Impact,
-    SharedStateWrite[] Writes);
+    SharedStateWrite[] Writes)
+{
+    internal IEnumerable<(SharedStateWrite First, SharedStateWrite Second, string FirstValue, string SecondValue)> CompetingValues()
+    {
+        if (Surface != SharedStateSurface.TweakDb) yield break;
+        for (int firstIndex = 0; firstIndex < Writes.Length; firstIndex++)
+        {
+            SharedStateWrite first = Writes[firstIndex];
+            string? firstValue = TweakRuntimeEvidence.ScalarLiteral(first);
+            if (firstValue is null) continue;
+            for (int secondIndex = firstIndex + 1; secondIndex < Writes.Length; secondIndex++)
+            {
+                SharedStateWrite second = Writes[secondIndex];
+                if (first.Target != second.Target || string.Equals(first.Provider, second.Provider, StringComparison.OrdinalIgnoreCase)) continue;
+                string? secondValue = TweakRuntimeEvidence.ScalarLiteral(second);
+                if (secondValue is not null && TweakRuntimeEvidence.ScalarsDiffer(firstValue, secondValue))
+                    yield return (first, second, firstValue, secondValue);
+            }
+        }
+    }
+}
 
 public static class SharedStateWriteAnalyzer
 {

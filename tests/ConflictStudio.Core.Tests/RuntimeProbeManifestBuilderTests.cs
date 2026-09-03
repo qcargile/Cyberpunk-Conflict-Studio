@@ -6,19 +6,15 @@ namespace ConflictStudio.Core.Tests;
 public sealed class RuntimeProbeManifestBuilderTests
 {
     [TestMethod]
-    public void SingleProviderCompetingOverridesHaveOneCallbackProbe()
+    public void InternalOverrideRegistrationsDoNotDemandACallbackProbe()
     {
         string registration = "Override('PlayerPuppet', 'Value', function() return 1 end)";
         ModSourceInventory inventory = new([], [new("Alpha", "one.lua", registration + "\nOverride('PlayerPuppet', 'Value', function() return 2 end)")], [], []);
         ProfileScanReceipt receipt = new(1, "Standard", DateTimeOffset.UtcNow, ["Alpha"], [], [], [], [],
             InteractionReportBuilder.Build(inventory), [], [], LuaCallbackEvidenceAnalyzer.Analyze(inventory.LuaSources), [], [], []);
 
-        RuntimeProbeRequest request = RuntimeProbeManifestBuilder.Build(receipt).Requests.Single();
-
-        Assert.AreEqual(RuntimeProbeKind.CallbackDelivery, request.Kind);
-        Assert.AreEqual("Alpha", request.Providers.Single());
-        Assert.IsFalse(request.Observation.Contains("mods", StringComparison.OrdinalIgnoreCase), request.Observation);
-        StringAssert.Contains(request.Observation, "provider");
+        Assert.HasCount(2, receipt.LuaCallbacks);
+        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     private static readonly string[] ExpectedProviders = ["Alpha", "Beta"];
@@ -50,16 +46,13 @@ public sealed class RuntimeProbeManifestBuilderTests
     }
 
     [TestMethod]
-    public void BuildCreatesManualBehaviorCheckForNonContinuingRedScriptWrapper()
+    public void WrapperContinuationAloneDoesNotDemandABehaviorCheck()
     {
         string target = "DamageSystem.ProcessHit()";
         RedScriptFlowEvidence flow = new("Alpha", "alpha.reds", target, RedScriptFlowKind.Wrap, RedScriptContinuationEvidence.EarlyReturnBeforeContinuation, EvidenceConfidence.ExactToken, EvidenceImpact.Review, 1, new string('a', 64));
         ProfileScanReceipt receipt = new(1, "Standard", DateTimeOffset.UtcNow, ["Alpha", "Beta"], [], [], [], [], [new InteractionFinding(target, InteractionFindingKind.Review, "Review wrapper.", ["Alpha", "Beta"])], [flow], [], [], [], [], []);
 
-        RuntimeProbeRequest request = RuntimeProbeManifestBuilder.Build(receipt).Requests.Single();
-
-        Assert.AreEqual(RuntimeProbeKind.BehaviorCheck, request.Kind);
-        Assert.AreEqual(target, request.Target);
+        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -88,15 +81,12 @@ public sealed class RuntimeProbeManifestBuilderTests
     }
 
     [TestMethod]
-    public void CrossLanguageFindingUsesTheLuaMethodBaseForItsManualCheck()
+    public void CrossLanguageMethodRelationshipDoesNotDemandACallbackProbe()
     {
         string redTarget = "InventoryItemModeLogicController.OnReplacePartNotificationClosed(ref<inkGameNotificationData>)";
         LuaCallbackEvidence callback = new(LuaCallbackEvidenceKind.Override, "InventoryItemModeLogicController.OnReplacePartNotificationClosed", EvidenceConfidence.Literal, EvidenceImpact.Review, LuaContinuationEvidence.Missing, 10, new string('a', 64), [new LuaSourceCopy("WMCO", "quarantine.lua")]);
         ProfileScanReceipt receipt = new(1, "Standard", DateTimeOffset.UtcNow, ["Depeche", "WMCO"], [], [], [], [], [new InteractionFinding(redTarget, InteractionFindingKind.Review, "cross", ["Depeche", "WMCO"])], [new RedScriptFlowEvidence("Depeche", "depeche.reds", redTarget, RedScriptFlowKind.Add, RedScriptContinuationEvidence.NotApplicable, EvidenceConfidence.ExactToken, EvidenceImpact.None, 1, new string('b', 64))], [], [callback], [], [], []);
 
-        RuntimeProbeRequest request = RuntimeProbeManifestBuilder.Build(receipt).Requests.Single();
-
-        Assert.AreEqual(RuntimeProbeKind.CallbackDelivery, request.Kind);
-        Assert.AreEqual(redTarget, request.Target);
+        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 }

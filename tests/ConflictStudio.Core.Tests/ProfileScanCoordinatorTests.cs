@@ -24,11 +24,12 @@ public sealed class ProfileScanCoordinatorTests
             Assert.HasCount(1, first.InteractionFindings);
             Assert.AreEqual(JsonSerializer.Serialize(first.InteractionFindings), JsonSerializer.Serialize(cached.InteractionFindings));
             Assert.AreEqual(1, cached.Metrics!.CodeCacheHits);
-            string initialHash = ConflictWorkQueueBuilder.Build(first, []).Single(value => value.Target == "Items.Test.value").EvidenceSha256;
+            string? initialHash = first.InteractionFindings.Single().TweakRuntimeEvidence!.Writes.Single().CallSha256;
             WriteRoot(root, "bin\\x64\\plugins\\cyber_engine_tweaks\\mods\\Test\\init.lua", "TweakDB:SetFlat('Items.Test.value', 3)");
             ProfileScanReceipt changed = ProfileScanCoordinator.ScanManual(root, DateTimeOffset.UtcNow, null, CancellationToken.None);
             Assert.AreEqual(0, changed.Metrics!.CodeCacheHits);
-            Assert.AreNotEqual(initialHash, ConflictWorkQueueBuilder.Build(changed, []).Single(value => value.Target == "Items.Test.value").EvidenceSha256);
+            Assert.AreNotEqual(initialHash, changed.InteractionFindings.Single().TweakRuntimeEvidence!.Writes.Single().CallSha256);
+            Assert.IsFalse(ConflictWorkQueueBuilder.Build(changed, []).Any(value => value.Target == "Items.Test.value"));
         }
         finally
         {

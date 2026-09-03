@@ -93,12 +93,13 @@ public sealed class ConflictRelevanceTests
     }
 
     [TestMethod]
-    public void ZeroArgumentOverrideStillReplacesAnotherProvidersAddedMethod()
+    public void ZeroArgumentOverrideRetainsMissingContinuationWithoutCreatingACase()
     {
         ProfileScanReceipt receipt = Receipt(new([new("Alpha", "method.reds", "@addMethod(PlayerPuppet)\npublic func Value() -> Int32 { return 1; }")], [new("Beta", "init.lua", "Override('PlayerPuppet', 'Value', function() return 2 end)")], [], []));
 
-        Assert.IsTrue(ConflictWorkQueueBuilder.Build(receipt, []).Single().IsActionable);
-        Assert.IsNotEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
+        Assert.AreEqual(LuaContinuationEvidence.Missing, receipt.LuaCallbacks.Single().Continuation);
+        Assert.IsEmpty(ConflictWorkQueueBuilder.Build(receipt, []));
+        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -109,8 +110,9 @@ public sealed class ConflictRelevanceTests
             new("Bundle", "two.lua", "local settings = {value = 2}\nOverride('PlayerPuppet', 'Value', function(_) return settings.value end)")], [], []));
 
         Assert.HasCount(2, receipt.LuaCallbacks);
-        Assert.IsTrue(ConflictWorkQueueBuilder.Build(receipt, []).Single().IsActionable);
-        Assert.IsNotEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
+        Assert.AreNotEqual(receipt.LuaCallbacks[0].SourceHash, receipt.LuaCallbacks[1].SourceHash);
+        Assert.IsEmpty(ConflictWorkQueueBuilder.Build(receipt, []));
+        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     private static ProfileScanReceipt Receipt(ModSourceInventory inventory)

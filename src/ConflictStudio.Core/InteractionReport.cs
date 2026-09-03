@@ -26,14 +26,23 @@ public sealed record TweakRuntimeEvidence(TweakOperation[] Declarations, SharedS
                 bool different = literal.Groups["empty"].Success
                     ? declaration.Kind is TweakOperationKind.ArrayAppend or TweakOperationKind.ArrayAppendOnce or TweakOperationKind.ArrayPrepend or TweakOperationKind.ArrayPrependOnce
                         || declaration.Kind == TweakOperationKind.ArrayReplacement && declaration.Value != "[]"
-                    : declaration.Kind == TweakOperationKind.ScalarAssignment && (decimal.TryParse(declaration.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal initial)
-                    && decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal updated)
-                    ? initial != updated
-                    : bool.TryParse(declaration.Value, out bool initialFlag) && bool.TryParse(value, out bool updatedFlag) && initialFlag != updatedFlag);
+                    : declaration.Kind == TweakOperationKind.ScalarAssignment && ScalarsDiffer(declaration.Value, value);
                 if (different) yield return (declaration, write, value);
             }
         }
     }
+
+    internal static string? ScalarLiteral(SharedStateWrite write)
+    {
+        Match literal = LiteralArgument.Match(write.Evidence);
+        return literal.Success && !literal.Groups["empty"].Success ? literal.Groups["value"].Value : null;
+    }
+
+    internal static bool ScalarsDiffer(string first, string second)
+        => decimal.TryParse(first, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal initial)
+            && decimal.TryParse(second, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal updated)
+            ? initial != updated
+            : bool.TryParse(first, out bool initialFlag) && bool.TryParse(second, out bool updatedFlag) && initialFlag != updatedFlag;
 }
 
 public sealed record InteractionFinding(string Target, InteractionFindingKind Kind, string Summary, string[] Providers)
@@ -67,11 +76,10 @@ public static class InteractionReportBuilder
         ArgumentNullException.ThrowIfNull(tweakOverlaps);
         ArgumentNullException.ThrowIfNull(tweakOperations);
         ArgumentNullException.ThrowIfNull(runtimeWrites);
-        ILookup<string, RedScriptFlowEvidence> flowsByTarget = redScriptFlows.ToLookup(value => value.Target, StringComparer.Ordinal);
         ILookup<string, LuaCallbackEvidence> callbacksByTarget = luaCallbacks.ToLookup(value => value.Target, StringComparer.Ordinal);
         List<InteractionFinding> findings = [];
-        findings.AddRange(RedScriptInteractionAnalyzer.Analyze(inventory.RedScripts).Select(value => RedScriptFinding(value, flowsByTarget[value.Target])));
-        findings.AddRange(LuaInteractionAnalyzer.Analyze(inventory.LuaSources).Select(value => LuaFinding(value, callbacksByTarget[value.Target])));
+        findings.AddRange(RedScriptInteractionAnalyzer.Analyze(inventory.RedScripts).Select(RedScriptFinding));
+        findings.AddRange(LuaInteractionAnalyzer.Analyze(inventory.LuaSources).Select(LuaFinding));
         findings.AddRange(CrossLanguageFindings(redScriptFlows, callbacksByTarget));
         findings.AddRange(tweakOverlaps.Select(TweakFinding));
         findings.AddRange(TweakRuntimeFindings(tweakOperations, runtimeWrites));
@@ -119,10 +127,8 @@ public static class InteractionReportBuilder
             LuaCallbackEvidence[] overrides = callbacksByTarget[target].Where(value => value.Kind == LuaCallbackEvidenceKind.Override && value.Confidence == EvidenceConfidence.Literal).ToArray();
             string[] providers = overrides.SelectMany(value => value.Copies.Select(copy => copy.Provider)).Append(flow.Provider).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             if (overrides.Length == 0 || providers.Length < 2) continue;
-            bool replacesAddedMethod = overrides.Any(value => value.Continuation == LuaContinuationEvidence.Missing);
-            yield return new InteractionFinding(flow.Target, replacesAddedMethod ? InteractionFindingKind.Review : InteractionFindingKind.Informational,
-                replacesAddedMethod ? "A CET override contains no forwarding call to a method added by another provider. It can replace that provider's implementation."
-                    : "A CET override extends a RedScript method added by another provider. This relationship alone does not establish a conflict.", providers);
+            yield return new InteractionFinding(flow.Target, InteractionFindingKind.Informational,
+                "A CET override targets a RedScript method added by another provider. This relationship alone does not establish a conflict.", providers);
         }
     }
 
@@ -132,12 +138,12 @@ public static class InteractionReportBuilder
         return parameters < 0 ? target : target[..parameters];
     }
 
-    private static InteractionFinding RedScriptFinding(RedScriptOverlap overlap, IEnumerable<RedScriptFlowEvidence> flows)
+    private static InteractionFinding RedScriptFinding(RedScriptOverlap overlap)
     {
         string[] providers = overlap.Hooks.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (overlap.Kind == RedScriptOverlapKind.ExclusiveReplacement) return new InteractionFinding(overlap.Target, InteractionFindingKind.Exclusive, "Multiple active replacements declare exclusive source ownership of this method.", providers);
         if (overlap.Kind == RedScriptOverlapKind.RedundantReplacement) return new InteractionFinding(overlap.Target, InteractionFindingKind.Composable, providers.Length == 1 ? "Multiple declarations contain the same replacement body in analyzed source. This is redundant related source evidence, not a competing source outcome." : "Multiple active providers contain the same replacement body in analyzed source. This is redundant related source evidence, not a competing source outcome.", providers);
-        if (overlap.Kind == RedScriptOverlapKind.AddedMemberCollision)
+        if (overlap.Hooks.Count(value => value.Kind is RedScriptHookKind.AddMethod or RedScriptHookKind.AddField) > 1)
         {
             RedScriptFieldDeclaration[] fields = overlap.Hooks.Where(value => value.Declaration is not null).Select(value => value.Declaration!).ToArray();
             return new InteractionFinding(overlap.Target, InteractionFindingKind.Review, providers.Length == 1 ? "Multiple declarations add the same RedScript member. This is a source overlap; no compiler outcome is established by this report." : "Multiple active providers add the same RedScript member. This is a source overlap; no compiler outcome is established by this report.", providers)
@@ -145,27 +151,15 @@ public static class InteractionReportBuilder
                 DeclarationEvidence = fields.Length == 0 ? null : fields
             };
         }
-        if (overlap.Kind == RedScriptOverlapKind.AddedMemberInteraction) return new InteractionFinding(overlap.Target, InteractionFindingKind.Review, "One active provider adds this RedScript member while another wraps or replaces the same target. This is a source overlap; no compiler or runtime outcome is established by this report.", providers);
-        RedScriptFlowEvidence[] targetFlows = flows.Where(value => value.Target == overlap.Target).ToArray();
-        bool hasMissingContinuation = targetFlows.Any(value => value.Kind == RedScriptFlowKind.Wrap && value.Continuation == RedScriptContinuationEvidence.Missing);
-        bool hasEarlyReturn = targetFlows.Any(value => value.Kind == RedScriptFlowKind.Wrap && value.Continuation == RedScriptContinuationEvidence.EarlyReturnBeforeContinuation);
-        return hasMissingContinuation
-            ? new InteractionFinding(overlap.Target, InteractionFindingKind.Review, "At least one wrapper does not contain a continuation. This unresolved source evidence does not establish a runtime outcome.", providers)
-            : hasEarlyReturn
-                ? new InteractionFinding(overlap.Target, InteractionFindingKind.Review, "At least one wrapper contains a return before continuation. This is a conditional source interaction, not a runtime-failure verdict.", providers)
-            : new InteractionFinding(overlap.Target, InteractionFindingKind.Composable, "Every analyzed wrapper contains a continuation path, so the next implementation is not statically suppressed. This does not establish behavioral compatibility.", providers);
+        return new InteractionFinding(overlap.Target, InteractionFindingKind.Informational,
+            "These declarations target the same method. Continuation markers alone do not establish conflicting behavior or compatibility.", providers);
     }
 
-    private static InteractionFinding LuaFinding(LuaOverlap overlap, IEnumerable<LuaCallbackEvidence> callbacks)
+    private static InteractionFinding LuaFinding(LuaOverlap overlap)
     {
         string[] providers = overlap.Hooks.Select(value => value.Provider).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (providers.Length == 1 && callbacks.Any() && callbacks.All(value => value.Continuation == LuaContinuationEvidence.Continues))
-            return new InteractionFinding(overlap.Target, InteractionFindingKind.Informational, "These internal overrides contain forwarding calls. Their shared target alone does not establish a competing outcome.", providers);
-        return overlap.Kind switch
-        {
-            LuaOverlapKind.RedundantOverride => new InteractionFinding(overlap.Target, InteractionFindingKind.Informational, "The same provider registers identical return-only overrides. No competing return value is shown.", providers),
-            _ => new InteractionFinding(overlap.Target, InteractionFindingKind.Review, "Multiple active CET callbacks share this exact target. This is a related source surface; the report does not establish their runtime relationship.", providers)
-        };
+        return new InteractionFinding(overlap.Target, InteractionFindingKind.Informational,
+            "These CET callbacks target the same method. Their registrations alone do not establish conflicting behavior or compatibility.", providers);
     }
 
     private static InteractionFinding TweakFinding(TweakOverlap overlap)
@@ -176,6 +170,7 @@ public static class InteractionReportBuilder
         InteractionFindingKind kind = overlap.Kind is TweakOverlapKind.BaseRecordDependency or TweakOverlapKind.InternalContext ? InteractionFindingKind.Informational
             : overlap.Kind is TweakOverlapKind.ComposableMutation or TweakOverlapKind.AssignmentThenMutation or TweakOverlapKind.Redundant ? InteractionFindingKind.Composable : InteractionFindingKind.Review;
         string summary = overlap.Kind == TweakOverlapKind.InternalContext ? "This provider contains differing source definitions. The source locations are context, not evidence of competing active components."
+            : overlap.Kind == TweakOverlapKind.OpposingMutation ? "Separate source components add and remove the same array entries. Known operation order does not satisfy both requested outcomes."
             : overlap.Kind == TweakOverlapKind.Redundant ? "All active providers declare the same value."
             : overlap.Kind == TweakOverlapKind.AssignmentThenMutation ? "TweakXL commits the array assignment before applying removals, prepends, and appends."
             : overlap.Kind == TweakOverlapKind.ComposableMutation ? "TweakXL applies these mutations in documented phases; no competing assignment or duplicate insertion is present."

@@ -19,17 +19,19 @@ Conflict Studio does not decide that two mods are compatible or incompatible. A 
 
 - **Confirmed conflicts** identify one exact boundary where active changes cannot coexist.
 - **Needs review** identifies competing changes and the specific outcome that remains unresolved. It is not a compatibility verdict.
-- **No action / information** contains identical source, changes that can combine, and related targets that may matter only while troubleshooting.
+- **Identical overlaps** contains loose files with identical bytes or equivalent parsed JSON.
 - File ownership proves which deployed file is selected. It does not prove that the selected file is the version you intended.
 - Competing values prove that active sources assign different values. They do not prove the final in-game value without a runtime observation.
 
 Conflict Studio can read literal CET callbacks and deployed DLL ownership. It does not resolve dynamically constructed CET callbacks or inspect native DLL hooks and internal behavior.
 
-A default followed by the same mod's settings update is not a conflict. Declarative/runtime warnings currently cover different numeric or boolean literals requested by different providers, and literal array clears that oppose another provider's additions. Other runtime writes remain source context, not automatic requests to test or repair a mod.
+A default followed by the same mod's settings update is not a conflict. Literal-value checks cover different numeric or boolean values requested by different providers, including two runtime writers. They also cover literal array clears that oppose another provider's additions. Separate source components adding and removing the same entries are opposing changes, even when their execution order is known.
 
-When one TweakXL record uses another as its `$base`, the relationship is shown as information. It does not tell you the final inherited value.
+Method warnings cover competing replacements and duplicate added members. Shared wrappers, early returns, and CET callbacks remain technical evidence: deciding whether their conditions and side effects conflict requires source inspection. No warning does not mean compatible.
 
-Expand code coverage to see which files were checked and which could not be read or analyzed. RED `.tweak` files are listed but not parsed. RedScript checks cover annotated declarations and supported TweakDB writes with literal targets, not every symbol in a script.
+Base-record links, ordinary settings updates, and other background relationships also remain in technical evidence rather than standalone cases. They do not establish a conflict or prove compatibility.
+
+Support reports record which files were checked and which could not be read or analyzed. RED `.tweak` files are listed but not parsed. RedScript checks cover annotated declarations and supported TweakDB writes with literal targets, not every symbol in a script.
 
 CET checks follow literal `require`, `dofile`, and `loadfile` paths from the selected `init.lua`. If loading cannot be resolved, the mod's other files stay in the scan as possible inputs. This does not prove that a function runs. Scans do not read framework logs or determine whether a native plugin can load.
 

@@ -23,7 +23,7 @@ public sealed class CodeCoverageReceiptTests
     }
 
     [TestMethod]
-    public void SupportHtmlRetainsProofMeaningBoundaryAndBothBasePropertyTargets()
+    public void SupportRetainsBasePropertyEvidenceWithoutCreatingCases()
     {
         using CoverageFixture fixture = new();
         fixture.Write("r6/tweaks/base.yaml", "Items.Base.value: 1");
@@ -33,15 +33,10 @@ public sealed class CodeCoverageReceiptTests
         TweakAnalysisResult analysis = TweakInteractionAnalyzer.AnalyzeDetailed(inventory.TweakSources);
         receipt = receipt with { InteractionFindings = InteractionReportBuilder.Build(inventory), TweakOverlaps = analysis.Overlaps };
         SupportCapsule capsule = SupportCapsuleBuilder.Build(receipt, []);
-        Assert.IsTrue(capsule.WorkQueue.Any(value => value.Surface == ConflictSurface.ScriptAndTweak));
+        Assert.IsFalse(capsule.WorkQueue.Any(value => value.Surface == ConflictSurface.ScriptAndTweak));
         SupportCapsuleWriter.Write(Path.Combine(fixture.Root, "support"), capsule);
         string html = File.ReadAllText(Path.Combine(fixture.Root, "support", "conflict-casefile.html"));
-        StringAssert.Contains(html, "Proof:");
-        StringAssert.Contains(html, "Meaning:");
-        StringAssert.Contains(html, "Boundary:");
-        StringAssert.Contains(html, "A $base declaration names a record changed by another provider");
-        StringAssert.Contains(html, "matching explicit derived-property writes");
-        StringAssert.Contains(html, "This does not resolve final inherited values");
+        Assert.IsTrue(capsule.Evidence.TweakOverlaps.Any(value => value.Kind == TweakOverlapKind.BaseRecordDependency));
         StringAssert.Contains(html, "Items.Base.value");
         StringAssert.Contains(html, "Items.Derived.value");
     }
