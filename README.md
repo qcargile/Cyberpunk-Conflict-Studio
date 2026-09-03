@@ -51,16 +51,18 @@ Download `Cyberpunk-Conflict-Studio-0.4.0-Nexus.zip` from Nexus Mods.
 ### Mod Organizer 2
 
 1. Extract the ZIP outside the instance's `mods` folder.
-2. Add `Conflict Studio\ConflictStudio.exe` as an MO2 executable.
+2. Add `ConflictStudio.exe` from the extracted folder as an MO2 executable.
 3. Set **Start in** to the folder containing `ModOrganizer.ini`.
 4. Use `--manager mo2 --profile current` as the arguments.
 5. Add `ConflictStudio.exe` to MO2's executable blacklist so it reads the real files instead of the virtual filesystem.
+
+If updating from the older package layout, update MO2's executable path to the copy now at the top level of the extracted folder.
 
 Do not scan the same game through MO2 while Vortex files are still deployed. Purge Vortex first or use the Vortex profile.
 
 ### Manual
 
-Run `Conflict Studio\ConflictStudio.exe`, choose Manual, and select the Cyberpunk 2077 folder.
+Run `ConflictStudio.exe` from the extracted folder, choose Manual, and select the Cyberpunk 2077 folder.
 
 ## Build
 

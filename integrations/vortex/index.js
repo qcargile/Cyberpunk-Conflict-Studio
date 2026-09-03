@@ -15,7 +15,7 @@ function init(context) {
   const contextResponsePath = path.join(bridgeRoot, "context-response.json");
   const orderRequestPath = path.join(bridgeRoot, "order-request.json");
   const orderResponsePath = path.join(bridgeRoot, "order-response.json");
-  const applicationRoot = path.join(__dirname, "Conflict Studio");
+  const applicationRoot = __dirname;
   const applicationPath = path.join(applicationRoot, "ConflictStudio.exe");
   const bridgeLog = typeof vortexApi.log === "function" ? vortexApi.log : () => undefined;
   let queue = Promise.resolve();

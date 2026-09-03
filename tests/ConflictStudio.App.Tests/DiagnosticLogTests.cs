@@ -19,6 +19,58 @@ public sealed class DiagnosticLogTests
     public void PublisherRunnerOutputPreservesBothTestSuccessesUntilRestoreFails()
         => AssertPublisherStopsBeforePublishAndPackageCreation(string.Empty, "dotnet restore failed.", 3);
 
+    [TestMethod]
+    public void VortexToolUsesTheExecutableBesideTheExtension()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict studio launcher " + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(root);
+            string harness = Path.Combine(root, "launcher.cjs");
+            File.WriteAllText(harness, """
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+let registered;
+const vortex = {
+  actions: { addDiscoveredTool: (game, id, tool) => tool, setToolVisible: () => null },
+  selectors: {},
+  util: { getVortexPath: () => __dirname }
+};
+const sandbox = {
+  __dirname,
+  module: { exports: {} },
+  process: { env: { LOCALAPPDATA: __dirname } },
+  require: name => name === "vortex-api" ? vortex
+    : name === "node:fs" ? { mkdirSync() {}, copyFileSync() {} }
+    : name === "./bridge" ? {} : require(name)
+};
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), sandbox);
+sandbox.module.exports({
+  once() {},
+  api: {
+    getState: () => ({ settings: { gameMode: { discovered: { cyberpunk2077: { path: __dirname } } } } }),
+    store: { dispatch: action => { if (action) registered = action; } },
+    onStateChange: (keys, callback) => callback()
+  }
+});
+assert.equal(registered.path, path.join(__dirname, "ConflictStudio.exe"));
+assert.equal(registered.workingDirectory, __dirname);
+assert.equal(JSON.stringify(registered.parameters), '["--manager","vortex"]');
+""");
+            string extension = Path.Combine(RepositoryRoot(), "integrations", "vortex", "index.js");
+
+            (int exitCode, string error) = RunWithError("node", $"\"{harness}\" \"{extension}\"");
+
+            Assert.AreEqual(0, exitCode, error);
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
     private static void AssertPublisherStopsBeforePublishAndPackageCreation(string failedProject, string expectedFailure, int expectedCommandCount)
     {
         string root = Path.Combine(Path.GetTempPath(), "conflict-studio-publisher-gate-" + Guid.NewGuid().ToString("N"));
