@@ -397,8 +397,9 @@
             <TabItem Header="Archives" IsSelected="True">
                 <Grid x:Name="ArchiveOrderTabContent">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="390" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="390" MinWidth="280" />
+                        <ColumnDefinition Width="6" />
+                        <ColumnDefinition Width="*" MinWidth="500" />
                     </Grid.ColumnDefinitions>
                     <Border Padding="12" Background="#101719" BorderBrush="#2A393C" BorderThickness="0,0,1,0">
                         <Grid>
@@ -455,7 +456,8 @@
                             </StackPanel>
                         </Grid>
                     </Border>
-                    <Grid Grid.Column="1" Margin="14,10,14,12">
+                    <GridSplitter x:Name="ArchivePaneSplitter" Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#314346" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" Cursor="SizeWE" />
+                    <Grid Grid.Column="2" Margin="14,10,14,12">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />

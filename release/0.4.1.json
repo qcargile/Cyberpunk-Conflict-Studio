@@ -1,0 +1,11 @@
+{
+  "product": "Cyberpunk Conflict Studio",
+  "version": "0.4.1",
+  "channel": "beta",
+  "runtime": "win-x64",
+  "selfContained": true,
+  "entryPoint": "ConflictStudio.exe",
+  "packageFormat": "zip",
+  "minimumOs": "Windows 10 20H1 (19041)",
+  "sourceCommit": "HEAD"
+}

@@ -63,6 +63,19 @@ public static class ArchiveDragAutoScroll
     private static int Speed(double depth, int maximumLines) => Math.Clamp(1 + (int)(Math.Clamp(depth, 0, 1) * Math.Max(0, maximumLines - 1)), 1, Math.Max(1, maximumLines));
 }
 
+internal static class ArchiveDragSelection
+{
+    public static string[] Resolve(string clickedArchive, bool clickedWasSelected, IReadOnlyList<string> selectedAtPress, IReadOnlyList<string> selectedAfterPress, bool selectionModifier)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(clickedArchive);
+        ArgumentNullException.ThrowIfNull(selectedAtPress);
+        ArgumentNullException.ThrowIfNull(selectedAfterPress);
+        if (selectionModifier && !selectedAfterPress.Contains(clickedArchive, StringComparer.OrdinalIgnoreCase)) return [];
+        IReadOnlyList<string> selected = selectionModifier ? selectedAfterPress : clickedWasSelected ? selectedAtPress : [clickedArchive];
+        return selected.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+}
+
 public static class ArchiveConflictPreview
 {
     public static ArchiveConflictSummary[] Build(IReadOnlyList<ResourceProvider> resources, IReadOnlyList<Mo2Archive> archives, IReadOnlyList<string> order, IReadOnlyList<RdarArchiveFailure> failures)

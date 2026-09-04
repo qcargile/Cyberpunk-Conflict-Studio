@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.4.0',
+    [string]$Version = '0.4.1',
     [string]$OutputRoot = (Join-Path $env:LOCALAPPDATA 'Cyberpunk Conflict Studio\releases'),
     [switch]$Force,
     [string]$RepositoryRoot,
@@ -41,6 +41,7 @@ if ($resolvedOutput.StartsWith($resolvedRepository, [StringComparison]::OrdinalI
 if ((Test-Path -LiteralPath $packageRoot) -and -not $Force) { throw "Package directory already exists. Use -Force to replace it: $packageRoot" }
 $stageRoot = Join-Path ([IO.Path]::GetTempPath()) "cyberpunk-conflict-studio-$Version-$([Guid]::NewGuid().ToString('N'))"
 
+Push-Location -LiteralPath $repositoryRoot
 try {
     New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
     $appStage = $stageRoot
@@ -111,5 +112,8 @@ try {
     Write-Output "CHECKSUM $checksumPath"
 }
 finally {
-    if (Test-Path -LiteralPath $stageRoot) { Remove-Item -LiteralPath $stageRoot -Recurse -Force }
+    try {
+        if (Test-Path -LiteralPath $stageRoot) { Remove-Item -LiteralPath $stageRoot -Recurse -Force }
+    }
+    finally { Pop-Location }
 }

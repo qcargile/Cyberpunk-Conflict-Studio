@@ -39,7 +39,7 @@ See [GitHub releases](https://github.com/qcargile/Cyberpunk-Conflict-Studio/rele
 
 ## Install
 
-Download `Cyberpunk-Conflict-Studio-0.4.0-Nexus.zip` from Nexus Mods.
+Download `Cyberpunk-Conflict-Studio-0.4.1-Nexus.zip` from Nexus Mods.
 
 ### Vortex
 
@@ -69,10 +69,10 @@ Run `ConflictStudio.exe` from the extracted folder, choose Manual, and select th
 The public package is a self-contained Windows x64 executable:
 
 ```powershell
-.\scripts\publish-win-x64.ps1 -Version 0.4.0
+.\scripts\publish-win-x64.ps1 -Version 0.4.1
 ```
 
-The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/0.4.0.json`.
+The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/0.4.1.json`.
 
 ## Credits
 

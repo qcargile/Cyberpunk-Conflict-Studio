@@ -13,8 +13,14 @@ public static class ArchiveOrderGuidance
         {
             ArchiveOrderProblemLane.Redmod => "Show REDmod deployment steps",
             ArchiveOrderProblemLane.Combined => "Show repair steps",
-            _ => "Repair legacy load order"
+            _ => "Show repair steps"
         };
+    }
+
+    internal static bool OpensPreparedOrder(ArchiveOrderEvidence evidence)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        return evidence.IsRepairableLegacyOrder || evidence.IgnoredEntries.Length > 0;
     }
 
     public static string Instruction(ArchiveOrderEvidence evidence, ModManagerKind managerKind = ModManagerKind.Mo2)

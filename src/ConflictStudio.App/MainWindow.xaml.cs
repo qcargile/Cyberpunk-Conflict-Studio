@@ -33,6 +33,10 @@ public partial class MainWindow : Window, IDisposable
     private bool _archiveOperationLocked;
     private Point _archiveDragStart;
     private string[] _draggedArchives = [];
+    private string? _archivePressedForDrag;
+    private string[] _archiveSelectionAtPress = [];
+    private bool _archivePressedWasSelected;
+    private bool _archiveSelectionModifier;
     private ArchiveConflictNode? _selectedArchiveNode;
     private ArchiveOrderProblemLane _orderProblemLane;
     private bool _syncingArchiveSelection;
@@ -543,7 +547,9 @@ public partial class MainWindow : Window, IDisposable
     {
         Execute("archive-order-guidance", () =>
         {
-            if (_receipt?.ArchiveOrderEvidence is { IgnoredEntries.Length: > 0 })
+            ProfileScanReceipt? receipt = _receipt;
+            if (receipt?.ArchiveOrderEvidence is not { } evidence) return;
+            if (ArchiveOrderGuidance.OpensPreparedOrder(evidence))
             {
                 _workspace.PreviewOrder();
                 WorkspaceStatusTextBlock.Text = _workspace.PreviewStatus;
@@ -556,14 +562,18 @@ public partial class MainWindow : Window, IDisposable
             }
             if (_orderProblemLane == ArchiveOrderProblemLane.Redmod)
             {
-                if (_receipt?.ArchiveOrderEvidence is not null) WorkspaceStatusTextBlock.Text = ArchiveOrderGuidance.Instruction(_receipt.ArchiveOrderEvidence, _receipt.ManagerKind);
+                WorkspaceStatusTextBlock.Text = ArchiveOrderGuidance.Instruction(evidence, receipt.ManagerKind);
                 return;
             }
             if (_orderProblemLane == ArchiveOrderProblemLane.Combined)
             {
-                if (_receipt?.ArchiveOrderEvidence is not null) WorkspaceStatusTextBlock.Text = ArchiveOrderGuidance.Instruction(_receipt.ArchiveOrderEvidence, _receipt.ManagerKind);
+                WorkspaceStatusTextBlock.Text = ArchiveOrderGuidance.Instruction(evidence, receipt.ManagerKind);
                 return;
             }
+            string instruction = ArchiveOrderGuidance.Instruction(evidence, receipt.ManagerKind);
+            ArchiveOrderEvidenceTextBlock.Text = instruction;
+            ArchiveOrderEvidenceTextBlock.Visibility = Visibility.Visible;
+            WorkspaceStatusTextBlock.Text = instruction;
             ArchiveOrderListBox.Focus();
             if (ArchiveOrderListBox.Items.Count > 0 && ArchiveOrderListBox.SelectedIndex < 0) ArchiveOrderListBox.SelectedIndex = 0;
         });
@@ -1307,32 +1317,42 @@ public partial class MainWindow : Window, IDisposable
 
     private void ArchiveOrderMouseDown(object sender, MouseButtonEventArgs e)
     {
+        _draggedArchives = [];
+        _archivePressedForDrag = null;
+        _archiveSelectionAtPress = [];
+        _archivePressedWasSelected = false;
+        _archiveSelectionModifier = false;
         if (RejectArchiveMutationWhileBusy("archive-drag"))
         {
-            _draggedArchives = [];
             return;
         }
         _archiveDragStart = e.GetPosition(ArchiveOrderListBox);
         ListBoxItem? item = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
         if (item?.DataContext is not ArchiveRailItem row)
         {
-            _draggedArchives = [];
             return;
         }
         string archive = row.ArchiveName;
         HashSet<string> editable = _workspace.ProposedOrder.ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (!editable.Contains(archive))
         {
-            _draggedArchives = [];
             return;
         }
-        _draggedArchives = (item.IsSelected ? ArchiveOrderListBox.SelectedItems.Cast<ArchiveRailItem>().Select(value => value.ArchiveName) : [archive]).Where(editable.Contains).ToArray();
+        _archivePressedForDrag = archive;
+        _archivePressedWasSelected = item.IsSelected;
+        _archiveSelectionAtPress = ArchiveOrderListBox.SelectedItems.Cast<ArchiveRailItem>().Select(value => value.ArchiveName).ToArray();
+        _archiveSelectionModifier = (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != ModifierKeys.None;
+        _draggedArchives = ArchiveDragSelection.Resolve(archive, item.IsSelected, _archiveSelectionAtPress, _archiveSelectionAtPress, false).Where(editable.Contains).ToArray();
     }
 
     private void ArchiveOrderMouseMove(object sender, MouseEventArgs e)
     {
         if (_scanLocked || _archiveOperationLocked) return;
-        if (e.LeftButton != MouseButtonState.Pressed || _draggedArchives.Length == 0) return;
+        if (e.LeftButton != MouseButtonState.Pressed || _archivePressedForDrag is null) return;
+        string[] selectedAfterPress = ArchiveOrderListBox.SelectedItems.Cast<ArchiveRailItem>().Select(value => value.ArchiveName).ToArray();
+        HashSet<string> editable = _workspace.ProposedOrder.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _draggedArchives = ArchiveDragSelection.Resolve(_archivePressedForDrag, _archivePressedWasSelected, _archiveSelectionAtPress, selectedAfterPress, _archiveSelectionModifier).Where(editable.Contains).ToArray();
+        if (_draggedArchives.Length == 0) return;
         Point current = e.GetPosition(ArchiveOrderListBox);
         if (Math.Abs(current.X - _archiveDragStart.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(current.Y - _archiveDragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
         _archiveDragActive = true;
