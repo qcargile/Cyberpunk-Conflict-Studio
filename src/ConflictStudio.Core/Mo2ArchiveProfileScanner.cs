@@ -21,11 +21,13 @@ public sealed record ArchiveOrderEvidence(ArchiveOrderEvidenceKind Kind, string?
     public Dictionary<string, string> SourceFingerprints { get; init; } = [];
     public string[] AbsentSources { get; init; } = [];
     public ArchiveOrderProblemLane ProblemLane { get; init; }
+    public ArchiveOrderProblemLane IncompleteArchiveLane { get; init; }
     [JsonIgnore]
     public bool IsRedmodOrder => ProblemLane == ArchiveOrderProblemLane.Redmod;
     [JsonIgnore]
     public bool IsRepairableLegacyOrder => Kind == ArchiveOrderEvidenceKind.Unresolved
         && ProblemLane == ArchiveOrderProblemLane.Legacy
+        && IncompleteArchiveLane == ArchiveOrderProblemLane.None
         && SourcePath is not null
         && SourceFingerprints.Count > 0
         && (MissingEntries.Length > 0 || DuplicateEntries.Length > 0);
@@ -134,7 +136,7 @@ public static class Mo2ArchiveProfileScanner
         (string[] order, ArchiveOrderEvidence evidence) = ResolveOrder(providers, filenameOrdered, failures);
         Dictionary<string, Mo2Archive> byName = filenameOrdered.ToDictionary(value => value.ArchiveName, StringComparer.OrdinalIgnoreCase);
         Mo2Archive[] ordered = order.Select(value => byName[value]).ToArray();
-        if (failures.Count > 0) evidence = Unresolved(evidence, "At least one active legacy archive could not be fingerprinted, so the archive set is incomplete.");
+        if (failures.Any(value => value.Surface is "Archive enumeration" or "Archive fingerprint")) evidence = Unresolved(evidence, "At least one active legacy archive could not be fingerprinted, so the archive set is incomplete.");
         if (cacheChanged && fingerprintCachePath is not null)
         {
             try
@@ -179,7 +181,8 @@ public static class Mo2ArchiveProfileScanner
             DuplicateEntries = evidence.DuplicateEntries,
             SourceFingerprints = evidence.SourceFingerprints,
             AbsentSources = evidence.AbsentSources,
-            ProblemLane = ArchiveOrderProblemLane.Legacy
+            ProblemLane = ArchiveOrderProblemLane.Legacy,
+            IncompleteArchiveLane = ArchiveOrderProblemLane.Legacy
         };
 
     private static (string[] Order, ArchiveOrderEvidence Evidence) ResolveOrder(IReadOnlyList<ProviderArchives> providers, Mo2Archive[] archives, List<SourceAnalysisFailure> failures)

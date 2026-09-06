@@ -45,13 +45,28 @@ public static class ResourcePayloadIdentity
 
 internal static class ArchiveUncertainty
 {
-    public static bool Crosses(IReadOnlyList<ResourceProvider> providers, IReadOnlyDictionary<string, int> positions, IReadOnlyList<RdarArchiveFailure>? failures, bool archiveSetIncomplete)
+    public static bool Crosses(IReadOnlyList<ResourceProvider> providers, IReadOnlyDictionary<string, int> positions, IReadOnlyList<RdarArchiveFailure>? failures, ArchiveOrderProblemLane unresolvedLane, ArchiveOrderProblemLane incompleteLane)
     {
-        if (archiveSetIncomplete || providers.Any(value => !positions.ContainsKey(value.ArchiveName))) return true;
+        if (providers.Any(value => !positions.ContainsKey(value.ArchiveName)) || OrderIsUnresolved(providers, unresolvedLane) || IncompleteSetAffects(providers, incompleteLane)) return true;
         if (failures is not { Count: > 0 }) return false;
         if (failures.Any(value => !positions.ContainsKey(value.ArchiveName))) return true;
         int lowestKnownPosition = providers.Max(value => positions[value.ArchiveName]);
         return failures.Any(value => positions[value.ArchiveName] <= lowestKnownPosition);
+    }
+
+    private static bool IncompleteSetAffects(IReadOnlyList<ResourceProvider> providers, ArchiveOrderProblemLane lane)
+    {
+        if (lane is ArchiveOrderProblemLane.Legacy or ArchiveOrderProblemLane.Combined) return true;
+        return lane == ArchiveOrderProblemLane.Redmod && providers.All(value => value.ArchiveName.StartsWith("REDmod/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool OrderIsUnresolved(IReadOnlyList<ResourceProvider> providers, ArchiveOrderProblemLane lane)
+    {
+        int redmods = providers.Count(value => value.ArchiveName.StartsWith("REDmod/", StringComparison.OrdinalIgnoreCase));
+        int legacy = providers.Count - redmods;
+        return lane == ArchiveOrderProblemLane.Legacy && legacy > 1
+            || lane == ArchiveOrderProblemLane.Redmod && legacy == 0 && redmods > 1
+            || lane == ArchiveOrderProblemLane.Combined && (legacy > 1 || legacy == 0 && redmods > 1);
     }
 }
 
@@ -61,21 +76,21 @@ public sealed record ResourceConflict(ulong ResourceHash, string DisplayName, Re
 
 public static class ResourceConflictAnalyzer
 {
-    public static ResourceConflict[] Analyze(IReadOnlyList<ResourceProvider> providers, IReadOnlyList<string> archiveOrder, IReadOnlyList<RdarArchiveFailure>? failures = null, bool archiveSetIncomplete = false)
+    public static ResourceConflict[] Analyze(IReadOnlyList<ResourceProvider> providers, IReadOnlyList<string> archiveOrder, IReadOnlyList<RdarArchiveFailure>? failures = null, ArchiveOrderProblemLane unresolvedLane = ArchiveOrderProblemLane.None, ArchiveOrderProblemLane incompleteLane = ArchiveOrderProblemLane.None)
     {
         ArgumentNullException.ThrowIfNull(providers);
         ArgumentNullException.ThrowIfNull(archiveOrder);
         Dictionary<string, int> positions = archiveOrder.Select((name, index) => new { name, index }).ToDictionary(value => value.name, value => value.index, StringComparer.OrdinalIgnoreCase);
         return providers.GroupBy(value => value.ResourceHash)
             .Where(group => group.Select(value => value.ArchiveName).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
-            .Select(group => Create(group.Key, group.ToArray(), positions, failures, archiveSetIncomplete))
+            .Select(group => Create(group.Key, group.ToArray(), positions, failures, unresolvedLane, incompleteLane))
             .OrderBy(value => value.DisplayName, StringComparer.Ordinal)
             .ToArray();
     }
 
-    private static ResourceConflict Create(ulong resourceHash, ResourceProvider[] providers, Dictionary<string, int> positions, IReadOnlyList<RdarArchiveFailure>? failures, bool archiveSetIncomplete)
+    private static ResourceConflict Create(ulong resourceHash, ResourceProvider[] providers, Dictionary<string, int> positions, IReadOnlyList<RdarArchiveFailure>? failures, ArchiveOrderProblemLane unresolvedLane, ArchiveOrderProblemLane incompleteLane)
     {
-        bool orderIncomplete = ArchiveUncertainty.Crosses(providers, positions, failures, archiveSetIncomplete);
+        bool orderIncomplete = ArchiveUncertainty.Crosses(providers, positions, failures, unresolvedLane, incompleteLane);
         ResourceProvider[] ordered = providers.OrderBy(value => positions.TryGetValue(value.ArchiveName, out int position) ? position : int.MaxValue).ToArray();
         string? path = ordered.Select(value => value.ResourcePath).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
         string?[] payloadValues = ResourcePayloadIdentity.ComparableFingerprints(ordered);

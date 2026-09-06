@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.4.1',
+    [string]$Version = '0.4.2',
     [string]$OutputRoot = (Join-Path $env:LOCALAPPDATA 'Cyberpunk Conflict Studio\releases'),
     [switch]$Force,
     [string]$RepositoryRoot,
@@ -22,6 +22,12 @@ function Invoke-PublisherCommand {
     if ($result.Count -gt 1) { $result[0..($result.Count - 2)] | Out-Host }
     return [int]$result[-1]
 }
+
+function Assert-ReleaseSource([string]$ExpectedCommit) {
+    $currentCommit = (git -C $repositoryRoot rev-parse HEAD).Trim()
+    $currentChanges = @(git -C $repositoryRoot status --porcelain --untracked-files=all)
+    if ($LASTEXITCODE -ne 0 -or $currentCommit -cne $ExpectedCommit -or $currentChanges.Count -gt 0) { throw 'Source changed during release validation.' }
+}
 $metadataPath = Join-Path $repositoryRoot "release\$Version.json"
 $appProject = Join-Path $repositoryRoot 'src\ConflictStudio.App\ConflictStudio.App.csproj'
 $coreTests = Join-Path $repositoryRoot 'tests\ConflictStudio.Core.Tests\ConflictStudio.Core.Tests.csproj'
@@ -35,6 +41,8 @@ if (-not (Test-Path -LiteralPath $appTests -PathType Leaf)) { throw "App test pr
 $dirtyPaths = @(git -C $repositoryRoot status --porcelain --untracked-files=all)
 if ($LASTEXITCODE -ne 0) { throw 'Repository status could not be resolved.' }
 if ($dirtyPaths.Count -gt 0) { throw 'Release packages require a clean repository so sourceCommit identifies the packaged source exactly.' }
+$sourceCommit = (git -C $repositoryRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'Source commit could not be resolved.' }
 $resolvedRepository = (Resolve-Path -LiteralPath $repositoryRoot).Path.TrimEnd('\') + '\'
 $resolvedOutput = [IO.Path]::GetFullPath($OutputRoot).TrimEnd('\') + '\'
 if ($resolvedOutput.StartsWith($resolvedRepository, [StringComparison]::OrdinalIgnoreCase)) { throw 'OutputRoot must be outside the repository.' }
@@ -46,15 +54,20 @@ try {
     New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
     $appStage = $stageRoot
     if ((Invoke-PublisherCommand dotnet @('test', $coreTests, '--configuration', 'Release')) -ne 0) { throw 'Core regression tests failed.' }
+    Assert-ReleaseSource $sourceCommit
     if ((Invoke-PublisherCommand dotnet @('test', $appTests, '--configuration', 'Release')) -ne 0) { throw 'App regression tests failed.' }
+    Assert-ReleaseSource $sourceCommit
     if ((Invoke-PublisherCommand dotnet @('restore', $appProject, '--runtime', 'win-x64')) -ne 0) { throw 'dotnet restore failed.' }
+    Assert-ReleaseSource $sourceCommit
     if ((Invoke-PublisherCommand dotnet @('build', $appProject, '--configuration', 'Release', '--runtime', 'win-x64', '--self-contained', 'true', '--no-restore')) -ne 0) { throw 'dotnet build failed.' }
+    Assert-ReleaseSource $sourceCommit
     node --check (Join-Path $repositoryRoot 'integrations\vortex\index.js')
     if ($LASTEXITCODE -ne 0) { throw 'Vortex bridge syntax validation failed.' }
     node --check (Join-Path $repositoryRoot 'integrations\vortex\bridge.js')
     if ($LASTEXITCODE -ne 0) { throw 'Vortex archive-order bridge syntax validation failed.' }
     $integrationRoot = Join-Path $repositoryRoot 'integrations'
     if ((Invoke-PublisherCommand dotnet @('publish', $appProject, '--configuration', 'Release', '--runtime', 'win-x64', '--self-contained', 'true', '--no-restore', '--output', $appStage, '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:EnableCompressionInSingleFile=true', '-p:PublishTrimmed=false')) -ne 0) { throw 'dotnet publish failed.' }
+    Assert-ReleaseSource $sourceCommit
     $licenseStage = Join-Path $stageRoot 'Licenses'
     New-Item -ItemType Directory -Path $licenseStage -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination (Join-Path $licenseStage 'Conflict-Studio-LICENSE.txt')
@@ -68,8 +81,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $integrationRoot 'vortex\bridge.js') -Destination $stageRoot
     Copy-Item -LiteralPath (Join-Path $integrationRoot 'vortex\ConflictStudio.png') -Destination $stageRoot
     $metadata = Get-Content -Raw -LiteralPath $metadataPath | ConvertFrom-Json
-    $sourceCommit = (git -C $repositoryRoot rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'Source commit could not be resolved.' }
+    Assert-ReleaseSource $sourceCommit
     $entries = @(Get-ChildItem -LiteralPath $stageRoot -File -Recurse | ForEach-Object {
         [ordered]@{
             path = $_.FullName.Substring($stageRoot.Length).TrimStart('\').Replace('\','/')

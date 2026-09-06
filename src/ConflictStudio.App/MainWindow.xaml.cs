@@ -560,22 +560,15 @@ public partial class MainWindow : Window, IDisposable
                 }
                 return;
             }
-            if (_orderProblemLane == ArchiveOrderProblemLane.Redmod)
-            {
-                WorkspaceStatusTextBlock.Text = ArchiveOrderGuidance.Instruction(evidence, receipt.ManagerKind);
-                return;
-            }
-            if (_orderProblemLane == ArchiveOrderProblemLane.Combined)
-            {
-                WorkspaceStatusTextBlock.Text = ArchiveOrderGuidance.Instruction(evidence, receipt.ManagerKind);
-                return;
-            }
             string instruction = ArchiveOrderGuidance.Instruction(evidence, receipt.ManagerKind);
             ArchiveOrderEvidenceTextBlock.Text = instruction;
             ArchiveOrderEvidenceTextBlock.Visibility = Visibility.Visible;
             WorkspaceStatusTextBlock.Text = instruction;
-            ArchiveOrderListBox.Focus();
-            if (ArchiveOrderListBox.Items.Count > 0 && ArchiveOrderListBox.SelectedIndex < 0) ArchiveOrderListBox.SelectedIndex = 0;
+            if (_orderProblemLane == ArchiveOrderProblemLane.Legacy)
+            {
+                ArchiveOrderListBox.Focus();
+                if (ArchiveOrderListBox.Items.Count > 0 && ArchiveOrderListBox.SelectedIndex < 0) ArchiveOrderListBox.SelectedIndex = 0;
+            }
         });
     }
 
@@ -934,7 +927,7 @@ public partial class MainWindow : Window, IDisposable
         bool orderBlocked = evidence.Kind == ArchiveOrderEvidenceKind.Unresolved && !repairDraft;
         bool maintenance = evidence.IgnoredEntries.Length > 0;
         _orderProblemLane = orderBlocked || repairDraft ? evidence.ProblemLane : ArchiveOrderProblemLane.None;
-        ArchiveOrderEvidenceTitleTextBlock.Text = repairDraft ? "Archive-order repair draft ready" : orderBlocked ? "Archive winners are blocked by one order problem" : maintenance ? "Order verified; inactive entries can be cleaned" : $"Order verified · {evidence.Provider ?? "filename order"}";
+        ArchiveOrderEvidenceTitleTextBlock.Text = repairDraft ? "Archive-order repair draft ready" : orderBlocked ? ArchiveOrderGuidance.BlockedTitle(evidence) : maintenance ? "Order verified; inactive entries can be cleaned" : $"Order verified · {evidence.Provider ?? "filename order"}";
         ArchiveOrderActionButton.Content = ArchiveOrderGuidance.ActionLabel(evidence);
         ArchiveOrderEvidenceTextBlock.Visibility = orderBlocked || repairDraft || maintenance ? Visibility.Visible : Visibility.Collapsed;
         ArchiveOrderActionButton.Visibility = orderBlocked || repairDraft || maintenance ? Visibility.Visible : Visibility.Collapsed;

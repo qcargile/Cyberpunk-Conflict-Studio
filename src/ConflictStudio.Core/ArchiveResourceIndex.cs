@@ -35,7 +35,7 @@ public sealed record ArchiveConflictSummary(
 
 public static class ArchiveResourceIndexBuilder
 {
-    public static ArchiveConflictSummary[] Build(IReadOnlyList<ResourceProvider> resources, IReadOnlyList<Mo2Archive> archives, IReadOnlyList<string> archiveOrder, IReadOnlyList<RdarArchiveFailure>? failures = null, bool archiveSetIncomplete = false)
+    public static ArchiveConflictSummary[] Build(IReadOnlyList<ResourceProvider> resources, IReadOnlyList<Mo2Archive> archives, IReadOnlyList<string> archiveOrder, IReadOnlyList<RdarArchiveFailure>? failures = null, ArchiveOrderProblemLane unresolvedLane = ArchiveOrderProblemLane.None, ArchiveOrderProblemLane incompleteLane = ArchiveOrderProblemLane.None)
     {
         ArgumentNullException.ThrowIfNull(resources);
         ArgumentNullException.ThrowIfNull(archives);
@@ -53,7 +53,7 @@ public static class ArchiveResourceIndexBuilder
         foreach (IGrouping<ulong, ResourceProvider> hashGroup in resources.GroupBy(value => value.ResourceHash))
         {
             ResourceProvider[] providers = hashGroup.GroupBy(value => value.ArchiveName, StringComparer.OrdinalIgnoreCase).Select(value => value.First()).ToArray();
-            bool chainUnresolved = ArchiveUncertainty.Crosses(providers, positions, failures, archiveSetIncomplete);
+            bool chainUnresolved = ArchiveUncertainty.Crosses(providers, positions, failures, unresolvedLane, incompleteLane);
             if (providers.Length == 1)
             {
                 bool lowerArchiveUnreadable = !chainUnresolved && failures is { Count: > 0 };

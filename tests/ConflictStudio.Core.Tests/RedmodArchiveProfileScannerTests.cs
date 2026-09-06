@@ -207,6 +207,7 @@ public sealed class RedmodArchiveProfileScannerTests
 
             Assert.AreEqual(ArchiveOrderEvidenceKind.Unresolved, profile.OrderEvidence.Kind);
             Assert.AreEqual("REDmod order", profile.Failures.Single().Surface);
+            Assert.AreEqual(ArchiveOrderProblemLane.None, profile.OrderEvidence.IncompleteArchiveLane);
         }
         finally
         {
@@ -286,6 +287,7 @@ public sealed class RedmodArchiveProfileScannerTests
             Assert.AreEqual("REDmod/Alpha/Good.archive", profile.Archives.Single().ArchiveName);
             Assert.AreEqual("Broken.archive", Path.GetFileName(profile.Failures.Single().FilePath));
             Assert.AreEqual(ArchiveOrderEvidenceKind.Unresolved, profile.OrderEvidence.Kind);
+            Assert.AreEqual(ArchiveOrderProblemLane.Redmod, profile.OrderEvidence.IncompleteArchiveLane);
             string[] ignored = ["Inactive"];
             CollectionAssert.AreEqual(ignored, profile.OrderEvidence.IgnoredEntries);
             Assert.IsTrue(profile.OrderEvidence.SourcePaths.Any(value => value.EndsWith("MO_REDmod_load_order.txt", StringComparison.OrdinalIgnoreCase)));
@@ -356,6 +358,10 @@ public sealed class RedmodArchiveProfileScannerTests
 
         ArchiveOrderEvidence bothBlocked = PackedArchiveTopology.Compose(legacy, redmods with { OrderEvidence = new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "REDmod", "redmod.txt", "redmod failed") { ProblemLane = ArchiveOrderProblemLane.Redmod } }).OrderEvidence!;
         Assert.AreEqual(ArchiveOrderProblemLane.Combined, bothBlocked.ProblemLane);
+
+        ArchiveOrderEvidence incompleteRedmod = PackedArchiveTopology.Compose(legacy, redmods with { OrderEvidence = new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "REDmod", "redmod.txt", "redmod failed") { ProblemLane = ArchiveOrderProblemLane.Redmod, IncompleteArchiveLane = ArchiveOrderProblemLane.Redmod } }).OrderEvidence!;
+        Assert.AreEqual(ArchiveOrderProblemLane.Combined, incompleteRedmod.ProblemLane);
+        Assert.AreEqual(ArchiveOrderProblemLane.Redmod, incompleteRedmod.IncompleteArchiveLane);
     }
 
     [TestMethod]

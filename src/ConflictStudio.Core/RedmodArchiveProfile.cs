@@ -205,7 +205,8 @@ public static class RedmodArchiveProfileScanner
             DuplicateEntries = evidence.DuplicateEntries,
             SourceFingerprints = evidence.SourceFingerprints,
             AbsentSources = evidence.AbsentSources,
-            ProblemLane = ArchiveOrderProblemLane.Redmod
+            ProblemLane = ArchiveOrderProblemLane.Redmod,
+            IncompleteArchiveLane = ArchiveOrderProblemLane.Redmod
         };
         return new RedmodArchiveProfile(archives.ToArray(), archives.Select(value => value.ArchiveName).ToArray(), evidence, failures.ToArray());
     }
@@ -324,9 +325,17 @@ public static class PackedArchiveTopology
             DuplicateEntries = legacyEvidence.DuplicateEntries.Concat(redmods.OrderEvidence.DuplicateEntries).ToArray(),
             SourceFingerprints = legacyEvidence.SourceFingerprints.Concat(redmods.OrderEvidence.SourceFingerprints).ToDictionary(value => value.Key, value => value.Value, StringComparer.OrdinalIgnoreCase),
             AbsentSources = legacyEvidence.AbsentSources.Concat(redmods.OrderEvidence.AbsentSources).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-            ProblemLane = problemLane
+            ProblemLane = problemLane,
+            IncompleteArchiveLane = CombineLanes(legacyEvidence.IncompleteArchiveLane, redmods.OrderEvidence.IncompleteArchiveLane)
         };
         return new Mo2ArchiveProfile(legacy.ProfileName, legacy.ProfileModlistPath, [.. legacy.Archives, .. redmods.Archives], [.. legacy.EffectiveOrder, .. redmods.EffectiveOrder], evidence) { Failures = [.. legacy.Failures, .. redmods.Failures] };
+    }
+
+    private static ArchiveOrderProblemLane CombineLanes(ArchiveOrderProblemLane legacy, ArchiveOrderProblemLane redmod)
+    {
+        if (legacy == ArchiveOrderProblemLane.None) return redmod;
+        if (redmod == ArchiveOrderProblemLane.None || legacy == redmod) return legacy;
+        return ArchiveOrderProblemLane.Combined;
     }
 }
 
