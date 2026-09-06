@@ -87,6 +87,19 @@ public sealed class ArchiveOrderGuidanceTests
     }
 
     [TestMethod]
+    public void PartialManagedListOffersOptionalCleanup()
+    {
+        ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.ManagedModlist, "Overwrite", "modlist.txt", "managed")
+        {
+            MissingEntries = ["Alpha.archive"],
+            UnlistedArchives = ["Alpha.archive"]
+        };
+
+        Assert.IsTrue(ArchiveOrderGuidance.OpensPreparedOrder(evidence));
+        Assert.AreEqual("Add unlisted archive", ArchiveOrderGuidance.ActionLabel(evidence));
+    }
+
+    [TestMethod]
     [DataRow(ArchiveOrderProblemLane.Legacy, "Legacy archive winners are blocked by one order problem")]
     [DataRow(ArchiveOrderProblemLane.Redmod, "REDmod winners are blocked by one order problem")]
     [DataRow(ArchiveOrderProblemLane.Combined, "Archive winners are blocked by two order problems")]

@@ -12,7 +12,7 @@ public static class ArchiveOverviewProjection
         return proposedLegacyOrder.Concat(currentCombinedOrder.Where(value => !legacy.Contains(value))).ToArray();
     }
 
-    public static ArchiveOverviewEntry[] BuildRelationships(IReadOnlyList<string> effectiveOrder, IReadOnlyList<string> displayOrder, IReadOnlyList<ResourceProvider> resources, IReadOnlyList<string> selectedArchives, ArchiveOrderProblemLane unresolvedLane)
+    public static ArchiveOverviewEntry[] BuildRelationships(IReadOnlyList<string> effectiveOrder, IReadOnlyList<string> displayOrder, IReadOnlyList<ResourceProvider> resources, IReadOnlyList<string> selectedArchives, ArchiveOrderProblemLane unresolvedLane, IReadOnlyList<string>? unlistedArchives = null)
     {
         ArgumentNullException.ThrowIfNull(effectiveOrder);
         ArgumentNullException.ThrowIfNull(displayOrder);
@@ -22,6 +22,7 @@ public static class ArchiveOverviewProjection
         Dictionary<string, int> effectivePositions = effectiveOrder.Select((name, position) => (name, position)).ToDictionary(value => value.name, value => value.position, StringComparer.OrdinalIgnoreCase);
         Dictionary<string, int> displayPositions = displayOrder.Select((name, position) => (name, position)).ToDictionary(value => value.name, value => value.position, StringComparer.OrdinalIgnoreCase);
         HashSet<string> selected = selectedArchives.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> unlisted = (unlistedArchives ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, RelationshipState> relationships = new(StringComparer.OrdinalIgnoreCase);
         foreach (string archive in selected.Where(displayPositions.ContainsKey)) relationships[archive] = new RelationshipState();
         foreach (IGrouping<ulong, ResourceProvider> resource in resources.GroupBy(value => value.ResourceHash))
@@ -34,6 +35,11 @@ public static class ArchiveOverviewProjection
                 foreach (ResourceProvider other in providers.Where(value => !selected.Contains(value.ArchiveName) && displayPositions.ContainsKey(value.ArchiveName)))
                 {
                     if (!relationships.TryGetValue(other.ArchiveName, out RelationshipState? relationship)) relationships[other.ArchiveName] = relationship = new RelationshipState();
+                    if (UnlistedRelationshipIsUnresolved(selectedProvider.ArchiveName, other.ArchiveName, unlisted))
+                    {
+                        relationship.Unknown = true;
+                        continue;
+                    }
                     if (ResourcePayloadIdentity.Compare(selectedProvider, other) == ArchivePayloadRelation.Identical)
                     {
                         relationship.Same = true;
@@ -42,7 +48,7 @@ public static class ArchiveOverviewProjection
                     bool sameRedmodLane = selectedProvider.ArchiveName.StartsWith("REDmod/", StringComparison.OrdinalIgnoreCase) && other.ArchiveName.StartsWith("REDmod/", StringComparison.OrdinalIgnoreCase);
                     bool ambiguous = sameRedmodLane && (RedmodArchiveIdentity.IsAmbiguousProvider(selectedProvider, providers) && RedmodArchiveIdentity.ProviderPayloadsDiffer(selectedProvider, providers)
                         || RedmodArchiveIdentity.IsAmbiguousProvider(other, providers) && RedmodArchiveIdentity.ProviderPayloadsDiffer(other, providers));
-                    if (RelationshipOrderIsUnresolved(selectedProvider.ArchiveName, other.ArchiveName, unresolvedLane) || ambiguous || !effectivePositions.TryGetValue(selectedProvider.ArchiveName, out int selectedPosition) || !effectivePositions.TryGetValue(other.ArchiveName, out int otherPosition))
+                    if (RelationshipOrderIsUnresolved(selectedProvider.ArchiveName, other.ArchiveName, unresolvedLane, unlisted) || ambiguous || !effectivePositions.TryGetValue(selectedProvider.ArchiveName, out int selectedPosition) || !effectivePositions.TryGetValue(other.ArchiveName, out int otherPosition))
                     {
                         relationship.Unknown = true;
                         continue;
@@ -65,7 +71,7 @@ public static class ArchiveOverviewProjection
         public bool Unknown { get; set; }
     }
 
-    private static bool RelationshipOrderIsUnresolved(string selectedArchive, string otherArchive, ArchiveOrderProblemLane lane)
+    private static bool RelationshipOrderIsUnresolved(string selectedArchive, string otherArchive, ArchiveOrderProblemLane lane, HashSet<string> unlistedArchives)
     {
         bool selectedRedmod = selectedArchive.StartsWith("REDmod/", StringComparison.OrdinalIgnoreCase);
         bool otherRedmod = otherArchive.StartsWith("REDmod/", StringComparison.OrdinalIgnoreCase);
@@ -74,4 +80,10 @@ public static class ArchiveOverviewProjection
             || lane == ArchiveOrderProblemLane.Legacy && !selectedRedmod && !otherRedmod
             || lane == ArchiveOrderProblemLane.Redmod && selectedRedmod && otherRedmod;
     }
+
+    private static bool UnlistedRelationshipIsUnresolved(string selectedArchive, string otherArchive, HashSet<string> unlistedArchives)
+        => !selectedArchive.StartsWith("REDmod/", StringComparison.OrdinalIgnoreCase)
+            && !otherArchive.StartsWith("REDmod/", StringComparison.OrdinalIgnoreCase)
+            && unlistedArchives.Contains(selectedArchive)
+            && unlistedArchives.Contains(otherArchive);
 }

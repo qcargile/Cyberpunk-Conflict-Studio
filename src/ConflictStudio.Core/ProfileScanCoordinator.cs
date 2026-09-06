@@ -254,8 +254,8 @@ public static class ProfileScanCoordinator
         ArchiveOrderEvidence? orderEvidence = prepared.Archives.OrderEvidence;
         ArchiveOrderProblemLane unresolvedLane = orderEvidence?.Kind == ArchiveOrderEvidenceKind.Unresolved ? orderEvidence.ProblemLane : ArchiveOrderProblemLane.None;
         ArchiveOrderProblemLane incompleteLane = orderEvidence?.IncompleteArchiveLane ?? ArchiveOrderProblemLane.None;
-        ResourceConflict[] resourceConflicts = ResourceConflictAnalyzer.Analyze(resolvedResources, prepared.Archives.EffectiveOrder, archiveFailures, unresolvedLane, incompleteLane);
-        ArchiveConflictSummary[] archiveSummaries = ArchiveResourceIndexBuilder.Build(resolvedResources, prepared.Archives.Archives, prepared.Archives.EffectiveOrder, archiveFailures, unresolvedLane, incompleteLane);
+        ResourceConflict[] resourceConflicts = ResourceConflictAnalyzer.Analyze(resolvedResources, prepared.Archives.EffectiveOrder, archiveFailures, unresolvedLane, incompleteLane, orderEvidence?.UnlistedArchives);
+        ArchiveConflictSummary[] archiveSummaries = ArchiveResourceIndexBuilder.Build(resolvedResources, prepared.Archives.Archives, prepared.Archives.EffectiveOrder, archiveFailures, unresolvedLane, incompleteLane, orderEvidence?.UnlistedArchives);
         phases.Add(new ScanPhaseMetric("packed resources", phase.ElapsedMilliseconds, packed.IndexedResourceCount));
         phase.Restart();
         cancellationToken.ThrowIfCancellationRequested();

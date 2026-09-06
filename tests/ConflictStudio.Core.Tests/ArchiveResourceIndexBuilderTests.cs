@@ -224,6 +224,18 @@ public sealed class ArchiveResourceIndexBuilderTests
         Assert.AreEqual(0, summaries.Sum(value => value.Winning.Length + value.Losing.Length));
     }
 
+    [TestMethod]
+    public void ConflictBetweenUnlistedArchivesStaysUnresolvedInArchiveSummaries()
+    {
+        ResourceProvider[] resources = [Provider("Alpha.archive", 9, "base\\shared.mesh", "a"), Provider("Beta.archive", 9, "base\\shared.mesh", "b")];
+        Mo2Archive[] archives = [new("Alpha", "Alpha.archive", "alpha", 1, new string('a', 64)), new("Beta", "Beta.archive", "beta", 1, new string('b', 64))];
+
+        ArchiveConflictSummary[] summaries = ArchiveResourceIndexBuilder.Build(resources, archives, ["Alpha.archive", "Beta.archive"], unlistedArchives: ["Alpha.archive", "Beta.archive"]);
+
+        Assert.AreEqual(2, summaries.Sum(value => value.Unresolved.Length));
+        Assert.AreEqual(0, summaries.Sum(value => value.Winning.Length + value.Losing.Length));
+    }
+
     private static ResourceProvider Provider(string archive, ulong hash, string path, string payload)
         => new(archive, hash, path, payload.PadRight(40, payload[0]), ResourceType: Path.GetExtension(path).TrimStart('.'), PathConfidence: ResourcePathConfidence.ResolvedIndex, ProviderName: archive + " provider");
 }

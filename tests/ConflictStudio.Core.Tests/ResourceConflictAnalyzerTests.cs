@@ -180,4 +180,26 @@ public sealed class ResourceConflictAnalyzerTests
         Assert.AreEqual(ResourceConflictKind.Unresolved, conflict.Kind);
         Assert.AreEqual("unresolved", conflict.EngineWinnerArchive);
     }
+
+    [TestMethod]
+    public void ListedArchiveWinsAgainstAnUnlistedArchive()
+    {
+        ResourceProvider[] providers = [new("Listed.archive", 42, "base\\shared.mesh", new string('a', 40)), new("Unlisted.archive", 42, "base\\shared.mesh", new string('b', 40))];
+
+        ResourceConflict conflict = ResourceConflictAnalyzer.Analyze(providers, ["Listed.archive", "Unlisted.archive"], unlistedArchives: ["Unlisted.archive"]).Single();
+
+        Assert.AreEqual(ResourceConflictKind.Divergent, conflict.Kind);
+        Assert.AreEqual("Listed.archive", conflict.EngineWinnerArchive);
+    }
+
+    [TestMethod]
+    public void ConflictBetweenUnlistedArchivesHasNoClaimedWinner()
+    {
+        ResourceProvider[] providers = [new("Alpha.archive", 42, "base\\shared.mesh", new string('a', 40)), new("Beta.archive", 42, "base\\shared.mesh", new string('b', 40))];
+
+        ResourceConflict conflict = ResourceConflictAnalyzer.Analyze(providers, ["Alpha.archive", "Beta.archive"], unlistedArchives: ["Alpha.archive", "Beta.archive"]).Single();
+
+        Assert.AreEqual(ResourceConflictKind.Unresolved, conflict.Kind);
+        Assert.AreEqual("unresolved", conflict.EngineWinnerArchive);
+    }
 }
