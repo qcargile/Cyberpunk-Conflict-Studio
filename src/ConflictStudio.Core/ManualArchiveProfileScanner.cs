@@ -75,7 +75,7 @@ public static class ManualArchiveProfileScanner
 
     private static Mo2ArchiveProfile Profile(Mo2Archive[] archives, string[] order, string orderPath, ArchiveOrderEvidence evidence, List<SourceAnalysisFailure> failures)
     {
-        if (failures.Count > 0) evidence = new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, evidence.Provider, evidence.SourcePath, "At least one deployed legacy archive could not be fingerprinted, so the archive set is incomplete.") { SourcePaths = evidence.SourcePaths, IgnoredEntries = evidence.IgnoredEntries, MissingEntries = evidence.MissingEntries, DuplicateEntries = evidence.DuplicateEntries, SourceFingerprints = evidence.SourceFingerprints, AbsentSources = evidence.AbsentSources, ProblemLane = ArchiveOrderProblemLane.Legacy };
+        if (failures.Any(value => value.Surface is "Archive enumeration" or "Archive fingerprint")) evidence = new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, evidence.Provider, evidence.SourcePath, "At least one deployed legacy archive could not be fingerprinted, so the archive set is incomplete.") { SourcePaths = evidence.SourcePaths, IgnoredEntries = evidence.IgnoredEntries, MissingEntries = evidence.MissingEntries, DuplicateEntries = evidence.DuplicateEntries, SourceFingerprints = evidence.SourceFingerprints, AbsentSources = evidence.AbsentSources, ProblemLane = ArchiveOrderProblemLane.Legacy, IncompleteArchiveLane = ArchiveOrderProblemLane.Legacy };
         return new Mo2ArchiveProfile("Deployed game", orderPath, archives, order, evidence) { Failures = failures.ToArray() };
     }
 }

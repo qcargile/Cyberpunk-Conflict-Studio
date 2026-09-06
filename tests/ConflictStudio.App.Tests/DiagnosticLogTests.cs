@@ -20,6 +20,10 @@ public sealed class DiagnosticLogTests
         => AssertPublisherStopsBeforePublishAndPackageCreation(string.Empty, "dotnet restore failed.", 3);
 
     [TestMethod]
+    public void PublisherStopsWhenSourceChangesDuringValidation()
+        => AssertPublisherStopsBeforePublishAndPackageCreation(string.Empty, "Source changed during release validation.", 1, true);
+
+    [TestMethod]
     public void VortexToolUsesTheExecutableBesideTheExtension()
     {
         string root = Path.Combine(Path.GetTempPath(), "conflict studio launcher " + Guid.NewGuid().ToString("N"));
@@ -71,7 +75,7 @@ assert.equal(JSON.stringify(registered.parameters), '["--manager","vortex"]');
         }
     }
 
-    private static void AssertPublisherStopsBeforePublishAndPackageCreation(string failedProject, string expectedFailure, int expectedCommandCount)
+    private static void AssertPublisherStopsBeforePublishAndPackageCreation(string failedProject, string expectedFailure, int expectedCommandCount, bool mutateSource = false)
     {
         string root = Path.Combine(Path.GetTempPath(), "conflict-studio-publisher-gate-" + Guid.NewGuid().ToString("N"));
         string output = Path.Combine(Path.GetTempPath(), "conflict-studio-publisher-output-" + Guid.NewGuid().ToString("N"));
@@ -82,7 +86,7 @@ assert.equal(JSON.stringify(registered.parameters), '["--manager","vortex"]');
             Directory.CreateDirectory(Path.Combine(root, "src", "ConflictStudio.App"));
             Directory.CreateDirectory(Path.Combine(root, "tests", "ConflictStudio.Core.Tests"));
             Directory.CreateDirectory(Path.Combine(root, "tests", "ConflictStudio.App.Tests"));
-            File.WriteAllText(Path.Combine(root, "release", "0.4.1.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "release", "0.4.2.json"), "{}");
             File.WriteAllText(Path.Combine(root, "src", "ConflictStudio.App", "ConflictStudio.App.csproj"), string.Empty);
             File.WriteAllText(Path.Combine(root, "tests", "ConflictStudio.Core.Tests", "ConflictStudio.Core.Tests.csproj"), string.Empty);
             File.WriteAllText(Path.Combine(root, "tests", "ConflictStudio.App.Tests", "ConflictStudio.App.Tests.csproj"), string.Empty);
@@ -99,6 +103,7 @@ $failedProject = '{{failedProject}}'
 if ($failedProject.Length -gt 0) { $failedProject = Join-Path $repositoryRoot $failedProject }
 $expectedFailure = '{{expectedFailure}}'
 $expectedCommandCount = {{expectedCommandCount}}
+$mutateSource = '{{mutateSource.ToString().ToLowerInvariant()}}' -eq 'true'
 $global:publisherCommands = @()
 $global:publisherWorkingDirectories = @()
 $runner = {
@@ -106,6 +111,7 @@ $runner = {
     $global:publisherCommands += $command + '|' + $arguments
     $global:publisherWorkingDirectories += (Get-Location).Path
     Write-Output 'diagnostic command output'
+    if ($mutateSource) { Add-Content -LiteralPath (Join-Path $repositoryRoot 'src\\ConflictStudio.App\\ConflictStudio.App.csproj') -Value 'changed'; return 0 }
     if ($failedProject.Length -gt 0 -and $arguments.Split("`n") -contains $failedProject) { return 1 }
     if ($failedProject.Length -eq 0 -and $arguments.Split("`n") -contains 'restore') { return 1 }
     return 0
@@ -119,7 +125,7 @@ catch {
     if ($global:publisherCommands.Count -ne $expectedCommandCount) { exit 8 }
     if (@($global:publisherWorkingDirectories | Where-Object { $_ -ne $repositoryRoot }).Count -ne 0) { exit 5 }
     if ($global:publisherCommands -match '^dotnet\|publish') { exit 7 }
-    if (Test-Path (Join-Path $outputRoot '0.4.1\\win-x64')) { exit 6 }
+    if (Test-Path (Join-Path $outputRoot '0.4.2\\win-x64')) { exit 6 }
     exit 0
 }
 """);
@@ -138,7 +144,7 @@ catch {
     [TestMethod]
     public void ApplicationAssemblyUsesThePublishedProductVersion()
     {
-        Assert.AreEqual("0.4.1", typeof(MainWindow).Assembly.GetName().Version?.ToString(3));
+        Assert.AreEqual("0.4.2", typeof(MainWindow).Assembly.GetName().Version?.ToString(3));
     }
 
     private static string RepositoryRoot()

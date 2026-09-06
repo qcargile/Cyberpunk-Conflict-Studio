@@ -21,6 +21,7 @@ public sealed class ArchiveProfileScannerResilienceTests
 
             Assert.AreEqual(good, result.Archives.Single().PhysicalPath);
             Assert.AreEqual("Broken.archive", Path.GetFileName(result.Failures.Single().FilePath));
+            Assert.AreEqual(ArchiveOrderProblemLane.Legacy, result.OrderEvidence!.IncompleteArchiveLane);
         }
         finally
         {
@@ -66,6 +67,7 @@ public sealed class ArchiveProfileScannerResilienceTests
 
             Assert.AreEqual(good, result.Archives.Single().PhysicalPath);
             Assert.AreEqual("Broken.archive", Path.GetFileName(result.Failures.Single().FilePath));
+            Assert.AreEqual(ArchiveOrderProblemLane.Legacy, result.OrderEvidence!.IncompleteArchiveLane);
         }
         finally
         {
@@ -138,6 +140,7 @@ public sealed class ArchiveProfileScannerResilienceTests
 
             Assert.AreEqual(ArchiveOrderEvidenceKind.Unresolved, result.OrderEvidence!.Kind);
             Assert.AreEqual("Archive order", result.Failures.Single().Surface);
+            Assert.AreEqual(ArchiveOrderProblemLane.None, result.OrderEvidence.IncompleteArchiveLane);
         }
         finally
         {
@@ -160,6 +163,7 @@ public sealed class ArchiveProfileScannerResilienceTests
 
             Assert.AreEqual(ArchiveOrderEvidenceKind.Unresolved, result.OrderEvidence!.Kind);
             Assert.AreEqual("Archive order", result.Failures.Single().Surface);
+            Assert.AreEqual(ArchiveOrderProblemLane.None, result.OrderEvidence.IncompleteArchiveLane);
         }
         finally
         {
@@ -187,6 +191,7 @@ public sealed class ArchiveProfileScannerResilienceTests
 
             Assert.AreEqual(ArchiveOrderEvidenceKind.Unresolved, result.OrderEvidence!.Kind);
             Assert.AreEqual("Archive order", result.Failures.Single().Surface);
+            Assert.AreEqual(ArchiveOrderProblemLane.None, result.OrderEvidence.IncompleteArchiveLane);
         }
         finally
         {

@@ -149,6 +149,81 @@ public sealed class ArchiveResourceIndexBuilderTests
         Assert.AreEqual(0, summaries.Sum(value => value.Redundant.Length));
     }
 
+    [TestMethod]
+    public void UnknownRedmodOrderOnlyBlocksRedmodRelationships()
+    {
+        string redmod = "REDmod/Beta/Beta.archive";
+        ResourceProvider[] resources = [Provider("Alpha.archive", 9, "base\\shared.mesh", "a"), Provider(redmod, 9, "base\\shared.mesh", "b")];
+        Mo2Archive[] archives = [new("Alpha", "Alpha.archive", "alpha", 1, new string('a', 64)), new("Beta", redmod, "beta", 1, new string('b', 64))];
+
+        ArchiveConflictSummary[] summaries = ArchiveResourceIndexBuilder.Build(resources, archives, ["Alpha.archive", redmod], unresolvedLane: ArchiveOrderProblemLane.Redmod);
+
+        Assert.AreEqual(1, summaries.Sum(value => value.Winning.Length));
+        Assert.AreEqual(1, summaries.Sum(value => value.Losing.Length));
+        Assert.AreEqual(0, summaries.Sum(value => value.Unresolved.Length));
+    }
+
+    [TestMethod]
+    public void UnknownRedmodOrderDoesNotObscureAUniqueRedmodFile()
+    {
+        string redmod = "REDmod/Alpha/Alpha.archive";
+        ResourceProvider[] resources = [Provider(redmod, 9, "base\\unique.mesh", "a")];
+        Mo2Archive[] archives = [new("Alpha", redmod, "alpha", 1, new string('a', 64))];
+
+        ArchiveConflictSummary summary = ArchiveResourceIndexBuilder.Build(resources, archives, [redmod], unresolvedLane: ArchiveOrderProblemLane.Redmod).Single();
+
+        Assert.AreEqual(1, summary.Unique.Length);
+        Assert.AreEqual(0, summary.Unresolved.Length);
+    }
+
+    [TestMethod]
+    public void MissingRedmodInputDoesNotObscureAUniqueLegacyFile()
+    {
+        ResourceProvider[] resources = [Provider("Alpha.archive", 9, "base\\unique.mesh", "a")];
+        Mo2Archive[] archives = [new("Alpha", "Alpha.archive", "alpha", 1, new string('a', 64))];
+
+        ArchiveConflictSummary summary = ArchiveResourceIndexBuilder.Build(resources, archives, ["Alpha.archive"], incompleteLane: ArchiveOrderProblemLane.Redmod).Single();
+
+        Assert.AreEqual(1, summary.Unique.Length);
+        Assert.AreEqual(0, summary.Unresolved.Length);
+    }
+
+    [TestMethod]
+    public void MissingRedmodInputObscuresAUniqueRedmodFile()
+    {
+        string redmod = "REDmod/Alpha/Alpha.archive";
+        ResourceProvider[] resources = [Provider(redmod, 9, "base\\unique.mesh", "a")];
+        Mo2Archive[] archives = [new("Alpha", redmod, "alpha", 1, new string('a', 64))];
+
+        ArchiveConflictSummary summary = ArchiveResourceIndexBuilder.Build(resources, archives, [redmod], incompleteLane: ArchiveOrderProblemLane.Redmod).Single();
+
+        Assert.AreEqual(0, summary.Unique.Length);
+        Assert.AreEqual(1, summary.Unresolved.Length);
+    }
+
+    [TestMethod]
+    public void UnknownLegacyOrderDoesNotClassifyMixedLaneProvidersAgainstAGuessedWinner()
+    {
+        string redmod = "REDmod/Gamma/Gamma.archive";
+        ResourceProvider[] resources =
+        [
+            Provider("Alpha.archive", 9, "base\\shared.mesh", "a"),
+            Provider("Beta.archive", 9, "base\\shared.mesh", "b"),
+            Provider(redmod, 9, "base\\shared.mesh", "c")
+        ];
+        Mo2Archive[] archives =
+        [
+            new("Alpha", "Alpha.archive", "alpha", 1, new string('a', 64)),
+            new("Beta", "Beta.archive", "beta", 1, new string('b', 64)),
+            new("Gamma", redmod, "gamma", 1, new string('c', 64))
+        ];
+
+        ArchiveConflictSummary[] summaries = ArchiveResourceIndexBuilder.Build(resources, archives, ["Alpha.archive", "Beta.archive", redmod], unresolvedLane: ArchiveOrderProblemLane.Legacy);
+
+        Assert.AreEqual(3, summaries.Sum(value => value.Unresolved.Length));
+        Assert.AreEqual(0, summaries.Sum(value => value.Winning.Length + value.Losing.Length));
+    }
+
     private static ResourceProvider Provider(string archive, ulong hash, string path, string payload)
         => new(archive, hash, path, payload.PadRight(40, payload[0]), ResourceType: Path.GetExtension(path).TrimStart('.'), PathConfidence: ResourcePathConfidence.ResolvedIndex, ProviderName: archive + " provider");
 }

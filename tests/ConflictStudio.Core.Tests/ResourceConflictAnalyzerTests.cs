@@ -114,4 +114,70 @@ public sealed class ResourceConflictAnalyzerTests
         Assert.AreEqual(ResourceConflictKind.Unresolved, conflict.Kind);
         Assert.AreEqual("unresolved", conflict.EngineWinnerArchive);
     }
+
+    [TestMethod]
+    public void UnknownRedmodOrderKeepsTheKnownLegacyWinner()
+    {
+        string redmod = "REDmod/Beta/Beta.archive";
+        ResourceProvider[] providers = [new("Alpha.archive", 42, "base\\shared.mesh", new string('a', 40)), new(redmod, 42, "base\\shared.mesh", new string('b', 40))];
+
+        ResourceConflict conflict = ResourceConflictAnalyzer.Analyze(providers, ["Alpha.archive", redmod], unresolvedLane: ArchiveOrderProblemLane.Redmod).Single();
+
+        Assert.AreEqual(ResourceConflictKind.Divergent, conflict.Kind);
+        Assert.AreEqual("Alpha.archive", conflict.EngineWinnerArchive);
+    }
+
+    [TestMethod]
+    public void UnknownRedmodOrderDoesNotGuessBetweenRedmods()
+    {
+        string alpha = "REDmod/Alpha/Alpha.archive";
+        string beta = "REDmod/Beta/Beta.archive";
+        ResourceProvider[] providers = [new(alpha, 42, "base\\shared.mesh", new string('a', 40)), new(beta, 42, "base\\shared.mesh", new string('b', 40))];
+
+        ResourceConflict conflict = ResourceConflictAnalyzer.Analyze(providers, [alpha, beta], unresolvedLane: ArchiveOrderProblemLane.Redmod).Single();
+
+        Assert.AreEqual(ResourceConflictKind.Unresolved, conflict.Kind);
+        Assert.AreEqual("unresolved", conflict.EngineWinnerArchive);
+    }
+
+    [TestMethod]
+    public void MissingRedmodInputKeepsTheKnownLegacyWinner()
+    {
+        string redmod = "REDmod/Beta/Beta.archive";
+        ResourceProvider[] providers = [new("Alpha.archive", 42, "base\\shared.mesh", new string('a', 40)), new(redmod, 42, "base\\shared.mesh", new string('b', 40))];
+
+        ResourceConflict conflict = ResourceConflictAnalyzer.Analyze(providers, ["Alpha.archive", redmod], incompleteLane: ArchiveOrderProblemLane.Redmod).Single();
+
+        Assert.AreEqual(ResourceConflictKind.Divergent, conflict.Kind);
+        Assert.AreEqual("Alpha.archive", conflict.EngineWinnerArchive);
+    }
+
+    [TestMethod]
+    public void MissingLegacyInputLeavesRedmodWinnerUnresolved()
+    {
+        string alpha = "REDmod/Alpha/Alpha.archive";
+        string beta = "REDmod/Beta/Beta.archive";
+        ResourceProvider[] providers = [new(alpha, 42, "base\\shared.mesh", new string('a', 40)), new(beta, 42, "base\\shared.mesh", new string('b', 40))];
+
+        ResourceConflict conflict = ResourceConflictAnalyzer.Analyze(providers, [alpha, beta], incompleteLane: ArchiveOrderProblemLane.Legacy).Single();
+
+        Assert.AreEqual(ResourceConflictKind.Unresolved, conflict.Kind);
+    }
+
+    [TestMethod]
+    public void UnknownLegacyOrderDoesNotGuessAmongLegacyProvidersWhenARedmodIsPresent()
+    {
+        string redmod = "REDmod/Gamma/Gamma.archive";
+        ResourceProvider[] providers =
+        [
+            new("Alpha.archive", 42, "base\\shared.mesh", new string('a', 40)),
+            new("Beta.archive", 42, "base\\shared.mesh", new string('b', 40)),
+            new(redmod, 42, "base\\shared.mesh", new string('c', 40))
+        ];
+
+        ResourceConflict conflict = ResourceConflictAnalyzer.Analyze(providers, ["Alpha.archive", "Beta.archive", redmod], unresolvedLane: ArchiveOrderProblemLane.Legacy).Single();
+
+        Assert.AreEqual(ResourceConflictKind.Unresolved, conflict.Kind);
+        Assert.AreEqual("unresolved", conflict.EngineWinnerArchive);
+    }
 }

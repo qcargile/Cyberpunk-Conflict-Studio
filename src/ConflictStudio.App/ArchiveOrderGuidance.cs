@@ -13,14 +13,27 @@ public static class ArchiveOrderGuidance
         {
             ArchiveOrderProblemLane.Redmod => "Show REDmod deployment steps",
             ArchiveOrderProblemLane.Combined => "Show repair steps",
-            _ => "Show repair steps"
+            ArchiveOrderProblemLane.Legacy => "Show repair steps",
+            _ => "Show scan details"
         };
     }
 
     internal static bool OpensPreparedOrder(ArchiveOrderEvidence evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);
-        return evidence.IsRepairableLegacyOrder || evidence.IgnoredEntries.Length > 0;
+        return evidence.IsRepairableLegacyOrder || evidence.Kind != ArchiveOrderEvidenceKind.Unresolved && evidence.IgnoredEntries.Length > 0;
+    }
+
+    internal static string BlockedTitle(ArchiveOrderEvidence evidence)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        return evidence.ProblemLane switch
+        {
+            ArchiveOrderProblemLane.Legacy => "Legacy archive winners are blocked by one order problem",
+            ArchiveOrderProblemLane.Redmod => "REDmod winners are blocked by one order problem",
+            ArchiveOrderProblemLane.Combined => "Archive winners are blocked by two order problems",
+            _ => "Archive order could not be verified"
+        };
     }
 
     public static string Instruction(ArchiveOrderEvidence evidence, ModManagerKind managerKind = ModManagerKind.Mo2)
@@ -33,7 +46,8 @@ public static class ArchiveOrderGuidance
         {
             ArchiveOrderProblemLane.Redmod => "Re-deploy REDmods from this active MO2 profile, then re-check conflicts.",
             ArchiveOrderProblemLane.Combined => "Repair the named legacy archive-order entries and re-deploy REDmods, then re-check conflicts.",
-            _ => "Add every named active archive once to the legacy load order, then re-check conflicts."
+            ArchiveOrderProblemLane.Legacy => "Add every named active archive once to the legacy load order, then re-check conflicts.",
+            _ => "Run the profile scan again. If this remains, copy the support report."
         };
     }
 }
