@@ -35,12 +35,13 @@ public sealed record ArchiveConflictSummary(
 
 public static class ArchiveResourceIndexBuilder
 {
-    public static ArchiveConflictSummary[] Build(IReadOnlyList<ResourceProvider> resources, IReadOnlyList<Mo2Archive> archives, IReadOnlyList<string> archiveOrder, IReadOnlyList<RdarArchiveFailure>? failures = null, ArchiveOrderProblemLane unresolvedLane = ArchiveOrderProblemLane.None, ArchiveOrderProblemLane incompleteLane = ArchiveOrderProblemLane.None)
+    public static ArchiveConflictSummary[] Build(IReadOnlyList<ResourceProvider> resources, IReadOnlyList<Mo2Archive> archives, IReadOnlyList<string> archiveOrder, IReadOnlyList<RdarArchiveFailure>? failures = null, ArchiveOrderProblemLane unresolvedLane = ArchiveOrderProblemLane.None, ArchiveOrderProblemLane incompleteLane = ArchiveOrderProblemLane.None, IReadOnlyList<string>? unlistedArchives = null)
     {
         ArgumentNullException.ThrowIfNull(resources);
         ArgumentNullException.ThrowIfNull(archives);
         ArgumentNullException.ThrowIfNull(archiveOrder);
         Dictionary<string, int> positions = archiveOrder.Select((name, index) => (name, index)).ToDictionary(value => value.name, value => value.index, StringComparer.OrdinalIgnoreCase);
+        HashSet<string> unlisted = (unlistedArchives ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, Mo2Archive> archiveMetadata = archives.ToDictionary(value => value.ArchiveName, StringComparer.OrdinalIgnoreCase);
         Dictionary<string, Buckets> buckets = new(StringComparer.OrdinalIgnoreCase);
         foreach (Mo2Archive archive in archives) buckets.TryAdd(archive.ArchiveName, new Buckets());
@@ -53,7 +54,7 @@ public static class ArchiveResourceIndexBuilder
         foreach (IGrouping<ulong, ResourceProvider> hashGroup in resources.GroupBy(value => value.ResourceHash))
         {
             ResourceProvider[] providers = hashGroup.GroupBy(value => value.ArchiveName, StringComparer.OrdinalIgnoreCase).Select(value => value.First()).ToArray();
-            bool chainUnresolved = ArchiveUncertainty.Crosses(providers, positions, failures, unresolvedLane, incompleteLane);
+            bool chainUnresolved = ArchiveUncertainty.Crosses(providers, positions, failures, unresolvedLane, incompleteLane, unlisted);
             if (providers.Length == 1)
             {
                 bool lowerArchiveUnreadable = !chainUnresolved && failures is { Count: > 0 };

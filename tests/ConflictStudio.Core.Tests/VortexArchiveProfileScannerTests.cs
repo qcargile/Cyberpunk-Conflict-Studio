@@ -8,6 +8,8 @@ namespace ConflictStudio.Core.Tests;
 public sealed class VortexArchiveProfileScannerTests
 {
     private static readonly string[] ExpectedOrder = ["Beta.archive", "Shared.archive", "Alpha.archive", "Manual.archive"];
+    private static readonly string[] PartialOrder = ["Beta.archive", "Alpha.archive"];
+    private static readonly string[] UnlistedAlpha = ["Alpha.archive"];
 
     [TestMethod]
     public void ScanUsesStagingProvidersDeploymentWinnersAndGameOrderFile()
@@ -111,6 +113,40 @@ public sealed class VortexArchiveProfileScannerTests
             CollectionAssert.AreEqual(duplicates, profile.OrderEvidence.DuplicateEntries);
             CollectionAssert.AreEqual(ignored, profile.OrderEvidence.IgnoredEntries);
             Assert.AreEqual(ArchiveOrderEvidenceKind.Unresolved, profile.OrderEvidence.Kind);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void ScanUsesListedThenUnlistedOrderWhenTheDeployedListIsPartial()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-vortex-partial-order-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string game = Path.Combine(root, "game");
+            string staging = Path.Combine(root, "staging");
+            string provider = Path.Combine(staging, "Provider");
+            WriteArchive(provider, "Alpha.archive", "alpha");
+            WriteArchive(provider, "Beta.archive", "beta");
+            string orderPath = Path.Combine(game, "archive", "pc", "mod", "modlist.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(orderPath)!);
+            File.WriteAllText(orderPath, "Beta.archive\n");
+            string orderHash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(orderPath)));
+            Dictionary<string, string> winners = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["archive\\pc\\mod\\Alpha.archive"] = "provider",
+                ["archive\\pc\\mod\\Beta.archive"] = "provider"
+            };
+            VortexManagerContext context = new(1, new string('a', 64), DateTimeOffset.UtcNow, "profile", "Standard", game, staging, true, [new("provider", "Provider", provider, 0)], winners, [], orderHash);
+
+            Mo2ArchiveProfile profile = VortexArchiveProfileScanner.Scan(context);
+
+            CollectionAssert.AreEqual(PartialOrder, profile.EffectiveOrder);
+            Assert.AreEqual(ArchiveOrderEvidenceKind.ManagedModlist, profile.OrderEvidence!.Kind);
+            CollectionAssert.AreEqual(UnlistedAlpha, profile.OrderEvidence.UnlistedArchives);
         }
         finally
         {

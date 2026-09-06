@@ -255,6 +255,23 @@ public sealed class ArchiveOverviewProjectionTests
         Assert.IsFalse(related.SelectedLoses);
     }
 
+    [TestMethod]
+    public void RelationshipBetweenUnlistedArchivesStaysUnknown()
+    {
+        string payload = new('a', 64);
+        ArchiveOverviewEntry related = ArchiveOverviewProjection.BuildRelationships(
+            ["Alpha.archive", "Beta.archive"],
+            ["Alpha.archive", "Beta.archive"],
+            [Provider("Alpha.archive", payload), Provider("Beta.archive", payload)],
+            ["Alpha.archive"],
+            ArchiveOrderProblemLane.None,
+            ["Alpha.archive", "Beta.archive"]).Single(value => value.ArchiveName == "Beta.archive");
+
+        Assert.IsTrue(related.HasUnknown);
+        Assert.IsFalse(related.SelectedWins);
+        Assert.IsFalse(related.SelectedLoses);
+    }
+
     private static ResourceProvider[] Shared(params string[] archives) => archives.Select((value, index) => Provider(value, new((char)('a' + index), 64))).ToArray();
 
     private static ResourceProvider Provider(string archive, string? payload) => new(archive, 1, "base\\shared.mesh", payload);

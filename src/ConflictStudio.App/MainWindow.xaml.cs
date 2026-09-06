@@ -925,9 +925,9 @@ public partial class MainWindow : Window, IDisposable
         ArchiveOrderEvidenceTextBlock.Text = evidence.Message;
         bool repairDraft = evidence.IsRepairableLegacyOrder;
         bool orderBlocked = evidence.Kind == ArchiveOrderEvidenceKind.Unresolved && !repairDraft;
-        bool maintenance = evidence.IgnoredEntries.Length > 0;
+        bool maintenance = evidence.IgnoredEntries.Length > 0 || evidence.UnlistedArchives.Length > 0;
         _orderProblemLane = orderBlocked || repairDraft ? evidence.ProblemLane : ArchiveOrderProblemLane.None;
-        ArchiveOrderEvidenceTitleTextBlock.Text = repairDraft ? "Archive-order repair draft ready" : orderBlocked ? ArchiveOrderGuidance.BlockedTitle(evidence) : maintenance ? "Order verified; inactive entries can be cleaned" : $"Order verified · {evidence.Provider ?? "filename order"}";
+        ArchiveOrderEvidenceTitleTextBlock.Text = repairDraft ? "Archive-order repair draft ready" : orderBlocked ? ArchiveOrderGuidance.BlockedTitle(evidence) : maintenance ? ArchiveOrderGuidance.MaintenanceTitle(evidence) : $"Order verified · {evidence.Provider ?? "filename order"}";
         ArchiveOrderActionButton.Content = ArchiveOrderGuidance.ActionLabel(evidence);
         ArchiveOrderEvidenceTextBlock.Visibility = orderBlocked || repairDraft || maintenance ? Visibility.Visible : Visibility.Collapsed;
         ArchiveOrderActionButton.Visibility = orderBlocked || repairDraft || maintenance ? Visibility.Visible : Visibility.Collapsed;
@@ -1557,8 +1557,8 @@ public partial class MainWindow : Window, IDisposable
         string[] visibleOrder = _archiveTree.VisibleArchives.Select(value => value.ArchiveName).ToArray();
         ArchiveOrderEvidence? evidence = _receipt.ArchiveOrderEvidence;
         ArchiveOrderProblemLane unresolvedLane = evidence?.Kind == ArchiveOrderEvidenceKind.Unresolved && !(_previewingArchiveOrder && evidence.IsRepairableLegacyOrder) ? evidence.ProblemLane : ArchiveOrderProblemLane.None;
-        ArchiveOverviewEntry[] loadOrderEntries = ArchiveOverviewProjection.BuildRelationships(effectiveOrder, effectiveOrder, _archiveRelationshipResources, selected, unresolvedLane);
-        ArchiveOverviewEntry[] conflictEntries = ArchiveOverviewProjection.BuildRelationships(effectiveOrder, visibleOrder, _archiveRelationshipResources, selected, unresolvedLane);
+        ArchiveOverviewEntry[] loadOrderEntries = ArchiveOverviewProjection.BuildRelationships(effectiveOrder, effectiveOrder, _archiveRelationshipResources, selected, unresolvedLane, evidence?.UnlistedArchives);
+        ArchiveOverviewEntry[] conflictEntries = ArchiveOverviewProjection.BuildRelationships(effectiveOrder, visibleOrder, _archiveRelationshipResources, selected, unresolvedLane, evidence?.UnlistedArchives);
         LoadOrderOverviewBar.Entries = loadOrderEntries;
         ConflictOverviewBar.Entries = conflictEntries;
         ArchiveRelationshipPresentation.Apply(_archiveRailItems, [], loadOrderEntries);

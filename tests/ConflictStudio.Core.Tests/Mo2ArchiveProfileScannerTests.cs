@@ -9,6 +9,7 @@ public sealed class Mo2ArchiveProfileScannerTests
     private static readonly string[] ExpectedOrder = ["Alpha.archive", "Beta.archive"];
     private static readonly string[] ExpectedTopologyOrder = ["Alpha.archive", "Manual.archive", "Overwrite.archive"];
     private static readonly string[] ManagedOrder = ["Beta.archive", "Alpha.archive"];
+    private static readonly string[] UnlistedAlpha = ["Alpha.archive"];
 
     [TestMethod]
     public void ScanUsesFilenameOrderWhenNoArchiveModlistExists()
@@ -112,6 +113,34 @@ public sealed class Mo2ArchiveProfileScannerTests
             string[] ignored = ["Inactive.archive"];
             CollectionAssert.AreEqual(ignored, result.OrderEvidence.IgnoredEntries);
             Assert.IsTrue(result.OrderEvidence.Message.Contains("inactive", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void ScanUsesListedThenUnlistedOrderForAPartialManagedList()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-profile-partial-order-" + Guid.NewGuid().ToString("N"));
+        string modsRoot = Path.Combine(root, "mods");
+        try
+        {
+            WriteArchive(modsRoot, "High", "Alpha.archive", "alpha");
+            WriteArchive(modsRoot, "Low", "Beta.archive", "beta");
+            string orderRoot = Path.Combine(modsRoot, "High", "archive", "pc", "mod");
+            File.WriteAllText(Path.Combine(orderRoot, "modlist.txt"), "Beta.archive\n");
+            string profile = Path.Combine(root, "profiles", "Standard", "modlist.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(profile)!);
+            File.WriteAllText(profile, "+High\n+Low\n");
+
+            Mo2ArchiveProfile result = Mo2ArchiveProfileScanner.ScanInstance(root, profile);
+
+            CollectionAssert.AreEqual(ManagedOrder, result.EffectiveOrder);
+            Assert.AreEqual(ArchiveOrderEvidenceKind.ManagedModlist, result.OrderEvidence!.Kind);
+            CollectionAssert.AreEqual(UnlistedAlpha, result.OrderEvidence.UnlistedArchives);
+            CollectionAssert.AreEqual(UnlistedAlpha, result.OrderEvidence.MissingEntries);
         }
         finally
         {

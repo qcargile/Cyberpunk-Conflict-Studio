@@ -257,11 +257,12 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
             return;
         }
         _preview = ArchiveOrderPlanner.CreatePreview(_observation, _proposedOrder);
-        _winnerDeltas = ArchiveOrderImpactAnalyzer.Analyze(_resourceProviders, _observation.EffectiveOrder, _proposedOrder);
-        OnPropertyChanged(nameof(WinnerDeltas));
         bool repairRequired = _profile?.OrderEvidence?.IsRepairableLegacyOrder == true;
         int inactiveEntries = _profile?.OrderEvidence?.IgnoredEntries.Length ?? 0;
-        bool maintenanceRequired = inactiveEntries > 0;
+        int unlistedArchives = _profile?.OrderEvidence?.UnlistedArchives.Length ?? 0;
+        _winnerDeltas = unlistedArchives > 0 ? [] : ArchiveOrderImpactAnalyzer.Analyze(_resourceProviders, _observation.EffectiveOrder, _proposedOrder);
+        OnPropertyChanged(nameof(WinnerDeltas));
+        bool maintenanceRequired = inactiveEntries > 0 || unlistedArchives > 0;
         if (_preview.ChangedArchives.Length == 0 && !repairRequired && !maintenanceRequired)
         {
             _preview = null;
@@ -300,7 +301,9 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         }
         if (maintenanceRequired)
         {
-            PreviewStatus = inactiveEntries == 1 ? "This removes 1 inactive archive-order line without changing active winners." : $"This removes {inactiveEntries:N0} inactive archive-order lines without changing active winners.";
+            if (unlistedArchives > 0 && inactiveEntries > 0) PreviewStatus = $"This adds {unlistedArchives:N0} unlisted archive{(unlistedArchives == 1 ? string.Empty : "s")} and removes {inactiveEntries:N0} inactive archive-order line{(inactiveEntries == 1 ? string.Empty : "s")}. Review the order before applying.";
+            else if (unlistedArchives > 0) PreviewStatus = $"This adds {unlistedArchives:N0} unlisted archive{(unlistedArchives == 1 ? string.Empty : "s")} to the managed order. Review the order before applying.";
+            else PreviewStatus = inactiveEntries == 1 ? "This removes 1 inactive archive-order line without changing active winners." : $"This removes {inactiveEntries:N0} inactive archive-order lines without changing active winners.";
             CanApply = true;
             return;
         }
@@ -522,7 +525,7 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
     }
 
     private static ArchiveOrderObservation Observe(Mo2ArchiveProfile profile, Mo2ArchiveWriteTarget target)
-        => ManagedArchiveOrderObserver.Observe(profile, target, target.WriteBlockedReason is not null || profile.OrderEvidence?.IsRepairableLegacyOrder == true);
+        => ManagedArchiveOrderObserver.Observe(profile, target, target.WriteBlockedReason is not null || profile.OrderEvidence?.IsRepairableLegacyOrder == true || profile.OrderEvidence?.UnlistedArchives.Length > 0);
 
     private void ClearUndo()
     {

@@ -7,7 +7,11 @@ public static class ArchiveOrderGuidance
     public static string ActionLabel(ArchiveOrderEvidence evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);
-        if (evidence.Kind != ArchiveOrderEvidenceKind.Unresolved) return evidence.IgnoredEntries.Length > 0 ? "Clean inactive entry" : "View load order";
+        if (evidence.Kind != ArchiveOrderEvidenceKind.Unresolved)
+        {
+            if (evidence.UnlistedArchives.Length > 0) return evidence.UnlistedArchives.Length == 1 ? "Add unlisted archive" : "Add unlisted archives";
+            return evidence.IgnoredEntries.Length > 0 ? "Clean inactive entry" : "View load order";
+        }
         if (evidence.IsRepairableLegacyOrder) return "Review repair draft";
         return evidence.ProblemLane switch
         {
@@ -21,7 +25,7 @@ public static class ArchiveOrderGuidance
     internal static bool OpensPreparedOrder(ArchiveOrderEvidence evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);
-        return evidence.IsRepairableLegacyOrder || evidence.Kind != ArchiveOrderEvidenceKind.Unresolved && evidence.IgnoredEntries.Length > 0;
+        return evidence.IsRepairableLegacyOrder || evidence.Kind != ArchiveOrderEvidenceKind.Unresolved && (evidence.IgnoredEntries.Length > 0 || evidence.UnlistedArchives.Length > 0);
     }
 
     internal static string BlockedTitle(ArchiveOrderEvidence evidence)
@@ -34,6 +38,14 @@ public static class ArchiveOrderGuidance
             ArchiveOrderProblemLane.Combined => "Archive winners are blocked by two order problems",
             _ => "Archive order could not be verified"
         };
+    }
+
+    internal static string MaintenanceTitle(ArchiveOrderEvidence evidence)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        if (evidence.UnlistedArchives.Length > 0 && evidence.IgnoredEntries.Length > 0) return "Order verified; optional cleanup is available";
+        if (evidence.UnlistedArchives.Length > 0) return "Order verified; unlisted archives can be added";
+        return "Order verified; inactive entries can be cleaned";
     }
 
     public static string Instruction(ArchiveOrderEvidence evidence, ModManagerKind managerKind = ModManagerKind.Mo2)

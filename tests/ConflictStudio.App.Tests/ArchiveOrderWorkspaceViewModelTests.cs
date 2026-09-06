@@ -66,6 +66,38 @@ public sealed class ArchiveOrderWorkspaceViewModelTests
     }
 
     [TestMethod]
+    public void PartialManagedListCanBeCompletedAsOptionalMaintenance()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-partial-maintenance-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string archiveRoot = Path.Combine(root, "archive", "pc", "mod");
+            Directory.CreateDirectory(archiveRoot);
+            File.WriteAllText(Path.Combine(archiveRoot, "Alpha.archive"), "alpha");
+            File.WriteAllText(Path.Combine(archiveRoot, "Beta.archive"), "beta");
+            string orderPath = Path.Combine(archiveRoot, "modlist.txt");
+            File.WriteAllText(orderPath, "Beta.archive\n");
+            Mo2ArchiveProfile profile = ManualArchiveProfileScanner.Scan(root);
+            string installationId = ProfileInstallationIdentity.Create("Manual", root);
+            ArchiveOrderWorkspaceViewModel viewModel = new(() => new ArchiveOrderWriter(() => DateTimeOffset.UtcNow, () => []));
+            viewModel.LoadProfile(profile, new Mo2ArchiveWriteTarget(orderPath, "Game directory", ModManagerKind.Manual), root, () => ManualArchiveProfileScanner.Scan(root), installationId);
+            viewModel.SetResourceProviders(installationId, profile.ProfileName, []);
+
+            viewModel.PreviewOrder();
+
+            Assert.IsTrue(viewModel.CanApply);
+            StringAssert.Contains(viewModel.PreviewStatus, "adds 1 unlisted archive");
+            viewModel.ApplyOrder();
+            Assert.AreEqual("Beta.archive\r\nAlpha.archive\r\n", File.ReadAllText(orderPath));
+            Assert.IsFalse(viewModel.CanApply);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
     public void MoveToSupportsDirectArchiveReordering()
     {
         ArchiveOrderWorkspaceViewModel viewModel = new();

@@ -17,6 +17,7 @@ public sealed record ArchiveOrderEvidence(ArchiveOrderEvidenceKind Kind, string?
     public string[] SourcePaths { get; init; } = SourcePath is null ? [] : [SourcePath];
     public string[] IgnoredEntries { get; init; } = [];
     public string[] MissingEntries { get; init; } = [];
+    public string[] UnlistedArchives { get; init; } = [];
     public string[] DuplicateEntries { get; init; } = [];
     public Dictionary<string, string> SourceFingerprints { get; init; } = [];
     public string[] AbsentSources { get; init; } = [];
@@ -178,6 +179,7 @@ public static class Mo2ArchiveProfileScanner
             SourcePaths = evidence.SourcePaths,
             IgnoredEntries = evidence.IgnoredEntries,
             MissingEntries = evidence.MissingEntries,
+            UnlistedArchives = evidence.UnlistedArchives,
             DuplicateEntries = evidence.DuplicateEntries,
             SourceFingerprints = evidence.SourceFingerprints,
             AbsentSources = evidence.AbsentSources,
@@ -187,7 +189,6 @@ public static class Mo2ArchiveProfileScanner
 
     private static (string[] Order, ArchiveOrderEvidence Evidence) ResolveOrder(IReadOnlyList<ProviderArchives> providers, Mo2Archive[] archives, List<SourceAnalysisFailure> failures)
     {
-        ArchiveFingerprint[] fingerprints = archives.Select(value => new ArchiveFingerprint(value.ArchiveName, value.Size, value.Sha256)).ToArray();
         string[] discovered = archives.Select(value => value.ArchiveName).ToArray();
         HashSet<string> discoveredSet = discovered.ToHashSet(StringComparer.OrdinalIgnoreCase);
         List<string> absentSources = [];
@@ -215,21 +216,20 @@ public static class Mo2ArchiveProfileScanner
             string[] activeOrder = order.Where(discoveredSet.Contains).ToArray();
             string[] missing = discovered.Where(value => !activeOrder.Contains(value, StringComparer.OrdinalIgnoreCase)).ToArray();
             string[] duplicates = activeOrder.GroupBy(value => value, StringComparer.OrdinalIgnoreCase).Where(value => value.Count() > 1).Select(value => value.Key).ToArray();
-            try
+            string[] effectiveOrder = ArchiveOrderPlanner.CreateRepairOrder(discovered, activeOrder);
+            if (duplicates.Length == 0)
             {
-                ArchiveOrderPlanner.RequireComplete(fingerprints, activeOrder);
                 string maintenance = ignored.Length == 0 ? string.Empty : $" {ignored.Length} inactive entr{(ignored.Length == 1 ? "y was" : "ies were")} ignored without affecting current winners: {string.Join(", ", ignored)}.";
-                return (activeOrder, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, provider.Provider, path, $"Archive winners use the active {provider.Provider} modlist.txt.{maintenance}") { IgnoredEntries = ignored, SourceFingerprints = source, AbsentSources = absentSources.ToArray() });
+                string partial = missing.Length == 0 ? string.Empty : $" {missing.Length} active archive{(missing.Length == 1 ? " is" : "s are")} unlisted and load{(missing.Length == 1 ? "s" : string.Empty)} after every listed archive: {string.Join(", ", missing)}.";
+                return (effectiveOrder, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, provider.Provider, path, $"Archive winners use the active {provider.Provider} modlist.txt.{partial}{maintenance}") { IgnoredEntries = ignored, MissingEntries = missing, UnlistedArchives = missing, SourceFingerprints = source, AbsentSources = absentSources.ToArray() });
             }
-            catch (ArchiveOrderException exception)
+            else
             {
                 List<string> reasons = [];
                 if (missing.Length > 0) reasons.Add($"enabled archives missing from the load-order list: {string.Join(", ", missing)}");
                 if (duplicates.Length > 0) reasons.Add($"archives listed more than once: {string.Join(", ", duplicates)}");
                 if (ignored.Length > 0) reasons.Add($"inactive entries ignored: {string.Join(", ", ignored)}");
-                if (reasons.Count == 0) reasons.Add(exception.Message);
-                string[] repaired = ArchiveOrderPlanner.CreateRepairOrder(discovered, activeOrder);
-                return (repaired, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, provider.Provider, path, $"Archive winners cannot be determined because the active modlist.txt has {string.Join("; ", reasons)}.") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, AbsentSources = absentSources.ToArray(), ProblemLane = ArchiveOrderProblemLane.Legacy });
+                return (effectiveOrder, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, provider.Provider, path, $"Archive winners cannot be determined because the active modlist.txt has {string.Join("; ", reasons)}.") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, AbsentSources = absentSources.ToArray(), ProblemLane = ArchiveOrderProblemLane.Legacy });
             }
         }
         return (discovered, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.FilenameFallback, null, null, "No active archive modlist.txt exists. Cyberpunk filename order is used.") { AbsentSources = absentSources.ToArray() });

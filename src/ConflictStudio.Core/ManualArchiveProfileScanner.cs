@@ -57,25 +57,25 @@ public static class ManualArchiveProfileScanner
         string[] missing = discovered.Where(value => !order.Contains(value, StringComparer.OrdinalIgnoreCase)).ToArray();
         string[] duplicates = order.GroupBy(value => value, StringComparer.OrdinalIgnoreCase).Where(value => value.Count() > 1).Select(value => value.Key).ToArray();
         Dictionary<string, string> source = new(StringComparer.OrdinalIgnoreCase) { [orderPath] = Convert.ToHexStringLower(SHA256.HashData(bytes)) };
-        try
+        string[] effectiveOrder = ArchiveOrderPlanner.CreateRepairOrder(discovered, order);
+        if (duplicates.Length == 0)
         {
-            ArchiveOrderPlanner.RequireComplete(archives.Select(value => new ArchiveFingerprint(value.ArchiveName, value.Size, value.Sha256)).ToArray(), order);
-            return Profile(archives, order, orderPath, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, "Game directory", orderPath, "Archive winners use the deployed archive modlist.txt.") { IgnoredEntries = ignored, SourceFingerprints = source }, failures);
+            string partial = missing.Length == 0 ? string.Empty : $" {missing.Length} active archive{(missing.Length == 1 ? " is" : "s are")} unlisted and load{(missing.Length == 1 ? "s" : string.Empty)} after every listed archive: {string.Join(", ", missing)}.";
+            return Profile(archives, effectiveOrder, orderPath, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, "Game directory", orderPath, $"Archive winners use the deployed archive modlist.txt.{partial}") { IgnoredEntries = ignored, MissingEntries = missing, UnlistedArchives = missing, SourceFingerprints = source }, failures);
         }
-        catch (ArchiveOrderException)
+        else
         {
             List<string> reasons = [];
             if (missing.Length > 0) reasons.Add($"missing active archives: {string.Join(", ", missing)}");
             if (duplicates.Length > 0) reasons.Add($"duplicate active archives: {string.Join(", ", duplicates)}");
             if (ignored.Length > 0) reasons.Add($"inactive entries ignored: {string.Join(", ", ignored)}");
-            string[] repaired = ArchiveOrderPlanner.CreateRepairOrder(discovered, order);
-            return Profile(archives, repaired, orderPath, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Game directory", orderPath, $"Archive winners cannot be determined because the deployed modlist.txt has {string.Join("; ", reasons)}.") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, ProblemLane = ArchiveOrderProblemLane.Legacy }, failures);
+            return Profile(archives, effectiveOrder, orderPath, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, "Game directory", orderPath, $"Archive winners cannot be determined because the deployed modlist.txt has {string.Join("; ", reasons)}.") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, ProblemLane = ArchiveOrderProblemLane.Legacy }, failures);
         }
     }
 
     private static Mo2ArchiveProfile Profile(Mo2Archive[] archives, string[] order, string orderPath, ArchiveOrderEvidence evidence, List<SourceAnalysisFailure> failures)
     {
-        if (failures.Any(value => value.Surface is "Archive enumeration" or "Archive fingerprint")) evidence = new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, evidence.Provider, evidence.SourcePath, "At least one deployed legacy archive could not be fingerprinted, so the archive set is incomplete.") { SourcePaths = evidence.SourcePaths, IgnoredEntries = evidence.IgnoredEntries, MissingEntries = evidence.MissingEntries, DuplicateEntries = evidence.DuplicateEntries, SourceFingerprints = evidence.SourceFingerprints, AbsentSources = evidence.AbsentSources, ProblemLane = ArchiveOrderProblemLane.Legacy, IncompleteArchiveLane = ArchiveOrderProblemLane.Legacy };
+        if (failures.Any(value => value.Surface is "Archive enumeration" or "Archive fingerprint")) evidence = new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, evidence.Provider, evidence.SourcePath, "At least one deployed legacy archive could not be fingerprinted, so the archive set is incomplete.") { SourcePaths = evidence.SourcePaths, IgnoredEntries = evidence.IgnoredEntries, MissingEntries = evidence.MissingEntries, UnlistedArchives = evidence.UnlistedArchives, DuplicateEntries = evidence.DuplicateEntries, SourceFingerprints = evidence.SourceFingerprints, AbsentSources = evidence.AbsentSources, ProblemLane = ArchiveOrderProblemLane.Legacy, IncompleteArchiveLane = ArchiveOrderProblemLane.Legacy };
         return new Mo2ArchiveProfile("Deployed game", orderPath, archives, order, evidence) { Failures = failures.ToArray() };
     }
 }

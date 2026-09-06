@@ -5,6 +5,9 @@ namespace ConflictStudio.Core.Tests;
 [TestClass]
 public sealed class ArchiveProfileScannerResilienceTests
 {
+    private static readonly string[] PartialOrder = ["Beta.archive", "Alpha.archive"];
+    private static readonly string[] UnlistedAlpha = ["Alpha.archive"];
+
     [TestMethod]
     public void Mo2ScanRetainsReadableArchivesAndNamesAnUnreadableArchive()
     {
@@ -86,6 +89,29 @@ public sealed class ArchiveProfileScannerResilienceTests
             Assert.HasCount(0, result.Archives);
             Assert.HasCount(0, result.EffectiveOrder);
             Assert.AreEqual(ArchiveOrderEvidenceKind.FilenameFallback, result.OrderEvidence!.Kind);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void ManualScanUsesListedThenUnlistedOrderForAPartialList()
+    {
+        string root = TemporaryRoot("manual-partial-order");
+        try
+        {
+            WriteGameArchive(root, "Alpha.archive", "alpha");
+            WriteGameArchive(root, "Beta.archive", "beta");
+            string order = Path.Combine(root, "archive", "pc", "mod", "modlist.txt");
+            File.WriteAllText(order, "Beta.archive\n");
+
+            Mo2ArchiveProfile result = ManualArchiveProfileScanner.Scan(root);
+
+            CollectionAssert.AreEqual(PartialOrder, result.EffectiveOrder);
+            Assert.AreEqual(ArchiveOrderEvidenceKind.ManagedModlist, result.OrderEvidence!.Kind);
+            CollectionAssert.AreEqual(UnlistedAlpha, result.OrderEvidence.UnlistedArchives);
         }
         finally
         {
