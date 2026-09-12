@@ -15,6 +15,7 @@ This is a beta. Keep a backup and read the preview before changing archive order
 - Previews archive-order changes before writing anything.
 - Backs up and verifies `modlist.txt`, then offers Undo.
 - Exports a privacy-filtered support report when something goes wrong.
+- Generates optional read-only in-game checks for supported findings and imports their observations. See [runtime checks](docs/runtime-checks.md) for setup and removal.
 
 Conflict Studio does not decide that two mods are compatible or incompatible. A shared method or record is only a place to inspect. Compile results, the loaded game state, and an in-game reproduction still matter.
 

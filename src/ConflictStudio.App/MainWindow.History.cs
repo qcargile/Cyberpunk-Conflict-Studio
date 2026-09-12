@@ -27,6 +27,7 @@ public partial class MainWindow
         _applicationDataDirectory = applicationData;
         _noteStore = new EvidenceNoteStore(_decisionDirectory);
         InitializeViewPersistence(applicationData);
+        InitializeRuntimeChecks(applicationData);
     }
 
     private string HistoryDirectory(ProfileScanReceipt receipt)
@@ -42,9 +43,11 @@ public partial class MainWindow
         CoverageDetailsTextBlock.Text = coverage.Details;
         if (receipt.InstallationId is null)
         {
+            ClearRuntimeChecks();
             HistorySummaryTextBlock.Text = "This scan has no installation identity. Run a fresh scan before retaining a baseline.";
             return;
         }
+        BeginRuntimeChecks(receipt);
         _historyBusy = true;
         ExportButton.IsEnabled = false;
         SaveOpenNoteButton.IsEnabled = SaveReviewButton.IsEnabled = false;
@@ -87,7 +90,7 @@ public partial class MainWindow
             _historyBusy = false;
             _notes = notes.Notes;
             _noteReadError = notes.Error;
-            ExportButton.IsEnabled = true;
+            UpdateSupportExportAvailability();
             ReviewRationaleTextBox.IsEnabled = true;
             ReloadQueue(WorkQueueDataGrid.SelectedItem as ConflictWorkItem);
             HistoryReferenceComboBox.IsEnabled = HistoryFilterComboBox.IsEnabled = true;
@@ -115,7 +118,7 @@ public partial class MainWindow
             _noteReadError = recovery.Notes.Error;
             _baseline = recovery.Baseline;
             _historyBusy = false;
-            ExportButton.IsEnabled = true;
+            UpdateSupportExportAvailability();
             ReviewRationaleTextBox.IsEnabled = true;
             ReloadQueue(WorkQueueDataGrid.SelectedItem as ConflictWorkItem);
             HistoryReferenceComboBox.IsEnabled = HistoryFilterComboBox.IsEnabled = true;
@@ -273,6 +276,7 @@ public partial class MainWindow
 
     private void ClearInvestigation()
     {
+        ClearRuntimeChecks();
         _historyRevision++;
         _historyCancellation?.Cancel();
         _comparisonRevision++;

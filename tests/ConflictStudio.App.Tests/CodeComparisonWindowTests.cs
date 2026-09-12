@@ -429,6 +429,30 @@ public sealed class CodeComparisonWindowTests
         });
     }
 
+    [TestMethod]
+    public void SurroundingTextUsesASeparateHighlightFromTheFinding()
+    {
+        Run(async () =>
+        {
+            CodeSourceEvidence add = Evidence("Alpha", 1) with { EndLine = 1, FocusEndLine = 1 };
+            CodeSourceEvidence remove = Evidence("Beta", 1) with { EndLine = 1, FocusEndLine = 1 };
+            CodeComparisonWindow window = new(Item(), [ArrayWitness("Items.armor", add, remove)], (source, _) => Task.FromResult(new CodeSourceDocument(source, ["Items.armor", source.Provider == "Alpha" ? "left context" : "right context"])));
+            try
+            {
+                await window.LoadSelectionAsync();
+                ((CheckBox)window.FindName("ContextDifferencesCheckBox")).IsChecked = true;
+                Paragraph[] lines = ((RichTextBox)window.FindName("LeftCodeBox")).Document.Blocks.OfType<Paragraph>().ToArray();
+                Color primary = ((SolidColorBrush)lines[0].Inlines.OfType<Run>().Single(run => run.Background is SolidColorBrush).Background).Color;
+                Color context = ((SolidColorBrush)lines[1].Inlines.OfType<Run>().Single(run => run.Background is SolidColorBrush).Background).Color;
+                Assert.AreNotEqual(primary, context);
+                StringAssert.Contains(((TextBlock)window.FindName("ComparisonStatusTextBlock")).Text, "not additional conflicts");
+                ((CheckBox)window.FindName("ContextDifferencesCheckBox")).IsChecked = false;
+                Assert.IsFalse(((RichTextBox)window.FindName("LeftCodeBox")).Document.Blocks.OfType<Paragraph>().ElementAt(1).Inlines.OfType<Run>().Any(run => run.Background is SolidColorBrush));
+            }
+            finally { window.Close(); }
+        });
+    }
+
     private static CodeSourceEvidence Evidence(string provider, int line)
         => new(ConflictSurface.ScriptAndTweak, "Target", provider, "code.reds", provider + ".reds", new string('a', 64), line, line + 2, line, line + 2, true, "Method");
 

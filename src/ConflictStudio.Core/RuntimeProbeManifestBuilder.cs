@@ -10,13 +10,44 @@ public sealed record RuntimeProbeRequest(RuntimeProbeKind Kind, string Target, s
     public TweakRuntimeEvidence? TweakRuntimeEvidence { get; init; }
 }
 
-public sealed record RuntimeProbeManifest(int SchemaVersion, string ProfileName, DateTimeOffset CreatedAtUtc, RuntimeProbeRequest[] Requests, string? InstallationId = null);
+public sealed record RuntimeProbeBinding(ModManagerKind ManagerKind, string InstallationId, string ProfileName, ConflictSurface Surface, string Target, string[] Providers, string EvidenceSha256);
+
+public sealed record RuntimeProbeManifest(int SchemaVersion, string ProfileName, DateTimeOffset CreatedAtUtc, RuntimeProbeRequest[] Requests, string? InstallationId = null)
+{
+    public RuntimeProbeBinding? Binding { get; init; }
+}
 
 public static class RuntimeProbeManifestBuilder
 {
     public static RuntimeProbeManifest Build(ProfileScanReceipt receipt)
+        => BuildAll(receipt, DateTimeOffset.UtcNow);
+
+    public static RuntimeProbeManifest Build(ProfileScanReceipt receipt, ConflictWorkItem selectedItem, DateTimeOffset createdAtUtc)
     {
         ArgumentNullException.ThrowIfNull(receipt);
+        ArgumentNullException.ThrowIfNull(selectedItem);
+        if (createdAtUtc.Offset != TimeSpan.Zero) throw new ArgumentException("Runtime check timestamps must use UTC.", nameof(createdAtUtc));
+        if (string.IsNullOrWhiteSpace(receipt.InstallationId)) throw new InvalidOperationException("The selected profile has no installation identity. Scan the profile again before generating a runtime check.");
+        ConflictWorkItem? current = ConflictWorkQueueBuilder.Build(receipt, []).SingleOrDefault(value => SameSelection(value, selectedItem));
+        if (current is null) throw new InvalidOperationException("The selected finding no longer matches the current profile evidence. Select the refreshed finding and generate a new run.");
+        HashSet<string> targets = [current.Target, .. current.RelatedTargets];
+        foreach (TweakOverlap overlap in receipt.TweakOverlaps.Where(value => value.Kind == TweakOverlapKind.SourceArrayDependency && string.Equals(value.Target, current.Target, StringComparison.Ordinal)))
+        {
+            foreach (TweakOperation operation in overlap.Operations)
+            {
+                targets.Add(operation.Target);
+                if (operation.Kind is TweakOperationKind.ArrayAppendFrom or TweakOperationKind.ArrayPrependFrom) targets.Add(operation.Value);
+            }
+        }
+        RuntimeProbeRequest[] requests = BuildAll(receipt, createdAtUtc).Requests
+            .Where(value => targets.Contains(value.Target) && value.Providers.All(provider => current.Providers.Contains(provider, StringComparer.OrdinalIgnoreCase)))
+            .ToArray();
+        RuntimeProbeBinding binding = new(receipt.ManagerKind, receipt.InstallationId, receipt.ProfileName, current.Surface, current.Target, current.Providers, current.EvidenceSha256);
+        return new RuntimeProbeManifest(2, receipt.ProfileName, createdAtUtc, requests, receipt.InstallationId) { Binding = binding };
+    }
+
+    private static RuntimeProbeManifest BuildAll(ProfileScanReceipt receipt, DateTimeOffset createdAtUtc)
+    {
         List<RuntimeProbeRequest> requests = [];
         HashSet<string> conflictTargets = ConflictWorkQueueBuilder.Build(receipt, []).Where(value => value.IsCodeCase && value.IsActionable).Select(value => value.Target).ToHashSet(StringComparer.Ordinal);
         HashSet<string> runtimeTargets = new(StringComparer.Ordinal);
@@ -44,8 +75,17 @@ public static class RuntimeProbeManifestBuilder
             string[] targets = overlap.Operations.Select(value => value.Target).Concat(overlap.Operations.Where(value => value.Kind is TweakOperationKind.ArrayAppendFrom or TweakOperationKind.ArrayPrependFrom).Select(value => value.Value)).Distinct(StringComparer.Ordinal).ToArray();
             foreach (string target in targets) Add(requests, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, target, providers, $"The automatic check records {target} once, five seconds after CET starts updating.", "This shows the value only at that moment. It does not prove that the mods work together, pass startup code checks, load successfully, or cause a gameplay bug."));
         }
-        return new RuntimeProbeManifest(1, receipt.ProfileName, DateTimeOffset.UtcNow, requests.ToArray(), receipt.InstallationId);
+        return new RuntimeProbeManifest(1, receipt.ProfileName, createdAtUtc, requests.ToArray(), receipt.InstallationId);
     }
+
+    private static bool SameSelection(ConflictWorkItem current, ConflictWorkItem selected)
+        => current.Surface == selected.Surface
+            && string.Equals(current.Target, selected.Target, StringComparison.Ordinal)
+            && SameProviders(current.Providers, selected.Providers)
+            && string.Equals(current.EvidenceSha256, selected.EvidenceSha256, StringComparison.Ordinal);
+
+    private static bool SameProviders(string[] first, string[] second)
+        => first.Length == second.Length && first.All(value => second.Contains(value, StringComparer.OrdinalIgnoreCase));
 
     private static void Add(List<RuntimeProbeRequest> requests, RuntimeProbeRequest request)
     {

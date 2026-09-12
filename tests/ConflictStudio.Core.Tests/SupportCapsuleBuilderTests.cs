@@ -74,4 +74,28 @@ public sealed class SupportCapsuleBuilderTests
         Assert.IsFalse(serialized.Contains("Other profile note.", StringComparison.Ordinal));
         Assert.IsFalse(serialized.Contains("Other target note.", StringComparison.Ordinal));
     }
+
+    [TestMethod]
+    public void BuildExportsPrivacySafeCurrentAndStaleRuntimeEvidenceForTheProfile()
+    {
+        TweakOperation[] operations = [new("Alpha", "alpha.yaml", "Items.Test.value", "1", false), new("Beta", "beta.yaml", "Items.Test.value", "2", false)];
+        ProfileScanReceipt receipt = new(2, "Standard", DateTimeOffset.UtcNow, ["Alpha", "Beta"], [], [], [], [], [new InteractionFinding("Items.Test.value", InteractionFindingKind.Review, "review", ["Alpha", "Beta"])], [], [], [], [new TweakOverlap("Items.Test.value", TweakOverlapKind.ScalarOverwrite, operations)], [], [])
+        { InstallationId = new string('1', 64), ManagerKind = ModManagerKind.Mo2 };
+        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single();
+        RuntimeProbeBinding binding = new(receipt.ManagerKind, receipt.InstallationId!, receipt.ProfileName, item.Surface, item.Target, item.Providers, item.EvidenceSha256);
+        RuntimeProbeBundleManifest manifest = new(3, receipt.ProfileName, receipt.InstallationId, DateTimeOffset.UtcNow, new string('2', 32), new string('3', 64), [new RuntimeProbeBundleRequest(new string('4', 16), RuntimeProbeExecution.Automated, new RuntimeProbeRequest(RuntimeProbeKind.PostInitializationTweakValue, item.Target, item.Providers, "Read", "Decide"))]) { Binding = binding };
+        RuntimeProbeReceipt probeReceipt = new(3, receipt.ProfileName, receipt.InstallationId, manifest.RunId, manifest.ManifestId, DateTimeOffset.UtcNow, true, [new RuntimeProbeObservation(manifest.Requests[0].Id, RuntimeProbeObservationState.Observed, @"C:\private\runtime.log", null)]) { Binding = binding };
+        RuntimeInvestigationView current = new(new RuntimeInvestigationRun(@"C:\private\package", manifest, probeReceipt, DateTimeOffset.UtcNow), RuntimeInvestigationFreshness.Current, null);
+        RuntimeProbeBinding foreignBinding = binding with { ProfileName = "Other" };
+        RuntimeInvestigationView foreign = current with { Run = current.Run with { Manifest = manifest with { ProfileName = "Other", Binding = foreignBinding }, Receipt = probeReceipt with { ProfileName = "Other", Binding = foreignBinding } } };
+        RuntimeInvestigationView stale = current with { Freshness = RuntimeInvestigationFreshness.Stale, StaleReason = "The source evidence changed." };
+
+        SupportCapsule capsule = SupportCapsuleBuilder.Build(receipt, [], null, [foreign, current, stale]);
+
+        Assert.HasCount(2, capsule.RuntimeEvidence);
+        Assert.IsTrue(capsule.RuntimeEvidence.Any(value => value.Freshness == RuntimeInvestigationFreshness.Stale));
+        Assert.IsTrue(capsule.RuntimeEvidence.SelectMany(value => value.Receipt.Observations).All(value => value.Value == "[private path]"));
+        string serialized = System.Text.Json.JsonSerializer.Serialize(capsule);
+        Assert.IsFalse(serialized.Contains(@"C:\private", StringComparison.OrdinalIgnoreCase));
+    }
 }

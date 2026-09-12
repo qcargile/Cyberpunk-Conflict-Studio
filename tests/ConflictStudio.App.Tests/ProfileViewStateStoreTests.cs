@@ -29,7 +29,7 @@ public sealed class ProfileViewStateStoreTests
                 Columns = [new ProfileColumnState("target", 640, false, "Descending", 1)],
                 CodeDetailFraction = 0.72,
                 SummaryExpanded = false,
-                SelectedTab = 2,
+                SelectedTab = 4,
                 HistoryReference = "baseline",
                 HistoryFilter = "Changed"
             };
