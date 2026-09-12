@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace ConflictStudio.Core;
 
@@ -10,6 +11,8 @@ public enum EvidenceClassification { Redundant, Intentional, EffectiveOverwrite,
 public enum ConflictCaseKind { ProvenConflict, FileOverride, OrderSensitive, RuntimeCheck, Composes, SameEvidence, SharedTarget, Unknown, Reviewed, CompetingDeclaration, CompilerEvidence }
 
 public enum ConflictWorkState { NeedsAttention = 0, Reviewed = 1, NoActionNeeded = 2, ReviewWhenRelevant = 3 }
+
+public sealed record ConflictSourceFile(string Provider, string FilePath);
 
 public sealed record ConflictWorkItem(
     ConflictSurface Surface,
@@ -28,6 +31,14 @@ public sealed record ConflictWorkItem(
     string? BoundaryOverride = null)
 {
     public string[] RelatedTargets { get; init; } = [];
+    [JsonIgnore]
+    public string FilesSummary { get; init; } = "Not recorded";
+    [JsonIgnore]
+    public string FilesDetails { get; init; } = "No source file was recorded for this item.";
+    [JsonIgnore]
+    public ConflictSourceFile[] SourceFiles { get; init; } = [];
+    [JsonIgnore]
+    public CodeFindingWitness[] Comparisons { get; init; } = [];
     public string StateLabel => State switch
     {
         ConflictWorkState.NeedsAttention => "Needs attention",
@@ -123,6 +134,7 @@ public static class ConflictWorkQueueBuilder
         ArgumentNullException.ThrowIfNull(decisions);
         List<ConflictWorkItem> items = [];
         InteractionLookup interactions = new(receipt);
+        CodeFindingWitnessBuilder comparisons = new(receipt);
         bool sharedPackedBlocker = receipt.ArchiveFailures.Length > 0 || receipt.ArchiveOrderEvidence?.Kind == ArchiveOrderEvidenceKind.Unresolved;
         foreach (ResourceConflict conflict in receipt.ResourceConflicts)
         {
@@ -156,7 +168,7 @@ public static class ConflictWorkQueueBuilder
             string action = classification == EvidenceClassification.Redundant ? "No action is needed." : receipt.ManagerKind switch { ModManagerKind.Vortex => $"If {winner.Provider} is intended, mark this override intentional. If not, change which mod wins the file conflict in Vortex, deploy the profile, then rescan.", ModManagerKind.Manual => $"If {winner.Provider} is intended, mark this override intentional. If not, correct the deployed game files with your installer or mod manager, then rescan.", _ => $"If {winner.Provider} is intended, mark this override intentional. If not, change the mods' priority in MO2, then rescan; Conflict Studio will not silently reorder MO2 mods." };
             string target = shadows.Length == 1 ? shadow.RelativePath : $"{winner.Provider} overrides {string.Join(", ", providers.Skip(1))} ({shadows.Length} files)";
             string[] evidence = shadows.SelectMany(value => value.Providers.Select((provider, index) => $"{value.RelativePath}|{provider.Provider}|{provider.Sha256}|{index}")).ToArray();
-            Add(items, receipt, decisions, ConflictSurface.VirtualFile, target, classification, summary, action, shadow.WinnerProvider, providers, evidence, shadows.Select(value => value.RelativePath).ToArray());
+            Add(items, receipt, decisions, ConflictSurface.VirtualFile, target, classification, summary, action, shadow.WinnerProvider, providers, evidence, shadows.Select(value => value.RelativePath).ToArray(), sourceFiles: shadows.SelectMany(value => value.Providers.Select(provider => (provider.Provider, value.RelativePath))));
         }
         foreach (InteractionFinding finding in receipt.InteractionFindings)
         {
@@ -164,7 +176,7 @@ public static class ConflictWorkQueueBuilder
             if (classification is EvidenceClassification.Informational or EvidenceClassification.Composable or EvidenceClassification.Redundant) continue;
             (string summary, string action) = DescribeInteraction(finding, classification, interactions);
             (string? result, string? proof, string? meaning, string? boundary) = InteractionLabels(finding, interactions, classification);
-            Add(items, receipt, decisions, ConflictSurface.ScriptAndTweak, finding.Target, classification, summary, action, null, InteractionProviders(finding, interactions), InteractionEvidence(finding, interactions), null, result, proof, meaning, boundary);
+            Add(items, receipt, decisions, ConflictSurface.ScriptAndTweak, finding.Target, classification, summary, action, null, InteractionProviders(finding, interactions), InteractionEvidence(finding, interactions), null, result, proof, meaning, boundary, InteractionFiles(finding, interactions), hash => comparisons.ForInteraction(hash, finding));
         }
         foreach (SharedStateWriteFinding finding in receipt.SharedStateWrites)
         {
@@ -176,7 +188,7 @@ public static class ConflictWorkQueueBuilder
                 "If this is the change you want, mark it reviewed. Otherwise, check for a compatibility patch or share the report with the mod author. The scan does not check which value is used in game.", null, providers,
                 finding.Writes.Select(value => $"{value.Provider}|{CanonicalEvidencePath(value.FilePath)}|{value.Surface}|{value.Target}|{value.Operation}|{value.Evidence}|{ScopedEvidence(value.CallSha256, value.SourceHash)}").ToArray(),
                 null, "Review: mod code sets different values", "The mods' code sets the same game value differently",
-                "The mods' code can set different values for the same game entry.", "The scan does not check which change happens last or whether it causes a problem in game.");
+                "The mods' code can set different values for the same game entry.", "The scan does not check which change happens last or whether it causes a problem in game.", finding.Writes.Select(value => (value.Provider, value.FilePath)), hash => comparisons.ForSharedState(hash, finding));
         }
         foreach (RdarArchiveFailure failure in receipt.ArchiveFailures) Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.ArchiveName, EvidenceClassification.Unresolved, failure.Message, "Repair or remove the unreadable archive, then rescan.", null, [failure.Provider], [failure.ArchiveName, failure.Message]);
         foreach (ArchiveXlSourceFailure failure in receipt.ArchiveXlFailures.Where(value => value.Kind != ArchiveXlFailureKind.Coverage)) Add(items, receipt, decisions, ConflictSurface.Diagnostic, failure.FilePath, EvidenceClassification.Unresolved, failure.Message, "The scan could not read this ArchiveXL provider or file. Fix the named problem, then rescan.", null, [failure.Provider], [failure.FilePath, failure.Message]);
@@ -219,14 +231,34 @@ public static class ConflictWorkQueueBuilder
         _ => 3
     };
 
-    private static void Add(List<ConflictWorkItem> items, ProfileScanReceipt receipt, IReadOnlyList<EvidenceDecision> decisions, ConflictSurface surface, string target, EvidenceClassification classification, string summary, string action, string? winner, string[] providers, string[] evidence, string[]? relatedTargets = null, string? resultOverride = null, string? proofOverride = null, string? meaningOverride = null, string? boundaryOverride = null)
+    private static void Add(List<ConflictWorkItem> items, ProfileScanReceipt receipt, IReadOnlyList<EvidenceDecision> decisions, ConflictSurface surface, string target, EvidenceClassification classification, string summary, string action, string? winner, string[] providers, string[] evidence, string[]? relatedTargets = null, string? resultOverride = null, string? proofOverride = null, string? meaningOverride = null, string? boundaryOverride = null, IEnumerable<(string Provider, string FilePath)>? sourceFiles = null, Func<string, CodeFindingWitness[]>? comparisonFactory = null)
     {
         string hash = Hash(surface, target, classification, winner, providers, evidence);
         EvidenceDecision? decision = classification == EvidenceClassification.Unresolved || receipt.InstallationId is null ? null : decisions.Where(value => value.Target == target && value.Providers.SequenceEqual(providers, StringComparer.OrdinalIgnoreCase)).FirstOrDefault(value => EvidenceDecisionStore.Evaluate(value, receipt.InstallationId, receipt.ProfileName, surface, hash) == EvidenceDecisionState.Resolved);
         bool reviewed = decision is not null;
         ConflictWorkState state = reviewed ? ConflictWorkState.Reviewed : classification is EvidenceClassification.Redundant or EvidenceClassification.Composable or EvidenceClassification.Informational ? ConflictWorkState.NoActionNeeded : classification is EvidenceClassification.Exclusive or EvidenceClassification.Unresolved ? ConflictWorkState.NeedsAttention : ConflictWorkState.ReviewWhenRelevant;
         EvidenceClassification effectiveClassification = reviewed ? EvidenceClassification.Intentional : classification;
-        items.Add(new ConflictWorkItem(surface, target, effectiveClassification, state, summary, action, winner, providers, hash, reviewed ? decision!.Rationale : null, resultOverride, proofOverride, meaningOverride, boundaryOverride) { RelatedTargets = relatedTargets ?? [target] });
+        var files = (sourceFiles ?? []).Where(value => !string.IsNullOrWhiteSpace(value.FilePath))
+            .Select(value => (value.Provider, FilePath: CanonicalEvidencePath(value.FilePath))).Distinct()
+            .OrderBy(value => value.Provider, StringComparer.OrdinalIgnoreCase).ThenBy(value => value.FilePath, StringComparer.OrdinalIgnoreCase).ToArray();
+        items.Add(new ConflictWorkItem(surface, target, effectiveClassification, state, summary, action, winner, providers, hash, reviewed ? decision!.Rationale : null, resultOverride, proofOverride, meaningOverride, boundaryOverride)
+        {
+            RelatedTargets = relatedTargets ?? [target],
+            Comparisons = comparisonFactory?.Invoke(hash) ?? [],
+            SourceFiles = files.Select(value => new ConflictSourceFile(value.Provider, value.FilePath)).ToArray(),
+            FilesSummary = files.Length == 0 ? "Not recorded" : string.Join(", ", files.Select(value => Path.GetFileName(value.FilePath)).Distinct(StringComparer.OrdinalIgnoreCase)),
+            FilesDetails = files.Length == 0 ? "No source file was recorded for this item." : string.Join(Environment.NewLine, files.Select(value => $"{value.Provider}: {value.FilePath}"))
+        });
+    }
+
+    private static IEnumerable<(string Provider, string FilePath)> InteractionFiles(InteractionFinding finding, InteractionLookup interactions)
+    {
+        IEnumerable<(string Provider, string FilePath)> files = interactions.Flows(finding.Target).Select(value => (value.Provider, value.FilePath))
+            .Concat(interactions.Callbacks(finding.Target).SelectMany(value => value.Copies.Select(copy => (copy.Provider, copy.FilePath))))
+            .Concat((interactions.Tweak(finding.Target)?.Operations ?? []).Select(value => (value.Provider, value.FilePath)))
+            .Concat((finding.DeclarationEvidence ?? []).Select(value => (value.Provider, value.FilePath)));
+        if (finding.TweakRuntimeEvidence is { } runtime) files = files.Concat(runtime.Declarations.Select(value => (value.Provider, value.FilePath))).Concat(runtime.Writes.Select(value => (value.Provider, value.FilePath)));
+        return files;
     }
 
     private static string Hash(ConflictSurface surface, string target, EvidenceClassification classification, string? winner, string[] providers, string[] evidence)

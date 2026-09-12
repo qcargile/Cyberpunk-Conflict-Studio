@@ -3,7 +3,10 @@ using YamlDotNet.Core.Events;
 
 namespace ConflictStudio.Core;
 
-internal abstract record LooseYamlNode(string Tag, int Line);
+internal abstract record LooseYamlNode(string Tag, int Line)
+{
+    public bool IsAlias { get; init; }
+}
 
 internal sealed record LooseYamlScalar(string Value, string ScalarTag, int ScalarLine) : LooseYamlNode(ScalarTag, ScalarLine);
 
@@ -85,9 +88,9 @@ internal static class LooseYaml
     private static LooseYamlNode WithLine(LooseYamlNode node, int line)
         => node switch
         {
-            LooseYamlScalar scalar => scalar with { ScalarLine = line },
-            LooseYamlSequence sequence => sequence with { SequenceLine = line },
-            LooseYamlMapping mapping => mapping with { MappingLine = line },
+            LooseYamlScalar scalar => new LooseYamlScalar(scalar.Value, scalar.ScalarTag, line) { IsAlias = true },
+            LooseYamlSequence sequence => new LooseYamlSequence(sequence.Children, sequence.SequenceTag, line) { IsAlias = true },
+            LooseYamlMapping mapping => new LooseYamlMapping(mapping.Children, mapping.MappingTag, line) { IsAlias = true },
             _ => node
         };
 }

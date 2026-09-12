@@ -1,0 +1,8 @@
+Version 0.5.0
+Added View code for supported code findings, with highlighted source and expandable context
+Added a Files involved column and exact file locations, with Open file, Show in folder, and Copy path actions
+Added an option to show non-conflicting files only inside archives that also contain an overlap
+Fixed comparisons selecting unrelated operations or opening without a counterpart, including after cached scans
+Fixed incorrect source line highlights in CR-only files
+Fixed scan failures caused by damaged fingerprint-cache or resource-index data
+Fixed filename searches missing matching paths

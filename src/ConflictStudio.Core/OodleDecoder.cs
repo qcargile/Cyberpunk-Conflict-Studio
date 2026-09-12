@@ -26,7 +26,12 @@ internal sealed class OodleDecoderSession : IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         _library = NativeLibrary.Load(path);
-        _decompress = Marshal.GetDelegateForFunctionPointer<DecompressDelegate>(NativeLibrary.GetExport(_library, "OodleLZ_Decompress"));
+        try { _decompress = Marshal.GetDelegateForFunctionPointer<DecompressDelegate>(NativeLibrary.GetExport(_library, "OodleLZ_Decompress")); }
+        catch
+        {
+            NativeLibrary.Free(_library);
+            throw;
+        }
     }
 
     public static OodleDecoderSession? TryOpen(string? path)

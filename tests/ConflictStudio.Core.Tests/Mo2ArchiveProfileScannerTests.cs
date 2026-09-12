@@ -301,4 +301,29 @@ public sealed class Mo2ArchiveProfileScannerTests
         Directory.CreateDirectory(directory);
         File.WriteAllText(Path.Combine(directory, name), text);
     }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void DamagedFingerprintEntryIsRecomputed(bool missingHash)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-cache-recovery-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            WriteArchive(root, "Alpha", "Alpha.archive", "alpha");
+            string archive = Path.Combine(root, "Alpha", "archive", "pc", "mod", "Alpha.archive");
+            string profile = Path.Combine(root, "modlist.txt");
+            File.WriteAllText(profile, "+Alpha\n");
+            string cache = Path.Combine(root, "cache.json");
+            object? entry = missingHash ? new { Size = new FileInfo(archive).Length, LastWriteUtc = File.GetLastWriteTimeUtc(archive) } : null;
+            File.WriteAllText(cache, System.Text.Json.JsonSerializer.Serialize(new { SchemaVersion = 1, Entries = new Dictionary<string, object?> { [archive] = entry } }));
+
+            Mo2Archive result = Mo2ArchiveProfileScanner.Scan(root, profile, cache).Archives.Single();
+
+            Assert.AreEqual(FingerprintSource.Fresh, result.FingerprintSource);
+            Assert.AreEqual(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(archive))), result.Sha256);
+            StringAssert.Contains(File.ReadAllText(cache), result.Sha256);
+        }
+        finally { Directory.Delete(root, true); }
+    }
 }

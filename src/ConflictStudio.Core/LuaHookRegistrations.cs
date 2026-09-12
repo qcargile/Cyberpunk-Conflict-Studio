@@ -12,12 +12,16 @@ internal sealed record LuaHookRegistration(
     bool ResolvedHelper = false,
     string? CallbackEvidence = null,
     int InvocationIndex = 0,
-    int RegistrationIndex = 0);
+    int RegistrationIndex = 0,
+    int EvidenceEndIndex = -1,
+    bool InlineCallback = false,
+    int CallbackStartIndex = -1,
+    int CallbackEndIndex = -1);
 
 internal static class LuaHookRegistrationAnalyzer
 {
-    private sealed record FunctionDefinition(string Name, string[] Parameters, int BodyStart, int BodyEnd);
-    private sealed record Call(string Name, string[] Arguments, int Index);
+    private sealed record FunctionDefinition(string Name, string[] Parameters, int DeclarationStart, int BodyStart, int BodyEnd, int DeclarationEnd);
+    private sealed record Call(string Name, string[] Arguments, int Index, int EndIndex);
     private sealed record Expression(string? Literal, int ParameterIndex = -1);
     private sealed record CallbackExpression(string? Inline, int ParameterIndex = -1);
     private sealed record Template(LuaCallbackEvidenceKind Kind, Expression Class, Expression Method, CallbackExpression Callback, int RegistrationIndex);
@@ -45,7 +49,8 @@ internal static class LuaHookRegistrationAnalyzer
             LuaCallbackEvidenceKind kind = Enum.Parse<LuaCallbackEvidenceKind>(call.Name);
             string callback = call.Arguments.Length > 2 ? call.Arguments[2] : string.Empty;
             string? callbackEvidence = ResolveCallbackEvidence(callback, code, definitions);
-            registrations.Add(new LuaHookRegistration(kind, className + "." + methodName, classLiteral && methodLiteral ? EvidenceConfidence.Literal : EvidenceConfidence.Dynamic, Continuation(callbackEvidence ?? callback, kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, call.Index), definitions.Any(value => call.Index >= value.BodyStart && call.Index < value.BodyEnd), false, callbackEvidence, call.Index, call.Index));
+            FunctionDefinition? callbackDefinition = CallbackDefinition(callback, definitions);
+            registrations.Add(new LuaHookRegistration(kind, className + "." + methodName, classLiteral && methodLiteral ? EvidenceConfidence.Literal : EvidenceConfidence.Dynamic, Continuation(callbackEvidence ?? callback, kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, call.Index), definitions.Any(value => call.Index >= value.BodyStart && call.Index < value.BodyEnd), false, callbackEvidence, call.Index, call.Index, call.EndIndex, callback.TrimStart().StartsWith("function", StringComparison.Ordinal), callbackDefinition?.DeclarationStart ?? -1, callbackDefinition?.DeclarationEnd ?? -1));
         }
 
         foreach ((string name, List<Template> values) in templates)
@@ -62,7 +67,8 @@ internal static class LuaHookRegistrationAnalyzer
                     if (className is null || methodName is null) continue;
                     string callback = Resolve(template.Callback, call.Arguments) ?? string.Empty;
                     string? callbackEvidence = ResolveCallbackEvidence(callback, code, definitions);
-                    registrations.Add(new LuaHookRegistration(template.Kind, className + "." + methodName, EvidenceConfidence.Literal, Continuation(callbackEvidence ?? callback, template.Kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, call.Index), false, true, callbackEvidence, call.Index, template.RegistrationIndex));
+                    FunctionDefinition? callbackDefinition = CallbackDefinition(callback, definitions);
+                    registrations.Add(new LuaHookRegistration(template.Kind, className + "." + methodName, EvidenceConfidence.Literal, Continuation(callbackEvidence ?? callback, template.Kind), RedScriptFlowEvidenceAnalyzer.LineAt(text, call.Index), false, true, callbackEvidence, call.Index, template.RegistrationIndex, call.EndIndex, false, callbackDefinition?.DeclarationStart ?? -1, callbackDefinition?.DeclarationEnd ?? -1));
                     invokedDefinitions.Add(name);
                 }
             }
@@ -195,6 +201,14 @@ internal static class LuaHookRegistrationAnalyzer
         return definition is null ? null : SemanticEvidence.Normalize("function(" + string.Join(",", definition.Parameters) + ")" + code[definition.BodyStart..definition.BodyEnd] + " end");
     }
 
+    private static FunctionDefinition? CallbackDefinition(string callback, IReadOnlyList<FunctionDefinition> definitions)
+    {
+        string name = callback.Trim();
+        if (name.StartsWith("function", StringComparison.Ordinal)) return null;
+        FunctionDefinition[] matches = definitions.Where(value => value.Name == name).Take(2).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
     private static FunctionDefinition[] Definitions(string code, string structure)
     {
         List<FunctionDefinition> definitions = [];
@@ -204,7 +218,7 @@ internal static class LuaHookRegistrationAnalyzer
             int end = FunctionEnd(structure, match.Index + match.Length);
             if (end < 0) continue;
             string[] parameters = match.Groups["parameters"].Value.Split(',').Select(value => value.Trim()).Where(value => value.Length > 0).ToArray();
-            definitions.Add(new FunctionDefinition(match.Groups["name"].Value, parameters, match.Index + match.Length, end));
+            definitions.Add(new FunctionDefinition(match.Groups["name"].Value, parameters, match.Index, match.Index + match.Length, end, end + "end".Length - 1));
         }
         return definitions.ToArray();
     }
@@ -230,13 +244,14 @@ internal static class LuaHookRegistrationAnalyzer
         {
             if (structure[match.Index] != code[match.Index]) continue;
             int open = code.IndexOf('(', match.Index + match.Groups["name"].Length);
-            string[]? arguments = Arguments(code, open);
-            if (arguments is not null) yield return new Call(match.Groups["name"].Value, arguments, match.Index);
+            string[]? arguments = Arguments(code, open, out int endIndex);
+            if (arguments is not null) yield return new Call(match.Groups["name"].Value, arguments, match.Index, endIndex);
         }
     }
 
-    private static string[]? Arguments(string code, int open)
+    private static string[]? Arguments(string code, int open, out int endIndex)
     {
+        endIndex = -1;
         if (open < 0) return null;
         List<string> arguments = [];
         int start = open + 1;
@@ -264,6 +279,7 @@ internal static class LuaHookRegistrationAnalyzer
             {
                 string final = code[start..index].Trim();
                 if (final.Length > 0 || arguments.Count > 0) arguments.Add(final);
+                endIndex = index;
                 return arguments.ToArray();
             }
             else if (value == '[') square++;

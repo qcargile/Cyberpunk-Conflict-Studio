@@ -96,4 +96,41 @@ public sealed class MainWindowArchiveInteractionTests
         Assert.AreEqual(GridResizeDirection.Columns, direction);
         Assert.AreEqual(GridResizeBehavior.PreviousAndNext, behavior);
     }
+
+    [TestMethod]
+    public void ConflictingArchiveOptionFollowsUniqueFilesAndClearsWithFilters()
+    {
+        Exception? failure = null;
+        Thread thread = new(() =>
+        {
+            try
+            {
+                MainWindow window = new();
+                try
+                {
+                    CheckBox unique = (CheckBox)window.FindName("ShowNonConflictingFilesCheckBox");
+                    CheckBox conflicting = (CheckBox)window.FindName("OnlyConflictingArchivesCheckBox");
+                    Assert.IsFalse(conflicting.IsEnabled);
+                    unique.IsChecked = true;
+                    Assert.IsTrue(conflicting.IsEnabled);
+                    conflicting.IsChecked = true;
+                    unique.IsChecked = false;
+                    Assert.IsFalse(conflicting.IsEnabled);
+                    unique.IsChecked = true;
+                    Assert.IsTrue(conflicting.IsChecked);
+                    ((Button)window.FindName("ClearArchiveFiltersButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Assert.IsFalse(unique.IsChecked);
+                    Assert.IsFalse(conflicting.IsChecked);
+                    Assert.IsFalse(conflicting.IsEnabled);
+                }
+                finally { window.Close(); }
+            }
+            catch (Exception exception) { failure = exception; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (failure is not null) throw failure;
+    }
 }

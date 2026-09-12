@@ -85,6 +85,69 @@ public sealed class ArchiveConflictTreeViewModelTests
         StringAssert.Contains(node.TechnicalEvidence, "RDAR SHA-1: " + new string('a', 40));
     }
 
+    [TestMethod]
+    [DataRow(false, false, 1, 0)]
+    [DataRow(false, true, 1, 0)]
+    [DataRow(true, false, 2, 1)]
+    [DataRow(true, true, 1, 1)]
+    public void UniqueFilesCanBeLimitedToConflictingArchives(bool showUnique, bool onlyConflicting, int archiveCount, int uniqueCount)
+    {
+        ArchiveResourceOutcome shared = Outcome(1, "base\\shared.mesh", ArchiveResourceDisposition.Winning, ArchivePayloadRelation.Different, "Mixed.archive", ["Other.archive"]);
+        ArchiveResourceOutcome unique = Outcome(2, "base\\unique.mesh", ArchiveResourceDisposition.Unique, ArchivePayloadRelation.NotApplicable, "Mixed.archive", []);
+        ArchiveConflictTreeViewModel tree = new();
+        tree.Load([
+            new ArchiveConflictSummary("Mixed.archive", "Mixed Mod", 0, [shared], [], [], [], [unique]),
+            new ArchiveConflictSummary("Unique.archive", "Unique Mod", 1, [], [], [], [], [unique])
+        ]);
+
+        tree.Filter(string.Empty, string.Empty, showUnique, onlyConflicting);
+
+        Assert.AreEqual(archiveCount, tree.VisibleArchives.Count);
+        Assert.AreEqual(uniqueCount, tree.Find("Mixed.archive")!.UniqueCount);
+    }
+
+    [TestMethod]
+    public void UniqueFileSearchKeepsItsConflictingArchiveWhenTheOverlapDoesNotMatch()
+    {
+        ArchiveResourceOutcome shared = Outcome(1, "base\\shared.mesh", ArchiveResourceDisposition.Losing, ArchivePayloadRelation.Different, "Other.archive", ["Other.archive"]);
+        ArchiveResourceOutcome unique = Outcome(2, "base\\unique.mesh", ArchiveResourceDisposition.Unique, ArchivePayloadRelation.NotApplicable, "Mixed.archive", []);
+        ArchiveConflictTreeViewModel tree = new();
+        tree.Load([
+            new ArchiveConflictSummary("Mixed.archive", "Mixed Mod", 0, [], [shared], [], [], [unique]),
+            new ArchiveConflictSummary("Unique.archive", "Unique Mod", 1, [], [], [], [], [unique])
+        ]);
+
+        tree.Filter("Mixed", "unique", true, true);
+
+        Assert.AreEqual("Mixed.archive", tree.VisibleArchives.Single().ArchiveName);
+        Assert.AreEqual("base\\unique.mesh", tree.VisibleArchives.Single().Children.Single().Children.Single().Path);
+        tree.Filter("Unique Mod", "unique", true, true);
+        Assert.AreEqual(0, tree.VisibleArchives.Count);
+        tree.Filter(string.Empty, string.Empty, true, false);
+        Assert.AreEqual(2, tree.VisibleArchives.Count);
+    }
+
+    [TestMethod]
+    public void ConflictingArchiveFilterPreservesIdenticalAndUnresolvedOverlaps()
+    {
+        ArchiveResourceOutcome same = Outcome(1, "base\\same.mesh", ArchiveResourceDisposition.Winning, ArchivePayloadRelation.Identical, "Same.archive", ["Other.archive"]);
+        ArchiveResourceOutcome unknown = Outcome(2, "base\\unknown.mesh", ArchiveResourceDisposition.Unresolved, ArchivePayloadRelation.Unknown, null, ["Other.archive"]);
+        ArchiveConflictTreeViewModel tree = new();
+        tree.Load([
+            new ArchiveConflictSummary("Same.archive", "Same Mod", 0, [], [], [same], [], []),
+            new ArchiveConflictSummary("Unknown.archive", "Unknown Mod", 1, [], [], [], [unknown], [])
+        ]);
+
+        tree.Filter(string.Empty, string.Empty, true, true);
+
+        Assert.AreEqual(2, tree.VisibleArchives.Count);
+        Assert.AreEqual(1, tree.Find("Same.archive")!.SameCount);
+        Assert.AreEqual(1, tree.Find("Unknown.archive")!.UnknownCount);
+        tree.Load([]);
+        tree.Filter(string.Empty, string.Empty, true, true);
+        Assert.AreEqual(0, tree.VisibleArchives.Count);
+    }
+
     private static ArchiveResourceOutcome Outcome(ulong hash, string path, ArchiveResourceDisposition disposition, ArchivePayloadRelation relation, string? winner, string[] others)
         => new(hash, path, disposition, winner, new string((char)('a' + (int)hash), 64), "mesh", ResourcePathConfidence.ResolvedIndex, others, relation);
 }

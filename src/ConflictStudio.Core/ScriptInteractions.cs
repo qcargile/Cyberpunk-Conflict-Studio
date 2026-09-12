@@ -59,6 +59,17 @@ public static class RedScriptInteractionAnalyzer
             }
         }
 
+        Dictionary<string, int> fieldOccurrences = new(StringComparer.Ordinal);
+        for (int index = 0; index < hooks.Count; index++)
+        {
+            RedScriptHook hook = hooks[index];
+            if (hook.Declaration is not { } declaration) continue;
+            string identity = CodeOperationIdentity.FieldBase(hook.Target, declaration);
+            int occurrence = fieldOccurrences.GetValueOrDefault(identity) + 1;
+            fieldOccurrences[identity] = occurrence;
+            hooks[index] = hook with { Declaration = declaration with { OperationOccurrence = occurrence, OperationId = CodeOperationIdentity.FieldId(hook.Target, declaration, occurrence) } };
+        }
+
         return hooks.GroupBy(value => value.Target, StringComparer.Ordinal)
             .Select(group => new RedScriptOverlap(group.Key, Classify(group), group.ToArray()))
             .Where(ShouldReport)

@@ -9,6 +9,9 @@ This is a beta. Keep a backup and read the preview before changing archive order
 - Shows which archive wins each packed file.
 - Finds loose files installed by more than one active mod.
 - Separates replaced methods, wrappers, CET callbacks, and TweakXL changes instead of calling every shared target a conflict.
+- Opens the exact recorded operations behind supported code findings, with highlighted source and expandable context.
+- Shows the selected source-file path and can open the file, show it in its folder, or copy the path.
+- Lets you show non-conflicting files only inside archives that also contain an overlap.
 - Previews archive-order changes before writing anything.
 - Backs up and verifies `modlist.txt`, then offers Undo.
 - Exports a privacy-filtered support report when something goes wrong.
@@ -39,7 +42,7 @@ See [GitHub releases](https://github.com/qcargile/Cyberpunk-Conflict-Studio/rele
 
 ## Install
 
-Download `Cyberpunk-Conflict-Studio-0.4.2-Nexus.zip` from Nexus Mods.
+Download `Cyberpunk-Conflict-Studio-0.5.0-Nexus.zip` from Nexus Mods.
 
 ### Vortex
 
@@ -69,10 +72,10 @@ Run `ConflictStudio.exe` from the extracted folder, choose Manual, and select th
 The public package is a self-contained Windows x64 executable:
 
 ```powershell
-.\scripts\publish-win-x64.ps1 -Version 0.4.2
+.\scripts\publish-win-x64.ps1 -Version 0.5.0
 ```
 
-The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/0.4.2.json`.
+The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/0.5.0.json`.
 
 ## Credits
 

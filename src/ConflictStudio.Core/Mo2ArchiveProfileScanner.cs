@@ -239,7 +239,7 @@ public static class Mo2ArchiveProfileScanner
     {
         FileInfo file = new(path);
         if (!forceFingerprint && Cache.TryGetValue(path, out CachedFingerprint? cached) && cached.Size == file.Length && cached.LastWriteUtc == file.LastWriteTimeUtc) return new FingerprintResult(new Mo2Archive(provider, Path.GetFileName(path), path, cached.Size, cached.Sha256, FingerprintSource.MemoryCache));
-        if (!forceFingerprint && persistent.TryGetValue(path, out cached) && cached.Size == file.Length && cached.LastWriteUtc == file.LastWriteTimeUtc && IsSha256(cached.Sha256))
+        if (!forceFingerprint && persistent.TryGetValue(path, out cached) && cached is not null && cached.Size == file.Length && cached.LastWriteUtc == file.LastWriteTimeUtc && IsSha256(cached.Sha256))
         {
             Cache[path] = cached;
             return new FingerprintResult(new Mo2Archive(provider, Path.GetFileName(path), path, cached.Size, cached.Sha256, FingerprintSource.PersistentCache));
@@ -280,7 +280,7 @@ public static class Mo2ArchiveProfileScanner
         }
     }
 
-    private static bool IsSha256(string value) => value.Length == 64 && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+    private static bool IsSha256(string? value) => value is { Length: 64 } && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     private sealed record ProviderArchives(string Provider, string Directory, Mo2Archive[] Archives);
     private sealed record ProviderArchivePaths(string Provider, string Directory, string[] Paths);

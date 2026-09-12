@@ -499,7 +499,10 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <CheckBox x:Name="ShowNonConflictingFilesCheckBox" VerticalAlignment="Center" Checked="ArchiveTreeFilterChanged" Unchecked="ArchiveTreeFilterChanged" Content="Show non-conflicting files" />
+                            <StackPanel VerticalAlignment="Center">
+                                <CheckBox x:Name="ShowNonConflictingFilesCheckBox" Checked="ArchiveTreeFilterChanged" Unchecked="ArchiveTreeFilterChanged" Content="Show non-conflicting files" />
+                                <CheckBox x:Name="OnlyConflictingArchivesCheckBox" Margin="0,5,0,0" IsEnabled="{Binding IsChecked, ElementName=ShowNonConflictingFilesCheckBox}" Checked="ArchiveTreeFilterChanged" Unchecked="ArchiveTreeFilterChanged" Content="Only in conflicting archives" ToolTip="Show unique files only inside archives with overlaps. Same-content overlaps and unresolved conflicts are included." />
+                            </StackPanel>
                             <StackPanel Grid.Column="1" Margin="8,0,0,0">
                                 <TextBlock Margin="0,0,0,3" FontSize="10" Foreground="{StaticResource Muted}" Text="MOD OR ARCHIVE FILTER" />
                                 <TextBox x:Name="ArchiveModFilterTextBox" TextChanged="ArchiveTreeFilterChanged" />
@@ -659,6 +662,21 @@
                             <DataGridTemplateColumn Header="Mods involved" Width="420">
                                 <DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding ProviderSummary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ProviderSummary}" /></DataTemplate></DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Files involved" Width="320" SortMemberPath="FilesSummary">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding FilesSummary}" TextTrimming="CharacterEllipsis">
+                                            <TextBlock.ToolTip>
+                                                <ToolTip>
+                                                    <ScrollViewer MaxWidth="640" MaxHeight="360" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                                                        <TextBlock Text="{Binding FilesDetails}" />
+                                                    </ScrollViewer>
+                                                </ToolTip>
+                                            </TextBlock.ToolTip>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                     <GridSplitter x:Name="CodeDetailSplitter" Grid.Row="4" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="#314346" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Cursor="SizeNS" />
@@ -671,7 +689,10 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel>
                                 <TextBlock x:Name="SelectedClassificationTextBlock" Foreground="#FFD166" Text="Select a case" />
-                                <TextBlock x:Name="SelectedTargetTextBlock" Margin="0,3,0,0" FontSize="17" FontWeight="SemiBold" Text="Select a row to see details" TextWrapping="Wrap" />
+                                <DockPanel Margin="0,3,0,0">
+                                    <Button x:Name="ViewCodeButton" DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top" Content="View code" IsEnabled="False" Click="ViewCodeClicked" ToolTip="Compare the recorded source blocks for this finding." ToolTipService.ShowOnDisabled="True" />
+                                    <TextBlock x:Name="SelectedTargetTextBlock" FontSize="17" FontWeight="SemiBold" Text="Select a row to see details" TextWrapping="Wrap" />
+                                </DockPanel>
                                 <TextBlock Margin="0,9,0,0" FontSize="10" Foreground="{StaticResource Muted}" Text="WHAT THIS MEANS" />
                                 <TextBlock x:Name="SelectedMeaningTextBlock" Margin="0,3,0,0" Foreground="#E7ECEB" TextWrapping="Wrap" />
                                 <TextBlock Margin="0,8,0,0" FontSize="10" Foreground="{StaticResource Muted}" Text="WHAT THE SOURCE SHOWS" />
@@ -694,6 +715,20 @@
                                 </Expander>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Margin="14,0,0,0">
+                                <StackPanel x:Name="SelectedFilesPanel" Margin="0,0,0,16" Visibility="Collapsed">
+                                    <TextBlock Foreground="{StaticResource Muted}" Text="FILES INVOLVED" />
+                                    <ComboBox x:Name="SelectedFileComboBox" Margin="0,5,0,0" SelectionChanged="SelectedFileChanged">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip="{Binding RelativePath}" /></DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <TextBox x:Name="SelectedFilePathTextBox" Margin="0,5,0,0" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="72" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Selected file location" />
+                                    <UniformGrid Margin="0,7,0,0" Columns="3">
+                                        <Button x:Name="OpenSourceFileButton" IsEnabled="False" Click="OpenSourceFileClicked" Content="Open file" />
+                                        <Button x:Name="ShowSourceFileButton" IsEnabled="False" Margin="7,0,0,0" Click="ShowSourceFileClicked" Content="Show in folder" />
+                                        <Button x:Name="CopySourcePathButton" IsEnabled="False" Margin="7,0,0,0" Click="CopySourcePathClicked" Content="Copy path" />
+                                    </UniformGrid>
+                                </StackPanel>
                                 <TextBlock Foreground="{StaticResource Muted}" Text="REVIEW OUTCOME" />
                                 <ComboBox x:Name="ReviewOutcomeComboBox" Margin="0,5,0,0">
                                     <ComboBoxItem Tag="Works as intended">Works as intended</ComboBoxItem>

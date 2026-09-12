@@ -129,8 +129,8 @@ public static class ResourcePathIndex
     {
         byte[] file = File.ReadAllBytes(karkPath);
         if (file.Length < 9 || BinaryPrimitives.ReadUInt32LittleEndian(file) != KarkMagic) throw new InvalidDataException("The resource path index has an invalid KARK header.");
-        int outputSize = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(4)));
-        if (outputSize <= 0 || outputSize > MaximumOutputBytes) throw new InvalidDataException("The resource path index declares an unsafe output size.");
-        return OodleDecoder.Decompress(file[8..], outputSize, oodlePath);
+        uint outputSize = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(4));
+        if (outputSize == 0 || outputSize > MaximumOutputBytes) throw new InvalidDataException("The resource path index declares an unsafe output size.");
+        return OodleDecoder.Decompress(file[8..], (int)outputSize, oodlePath);
     }
 }
