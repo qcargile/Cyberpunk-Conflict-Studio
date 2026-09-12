@@ -52,18 +52,19 @@ public partial class CodeComparisonWindow : Window
     private int _contextLines = 3;
     private int _lineLimit = InitialLineLimit;
 
-    public CodeComparisonWindow(Window owner, ConflictWorkItem item, IReadOnlyList<CodeFindingWitness> comparisons)
-        : this(item, comparisons, CodeSourceReader.ReadAsync)
+    public CodeComparisonWindow(Window owner, ConflictWorkItem item, IReadOnlyList<CodeFindingWitness> comparisons, IReadOnlyList<CodeSourceEvidence>? contributors = null, TweakReferenceIndex? references = null, SourceEditorPreferenceStore? editorPreferences = null)
+        : this(item, comparisons, CodeSourceReader.ReadAsync, contributors, references, editorPreferences)
     {
         Owner = owner;
         Resources.MergedDictionaries.Add(owner.Resources);
     }
 
-    internal CodeComparisonWindow(ConflictWorkItem item, IReadOnlyList<CodeFindingWitness> comparisons, Func<CodeSourceEvidence, CancellationToken, Task<CodeSourceDocument>> reader)
+    internal CodeComparisonWindow(ConflictWorkItem item, IReadOnlyList<CodeFindingWitness> comparisons, Func<CodeSourceEvidence, CancellationToken, Task<CodeSourceDocument>> reader, IReadOnlyList<CodeSourceEvidence>? contributors = null, TweakReferenceIndex? references = null, SourceEditorPreferenceStore? editorPreferences = null)
     {
         _reader = reader;
         _findingSummary = item.Summary;
         InitializeComponent();
+        InitializeSourceNavigation(item, contributors ?? comparisons.SelectMany(value => value.Participants).SelectMany(value => value.Sources).ToArray(), references, editorPreferences);
         TargetTextBlock.Text = item.Target;
         WitnessComboBox.ItemsSource = comparisons.Select(value => new CodeWitnessChoice(value)).ToArray();
         WitnessComboBox.Visibility = comparisons.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
@@ -95,6 +96,7 @@ public partial class CodeComparisonWindow : Window
         LeftSourceComboBox.ItemsSource = Choices(_witness?.Participants ?? []);
         LeftSourceComboBox.SelectedIndex = LeftSourceComboBox.Items.Count > 0 ? 0 : -1;
         SelectOpponents();
+        RefreshContributors();
     }
 
     private void SelectOpponents()
@@ -206,12 +208,17 @@ public partial class CodeComparisonWindow : Window
 
     private async Task<(CodeSourceDocument? Document, string? Error)> ReadSourceAsync(CodeSourceEvidence evidence, CancellationToken cancellationToken)
     {
-        await SourceReadSlots.WaitAsync(cancellationToken);
-        try { return (await Task.Run(() => _reader(evidence, cancellationToken), cancellationToken), null); }
+        try { return (await ReadWithLimitAsync(_reader, evidence, cancellationToken), null); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
             return (null, exception.Message);
         }
+    }
+
+    internal static async Task<CodeSourceDocument> ReadWithLimitAsync(Func<CodeSourceEvidence, CancellationToken, Task<CodeSourceDocument>> reader, CodeSourceEvidence evidence, CancellationToken cancellationToken)
+    {
+        await SourceReadSlots.WaitAsync(cancellationToken);
+        try { return await Task.Run(() => reader(evidence, cancellationToken), cancellationToken); }
         finally { SourceReadSlots.Release(); }
     }
 
@@ -269,13 +276,14 @@ public partial class CodeComparisonWindow : Window
     private static CodeComparisonLine[] UnpairedLines(CodeComparisonExcerpt? excerpt)
         => excerpt?.Lines.Select((line, index) => new CodeComparisonLine(excerpt.StartLine + index, line, 0, 0, false)).ToArray() ?? [];
 
-    private static void RenderPane(RichTextBox editor, TextBlock status, CodeComparisonLine[] lines, CodeSourceEvidence? evidence, CodeComparisonExcerpt? excerpt, string? error, bool showContextDifferences, bool declarationEvidence, bool operationEvidence)
+    internal static void RenderPane(RichTextBox editor, TextBlock status, CodeComparisonLine[] lines, CodeSourceEvidence? evidence, CodeComparisonExcerpt? excerpt, string? error, bool showContextDifferences, bool declarationEvidence, bool operationEvidence)
     {
-        FlowDocument document = new() { PagePadding = new Thickness(8), FontFamily = new FontFamily("Consolas"), FontSize = 13 };
+        double textSize = Math.Clamp(editor.FontSize, 10, 24);
+        FlowDocument document = new() { PagePadding = new Thickness(8), FontFamily = new FontFamily("Consolas"), FontSize = textSize };
         double width = Math.Max(300, editor.ActualWidth - 20);
         foreach (CodeComparisonLine line in lines)
         {
-            Paragraph paragraph = new() { Margin = new Thickness(0), LineHeight = 20 };
+            Paragraph paragraph = new() { Margin = new Thickness(0), LineHeight = textSize + 7 };
             string number = line.LineNumber?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
             bool focus = line.LineNumber is int value && evidence is not null && value >= evidence.FocusStartLine && value <= evidence.FocusEndLine;
             paragraph.Inlines.Add(new Run(number.PadLeft(6) + "  ") { Foreground = focus ? Brushes.Cyan : Brushes.SlateGray });
@@ -299,7 +307,7 @@ public partial class CodeComparisonWindow : Window
             }
             else paragraph.Inlines.Add(new Run(line.Text));
             document.Blocks.Add(paragraph);
-            FormattedText measured = new(number.PadLeft(6) + "  " + line.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Consolas"), 13, Brushes.White, VisualTreeHelper.GetDpi(editor).PixelsPerDip);
+            FormattedText measured = new(number.PadLeft(6) + "  " + line.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Consolas"), textSize, Brushes.White, VisualTreeHelper.GetDpi(editor).PixelsPerDip);
             width = Math.Max(width, measured.WidthIncludingTrailingWhitespace + 24);
         }
         document.PageWidth = width;
@@ -322,7 +330,12 @@ public partial class CodeComparisonWindow : Window
     private CodeSourceEvidence? SourceFor(object sender)
         => (((Button)sender).Tag as string == "Left" ? LeftSourceComboBox : RightSourceComboBox).SelectedItem is CodeSourceChoice choice ? choice.Evidence : null;
 
-    private void OpenFileClicked(object sender, RoutedEventArgs e) => FileAction(sender, SourceFileActions.OpenEditor);
+    private void OpenFileClicked(object sender, RoutedEventArgs e)
+    {
+        CodeSourceEvidence? source = SourceFor(sender);
+        if (source is null) return;
+        FileAction(sender, file => ComparisonStatusTextBlock.Text = SourceFileActions.OpenAtLine(file, source.FocusStartLine, _editorPreferences.Load()).Status);
+    }
     private void ShowFolderClicked(object sender, RoutedEventArgs e) => FileAction(sender, SourceFileActions.ShowInFolder);
     private void CopyPathClicked(object sender, RoutedEventArgs e) => FileAction(sender, file => Clipboard.SetText(file.PhysicalPath!));
 
@@ -341,6 +354,7 @@ public partial class CodeComparisonWindow : Window
         _closed = true;
         _revision++;
         _loadCancellation?.Cancel();
+        _sourceInspector?.Close();
         _documents.Clear();
         _leftDocument = null;
         _rightDocument = null;

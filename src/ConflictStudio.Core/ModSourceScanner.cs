@@ -25,11 +25,11 @@ public static class ModSourceScanner
         ArgumentNullException.ThrowIfNull(manifest);
         string[] exclusions = PhysicalPathExclusions.Normalize(excludedPhysicalPaths);
         DeploymentProvider[] providers = manifest.Providers;
-        PhysicalPathReservation[] reservations = PhysicalPathExclusions.Reservations(providers.Select(value => value.RootPath).ToArray(), exclusions, relative => new[] { ".reds", ".lua", ".tweak", ".yaml", ".yml" }.Contains(Path.GetExtension(relative), StringComparer.OrdinalIgnoreCase));
+        PhysicalPathReservation[] reservations = SourceReservations(providers, exclusions);
         Dictionary<string, Candidate> redScripts = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, Candidate> luaSources = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, Candidate> redTweaks = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, Candidate> tweakSources = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, Candidate> tweakSources = TweakCandidates(manifest, deployedWinners, exclusions, reservations, cancellationToken);
         List<SourceAnalysisFailure> failures = manifest.Failures.SelectMany(Failures).ToList();
         foreach (DeploymentFileEntry file in manifest.Files)
         {
@@ -37,7 +37,6 @@ public static class ModSourceScanner
             if (IsRedScriptPath(file.RelativePath)) Set(redScripts, file, deployedWinners, exclusions, reservations);
             else if (IsLuaPath(file.RelativePath)) Set(luaSources, file, deployedWinners, exclusions, reservations);
             else if (IsRedTweakPath(file.RelativePath)) Set(redTweaks, file, deployedWinners, exclusions, reservations);
-            else if (IsTweakPath(file.RelativePath)) Set(tweakSources, file, deployedWinners, exclusions, reservations);
             else if (IsUnregisteredRed4ExtScriptPath(file.RelativePath)) failures.Add(new SourceAnalysisFailure(file.Provider.Name, file.RelativePath, "RedScript registration", "This .reds file is under a RED4ext plugin, but Conflict Studio has no source evidence that the plugin registers this file or folder. It was not analyzed as active source."));
         }
         if (deployedWinners is not null)
@@ -56,6 +55,26 @@ public static class ModSourceScanner
         foreach (Candidate tweak in redTweaks.Values.Where(value => !value.Excluded)) failures.Add(new SourceAnalysisFailure(tweak.Provider, tweak.RelativePath, "TweakXL RED", "RED .tweak source is captured as an effective deployment file, but Conflict Studio does not parse it as TweakXL YAML."));
         failures.AddRange(RedScriptConditionalSourceFilter.Failures(redScriptInventory));
         return new ModSourceInventory(redScriptInventory, luaInventory, tweakInventory, failures.ToArray());
+    }
+
+    internal static DeploymentFileEntry[] EffectiveTweakFiles(DeploymentFileManifest manifest, IReadOnlyDictionary<string, string>? deployedWinners, IReadOnlySet<string>? excludedPhysicalPaths, CancellationToken cancellationToken)
+    {
+        string[] exclusions = PhysicalPathExclusions.Normalize(excludedPhysicalPaths);
+        return TweakCandidates(manifest, deployedWinners, exclusions, SourceReservations(manifest.Providers, exclusions), cancellationToken).Values.Where(value => !value.Excluded).Select(value => value.File).ToArray();
+    }
+
+    private static PhysicalPathReservation[] SourceReservations(IEnumerable<DeploymentProvider> providers, string[] exclusions)
+        => PhysicalPathExclusions.Reservations(providers.Select(value => value.RootPath).ToArray(), exclusions, relative => new[] { ".reds", ".lua", ".tweak", ".yaml", ".yml" }.Contains(Path.GetExtension(relative), StringComparer.OrdinalIgnoreCase));
+
+    private static Dictionary<string, Candidate> TweakCandidates(DeploymentFileManifest manifest, IReadOnlyDictionary<string, string>? deployedWinners, string[] exclusions, PhysicalPathReservation[] reservations, CancellationToken cancellationToken)
+    {
+        Dictionary<string, Candidate> candidates = new(StringComparer.OrdinalIgnoreCase);
+        foreach (DeploymentFileEntry file in manifest.Files.Where(file => IsTweakPath(file.RelativePath)))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Set(candidates, file, deployedWinners, exclusions, reservations);
+        }
+        return candidates;
     }
 
     private static T[] Read<T>(IEnumerable<Candidate> candidates, string surface, Func<Candidate, T> read, List<SourceAnalysisFailure> failures, CancellationToken cancellationToken)

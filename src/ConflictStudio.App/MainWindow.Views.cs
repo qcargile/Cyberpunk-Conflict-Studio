@@ -97,6 +97,7 @@ public partial class MainWindow
             CodeView = SelectedTag(QueueViewComboBox, "Actionable"),
             CodeSurface = SelectedTag(QueueSurfaceComboBox, "All"),
             CodeProvider = QueueProviderComboBox.SelectedItem as string ?? "All mods",
+            CodeOtherProvider = QueueOtherProviderComboBox.SelectedItem as string ?? "All mods",
             ArchiveModFilter = ArchiveModFilterTextBox.Text,
             ArchiveFileFilter = ArchiveFileFilterTextBox.Text,
             ShowNonConflictingFiles = ShowNonConflictingFilesCheckBox.IsChecked == true,
@@ -141,6 +142,7 @@ public partial class MainWindow
             SelectTag(QueueViewComboBox, state.CodeView);
             SelectTag(QueueSurfaceComboBox, state.CodeSurface);
             QueueProviderComboBox.SelectedItem = QueueProviderComboBox.Items.Cast<string>().FirstOrDefault(value => value == state.CodeProvider) ?? "All mods";
+            QueueOtherProviderComboBox.SelectedItem = QueueOtherProviderComboBox.Items.Cast<string>().FirstOrDefault(value => value == state.CodeOtherProvider) ?? "All mods";
             ArchiveModFilterTextBox.Text = state.ArchiveModFilter;
             ArchiveFileFilterTextBox.Text = state.ArchiveFileFilter;
             ShowNonConflictingFilesCheckBox.IsChecked = state.ShowNonConflictingFiles;

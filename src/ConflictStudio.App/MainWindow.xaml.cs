@@ -370,6 +370,7 @@ public partial class MainWindow : Window, IDisposable
 
     private void QueueSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        UpdateFindingNavigation();
         Dispatcher.BeginInvoke(ConnectStyledScrollbars, DispatcherPriority.Loaded);
         ConflictWorkItem[] selected = WorkQueueDataGrid.SelectedItems.Cast<ConflictWorkItem>().ToArray();
         ViewCodeButton.IsEnabled = selected.Length == 1 && selected[0].Comparisons.Length > 0;
@@ -801,7 +802,7 @@ public partial class MainWindow : Window, IDisposable
             CodeFindingWitness[] comparisons = item.Comparisons;
             if (comparisons.Length == 0) throw new InvalidOperationException("The exact supporting operations are unavailable for this finding. Run a fresh scan or open its files.");
             _codeComparisonWindow?.Close();
-            CodeComparisonWindow window = new(this, item, comparisons);
+            CodeComparisonWindow window = new(this, item, comparisons, _receipt?.CodeEvidence, _receipt?.TweakReferences, new SourceEditorPreferenceStore(_applicationDataDirectory));
             _codeComparisonWindow = window;
             window.Closed += (_, _) => { if (ReferenceEquals(_codeComparisonWindow, window)) _codeComparisonWindow = null; };
             window.Show();
@@ -991,8 +992,13 @@ public partial class MainWindow : Window, IDisposable
         ArchiveConflictCountTextBlock.Text = _archiveTree.ResultSummary + " Non-conflicting files are hidden by default.";
         ConflictWorkItem[] codeItems = CodeWorkItems();
         UpdateCodeCaseCounts(codeItems);
-        QueueProviderComboBox.ItemsSource = CodeCaseWorkspace.Providers(codeItems);
-        QueueProviderComboBox.SelectedIndex = 0;
+        string? previousProvider = QueueProviderComboBox.SelectedItem as string;
+        string? previousOtherProvider = QueueOtherProviderComboBox.SelectedItem as string;
+        string[] providers = CodeCaseWorkspace.Providers(codeItems);
+        QueueProviderComboBox.ItemsSource = providers;
+        QueueProviderComboBox.SelectedItem = providers.Contains(previousProvider, StringComparer.Ordinal) ? previousProvider : "All mods";
+        QueueOtherProviderComboBox.ItemsSource = QueueProviderComboBox.ItemsSource;
+        QueueOtherProviderComboBox.SelectedItem = providers.Contains(previousOtherProvider, StringComparer.Ordinal) ? previousOtherProvider : "All mods";
         ApplyQueueFilter();
         ExportButton.IsEnabled = true;
         ScanProfileButton.Content = "Refresh";
@@ -1031,7 +1037,8 @@ public partial class MainWindow : Window, IDisposable
         string view = (QueueViewComboBox?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Actionable";
         string surface = (QueueSurfaceComboBox?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "All";
         string provider = QueueProviderComboBox?.SelectedItem as string ?? "All mods";
-        ConflictWorkItem[] rows = CodeCaseWorkspace.Filter(CodeWorkItems(), query, view, surface, provider);
+        string otherProvider = QueueOtherProviderComboBox?.SelectedItem as string ?? "All mods";
+        ConflictWorkItem[] rows = CodeCaseWorkspace.Filter(CodeWorkItems(), query, view, surface, provider, otherProvider);
         ConflictWorkItem? selected = WorkQueueDataGrid.SelectedItem as ConflictWorkItem;
         SortDescription[] sort = CurrentCodeSort();
         WorkQueueDataGrid.ItemsSource = rows;
@@ -1230,6 +1237,7 @@ public partial class MainWindow : Window, IDisposable
         _decisions = [];
         WorkQueueDataGrid.ItemsSource = null;
         QueueProviderComboBox.ItemsSource = null;
+        QueueOtherProviderComboBox.ItemsSource = null;
         _archiveTree.Load([]);
         _archiveRelationshipResources = [];
         _archivePreviewResources = [];

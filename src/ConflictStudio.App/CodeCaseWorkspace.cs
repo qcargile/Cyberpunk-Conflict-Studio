@@ -6,7 +6,7 @@ public sealed record CodeCaseCounts(int ProvenConflicts, int NeedsDecision, int 
 
 public static class CodeCaseWorkspace
 {
-    public static ConflictWorkItem[] Filter(IReadOnlyList<ConflictWorkItem> items, string query, string view, string surface, string provider)
+    public static ConflictWorkItem[] Filter(IReadOnlyList<ConflictWorkItem> items, string query, string view, string surface, string provider, string? otherProvider = null)
     {
         ArgumentNullException.ThrowIfNull(items);
         bool scanProblems = string.Equals(surface, nameof(ConflictSurface.Diagnostic), StringComparison.Ordinal);
@@ -22,6 +22,7 @@ public static class CodeCaseWorkspace
         };
         if (surface != "All" && Enum.TryParse(surface, out ConflictSurface parsedSurface)) filtered = filtered.Where(value => value.Surface == parsedSurface);
         if (!string.IsNullOrWhiteSpace(provider) && provider != "All mods") filtered = filtered.Where(value => value.Providers.Contains(provider, StringComparer.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(otherProvider) && otherProvider != "All mods") filtered = filtered.Where(value => value.Providers.Contains(otherProvider, StringComparer.OrdinalIgnoreCase));
         string search = query?.Trim() ?? string.Empty;
         if (search.Length > 0) filtered = filtered.Where(value => value.Target.Contains(search, StringComparison.OrdinalIgnoreCase) || value.Summary.Contains(search, StringComparison.OrdinalIgnoreCase) || value.Providers.Any(name => name.Contains(search, StringComparison.OrdinalIgnoreCase)) || value.SourceFiles.Any(file => file.FilePath.Contains(search, StringComparison.OrdinalIgnoreCase)));
         return filtered.OrderBy(CaseOrder).ThenBy(value => value.Surface).ThenBy(value => value.Target, StringComparer.OrdinalIgnoreCase).ToArray();

@@ -53,12 +53,15 @@ public sealed record ProfileScanReceipt(
 
     [System.Text.Json.Serialization.JsonIgnore]
     public CodeSourceEvidence[] CodeEvidence { get; init; } = [];
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public TweakReferenceIndex TweakReferences { get; init; } = TweakReferenceIndex.Empty;
 }
 
 public static class ProfileScanCoordinator
 {
     private const int PackedAnalysisSchema = 1;
-    private const int CodeAnalysisSchema = 8;
+    private const int CodeAnalysisSchema = 9;
 
     public static ProfileScanReceipt Scan(string mo2Root, Mo2Profile profile, DateTimeOffset scannedAtUtc)
         => Scan(mo2Root, profile, scannedAtUtc, null, CancellationToken.None);
@@ -270,7 +273,13 @@ public static class ProfileScanCoordinator
         cancellationToken.ThrowIfCancellationRequested();
         string codeCacheKey = CodeCacheKey(prepared, normalizedExclusions);
         CodeProfileAnalysis? codeToCache = null;
-        bool codeCacheHit = analysisCache.TryRead("code", codeCacheKey, out CodeProfileAnalysis? code) && code?.SchemaVersion == CodeAnalysisSchema;
+        bool codeCacheHit = analysisCache.TryRead("code", codeCacheKey, out CodeProfileAnalysis? code)
+            && code?.SchemaVersion == CodeAnalysisSchema
+            && code.CodeEvidence is not null
+            && code.TweakReferences is { } references
+            && references.IsValid(code.CodeEvidence)
+            && code.InteractionFindings is not null && code.InteractionFindings.All(finding => finding is not null)
+            && CodeSourceEvidenceBuilder.MatchesTweakDefinitions(references, code.InteractionFindings.Select(finding => finding.Target).ToHashSet(StringComparer.Ordinal), prepared.FileManifest, prepared.DeployedWinners, excludedPhysicalPaths, cancellationToken);
         if (!codeCacheHit)
         {
             progress?.Report(new ScanProgress("effective source", 0, 2));
@@ -283,7 +292,7 @@ public static class ProfileScanCoordinator
             LuaCallbackEvidence[] callbacks = LuaCallbackEvidenceAnalyzer.Analyze(inventory.LuaSources);
             TweakAnalysisResult tweakAnalysis = TweakInteractionAnalyzer.AnalyzeDetailed(inventory.TweakSources);
             InteractionFinding[] interactions = InteractionReportBuilder.Build(inventory, flows, callbacks, tweakAnalysis.Overlaps, tweakAnalysis.Operations, runtimeWrites);
-            CodeSourceEvidence[] codeEvidence = CodeSourceEvidenceBuilder.Build(prepared.FileManifest, inventory, interactions, flows, callbacks, runtimeWrites, stateWrites, tweakAnalysis.Operations);
+            CodeSourceCapture sourceCapture = CodeSourceEvidenceBuilder.BuildCapture(prepared.FileManifest, inventory, interactions, flows, callbacks, runtimeWrites, stateWrites, tweakAnalysis.Operations);
             int sourceItemCount = inventory.RedScripts.Length + inventory.LuaSources.Length + inventory.TweakSources.Length;
             phases.Add(new ScanPhaseMetric("effective source", phase.ElapsedMilliseconds, sourceItemCount));
             progress?.Report(new ScanProgress("effective source", 2, 2));
@@ -296,7 +305,7 @@ public static class ProfileScanCoordinator
             ArchiveXlSourceFailure[] xlFailures = archiveXlSources.Failures.Concat(archiveXlAnalysis.Failures).ToArray();
             SourceAnalysisFailure[] sourceFailures = inventory.Failures.Concat(tweakAnalysis.Failures).Concat(virtualShadowScan.Failures).ToArray();
             CodeCoverageReceipt coverage = CodeCoverageReceipt.Build(inventory, callbacks, inventory.Failures.Concat(prepared.AdditionalFailures).ToArray(), archiveXlSources.Sources.Length);
-            code = new CodeProfileAnalysis(CodeAnalysisSchema, virtualShadowScan.Shadows, interactions, flows, stateWrites, callbacks, tweakAnalysis.Overlaps, chains, xlFailures, sourceFailures, sourceItemCount, archiveXlSources.Sources.Length, coverage, codeEvidence);
+            code = new CodeProfileAnalysis(CodeAnalysisSchema, virtualShadowScan.Shadows, interactions, flows, stateWrites, callbacks, tweakAnalysis.Overlaps, chains, xlFailures, sourceFailures, sourceItemCount, archiveXlSources.Sources.Length, coverage, sourceCapture.Evidence, sourceCapture.TweakReferences);
             codeToCache = code;
             phases.Add(new ScanPhaseMetric("ArchiveXL", phase.ElapsedMilliseconds, code.ArchiveXlSourceCount));
         }
@@ -309,7 +318,7 @@ public static class ProfileScanCoordinator
         }
         CodeProfileAnalysis codeResult = code!;
         VirtualFileShadow[] virtualShadows = codeResult.VirtualFileShadows;
-        InteractionFinding[] findings = codeResult.InteractionFindings;
+        InteractionFinding[] findings = codeResult.InteractionFindings!;
         RedScriptFlowEvidence[] redScriptFlows = codeResult.RedScriptFlows;
         SharedStateWriteFinding[] sharedStateWrites = codeResult.SharedStateWrites;
         LuaCallbackEvidence[] luaCallbacks = codeResult.LuaCallbacks;
@@ -392,7 +401,8 @@ public static class ProfileScanCoordinator
             $"packed-{PackedAnalysisSchema}/code-{CodeAnalysisSchema}")
         {
             SourceProviders = prepared.DeploymentProviders,
-            CodeEvidence = codeResult.CodeEvidence ?? []
+            CodeEvidence = codeResult.CodeEvidence ?? [],
+            TweakReferences = codeResult.TweakReferences ?? TweakReferenceIndex.Empty
         };
     }
 

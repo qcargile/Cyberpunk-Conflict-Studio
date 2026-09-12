@@ -225,6 +225,7 @@ public partial class MainWindow
         SelectTag(QueueViewComboBox, "All");
         SelectTag(QueueSurfaceComboBox, current.Surface == ConflictSurface.Diagnostic ? "Diagnostic" : "All");
         QueueProviderComboBox.SelectedIndex = 0;
+        QueueOtherProviderComboBox.SelectedIndex = 0;
         ApplyQueueFilter();
         WorkQueueDataGrid.SelectedItem = current;
         WorkQueueDataGrid.ScrollIntoView(current);

@@ -9,6 +9,28 @@ public sealed class CodeCaseWorkspaceTests
     private static readonly string[] ExpectedActionableTargets = ["blocked", "check"];
 
     [TestMethod]
+    [DataRow("Alpha", "Beta")]
+    [DataRow("Beta", "Alpha")]
+    public void PairFilterKeepsEveryContributorToTheMatchingFinding(string first, string second)
+    {
+        ConflictWorkItem shared = Item("shared", EvidenceClassification.Review, "Alpha", "Beta", "Gamma");
+        ConflictWorkItem[] items = [shared, Item("other", EvidenceClassification.Review, "Alpha", "Delta")];
+        ConflictWorkItem result = CodeCaseWorkspace.Filter(items, string.Empty, "All", "All", first, second).Single();
+        Assert.AreSame(shared, result);
+        Assert.AreEqual(3, result.Providers.Length);
+        Assert.IsTrue(result.Providers.Contains("Gamma", StringComparer.Ordinal));
+    }
+
+    [TestMethod]
+    public void PairFilterHandlesSameAndMissingProvidersWithoutInventingAPair()
+    {
+        ConflictWorkItem single = Item("internal", EvidenceClassification.Review, "Alpha");
+        Assert.AreSame(single, CodeCaseWorkspace.Filter([single], string.Empty, "All", "All", "Alpha", "Alpha").Single());
+        Assert.IsEmpty(CodeCaseWorkspace.Filter([single], string.Empty, "All", "All", "Alpha", "Missing"));
+        Assert.AreSame(single, CodeCaseWorkspace.Filter([single], string.Empty, "All", "All", "All mods", "Alpha").Single());
+    }
+
+    [TestMethod]
     public void SearchFindsSourceFileNamesAndRelativePaths()
     {
         ConflictWorkItem item = Item("target", EvidenceClassification.Review, "Alpha", "Beta") with

@@ -39,6 +39,8 @@ public sealed record CodeSourceEvidence(
 
 public sealed record CodeSourceDocument(CodeSourceEvidence Evidence, string[] Lines);
 
+internal sealed record CodeSourceCapture(CodeSourceEvidence[] Evidence, TweakReferenceIndex TweakReferences);
+
 public sealed class CodeSourceReadException : IOException
 {
     public CodeSourceReadException(string message, Exception? innerException = null) : base(message, innerException) { }
@@ -118,6 +120,17 @@ internal static class CodeSourceEvidenceBuilder
     private static readonly Regex Lifecycle = new("\\bregisterForEvent\\s*\\(", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static CodeSourceEvidence[] Build(
+        DeploymentFileManifest manifest,
+        ModSourceInventory inventory,
+        IReadOnlyList<InteractionFinding> interactions,
+        IReadOnlyList<RedScriptFlowEvidence> flows,
+        IReadOnlyList<LuaCallbackEvidence> callbacks,
+        IReadOnlyList<SharedStateWrite> runtimeWrites,
+        IReadOnlyList<SharedStateWriteFinding> sharedStateFindings,
+        IReadOnlyList<TweakOperation> tweakOperations)
+        => BuildCapture(manifest, inventory, interactions, flows, callbacks, runtimeWrites, sharedStateFindings, tweakOperations).Evidence;
+
+    internal static CodeSourceCapture BuildCapture(
         DeploymentFileManifest manifest,
         ModSourceInventory inventory,
         IReadOnlyList<InteractionFinding> interactions,
@@ -251,7 +264,82 @@ internal static class CodeSourceEvidenceBuilder
             }
         }
 
-        return NumberOccurrences(evidence);
+        CodeSourceEvidence[] numbered = NumberOccurrences(evidence);
+        return new CodeSourceCapture(numbered, BuildTweakReferenceIndex(interactionTargets, tweakOperations, contexts));
+    }
+
+    private static TweakReferenceIndex BuildTweakReferenceIndex(
+        HashSet<string> interactionTargets,
+        IReadOnlyList<TweakOperation> tweakOperations,
+        IReadOnlyDictionary<(string Provider, string FilePath), SourceContext> contexts)
+    {
+        TweakOperation[] candidates = tweakOperations.Where(value => interactionTargets.Contains(value.Target) && TweakReferenceIndex.IsReferenceKind(CodeOperationIdentity.Kind(value.Kind))
+                && TweakReferenceIndex.IsLiteral(value.Value) && !value.IsAliasSource && !value.IsGeneratedSource)
+            .OrderBy(value => value.OperationId, StringComparer.Ordinal)
+            .ToArray();
+        TweakOperation[] captured = candidates.Take(TweakReferenceIndex.MaximumOperations).ToArray();
+        TweakReferenceOperation[] operations = captured.Select(value => new TweakReferenceOperation(value.OperationId, value.Value))
+            .ToArray();
+        string[] references = operations.Select(value => value.Reference).Distinct(StringComparer.Ordinal).OrderBy(value => value, StringComparer.Ordinal).ToArray();
+        ILookup<string, TweakOperation> constructionsByRecord = tweakOperations.Where(value => value.RecordTarget is not null
+                && value.Kind is TweakOperationKind.TypeDeclaration or TweakOperationKind.BaseDeclaration
+                && !value.IsAliasSource && !value.IsGeneratedSource)
+            .ToLookup(value => value.RecordTarget!, StringComparer.Ordinal);
+        List<TweakReferenceDefinitionSet> definitionSets = [];
+        int retainedDefinitions = 0;
+        foreach (string reference in references)
+        {
+            TweakOperation[] constructions = constructionsByRecord[reference].ToArray();
+            var groups = constructions.GroupBy(value => (value.Provider, value.FilePath, value.RecordStartLine, value.RecordEndLine))
+                .OrderBy(value => value.Key.Provider, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(value => value.Key.FilePath, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(value => value.Key.RecordStartLine)
+                .ToArray();
+            int available = Math.Min(TweakReferenceIndex.MaximumDefinitionsPerReference, Math.Max(0, TweakReferenceIndex.MaximumDefinitions - retainedDefinitions));
+            CodeSourceEvidence[] definitions = groups.Take(available).Select(group =>
+            {
+                if (!contexts.TryGetValue((group.Key.Provider, group.Key.FilePath), out SourceContext? context)) return null;
+                return DefinitionEvidence(reference, group.ToArray(), context);
+            }).Where(value => value is not null).Cast<CodeSourceEvidence>().ToArray();
+            retainedDefinitions += definitions.Length;
+            bool limited = groups.Length > definitions.Length;
+            definitionSets.Add(new TweakReferenceDefinitionSet(reference, definitions, groups.Length, limited));
+        }
+        return new TweakReferenceIndex(operations, definitionSets.ToArray(), candidates.Length > TweakReferenceIndex.MaximumOperations || definitionSets.Any(value => value.IsLimited), candidates.Length);
+    }
+
+    internal static bool MatchesTweakDefinitions(TweakReferenceIndex index, HashSet<string> interactionTargets, DeploymentFileManifest manifest, IReadOnlyDictionary<string, string>? deployedWinners, IReadOnlySet<string>? excludedPhysicalPaths, CancellationToken cancellationToken)
+    {
+        List<TweakSource> sources = [];
+        Dictionary<(string Provider, string FilePath), SourceContext> contexts = [];
+        foreach (DeploymentFileEntry file in ModSourceScanner.EffectiveTweakFiles(manifest, deployedWinners, excludedPhysicalPaths, cancellationToken))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                ProfileFileSnapshot snapshot = manifest.Capture(file, true, cancellationToken);
+                if (snapshot.Sha256 is null) return false;
+                string text = manifest.ReadText(file, cancellationToken);
+                sources.Add(new(file.Provider.Name, file.RelativePath, text));
+                contexts.Add((file.Provider.Name, file.RelativePath), new(file.Provider.Name, file.RelativePath, file.PhysicalPath, snapshot.Sha256, text, Lines(text)));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return false; }
+        }
+        TweakOperation[] operations = TweakInteractionAnalyzer.AnalyzeDetailed(sources).Operations;
+        cancellationToken.ThrowIfCancellationRequested();
+        TweakReferenceIndex expected = BuildTweakReferenceIndex(interactionTargets, operations, contexts);
+        if (index.TotalOperations != expected.TotalOperations || index.IsLimited != expected.IsLimited || !index.Operations.SequenceEqual(expected.Operations) || index.References.Length != expected.References.Length) return false;
+        return index.References.Zip(expected.References).All(pair => pair.First.Reference == pair.Second.Reference
+            && pair.First.TotalDefinitions == pair.Second.TotalDefinitions
+            && pair.First.IsLimited == pair.Second.IsLimited
+            && pair.First.Definitions.SequenceEqual(pair.Second.Definitions));
+    }
+
+    private static CodeSourceEvidence DefinitionEvidence(string reference, TweakOperation[] declarations, SourceContext context)
+    {
+        int focusStart = declarations.Min(value => value.SourceStartLine > 0 ? value.SourceStartLine : value.LineNumber);
+        int focusEnd = declarations.Max(value => value.SourceEndLine >= focusStart ? value.SourceEndLine : focusStart);
+        return Create(ConflictSurface.ScriptAndTweak, reference, context, declarations[0].RecordStartLine, declarations[0].RecordEndLine, focusStart, focusEnd, true, "TweakXL record definition");
     }
 
     private static CodeSourceEvidence[] NumberOccurrences(IEnumerable<CodeSourceEvidence> evidence)

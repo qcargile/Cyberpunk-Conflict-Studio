@@ -592,7 +592,8 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="180" />
                             <ColumnDefinition Width="200" />
-                            <ColumnDefinition Width="250" />
+                            <ColumnDefinition Width="200" />
+                            <ColumnDefinition Width="220" />
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="QueueSearchTextBox" TextChanged="QueueFilterChanged" ToolTip="Search files, game entries, mods, or descriptions" AutomationProperties.Name="Search code conflicts" />
                         <ComboBox x:Name="QueueViewComboBox" Grid.Column="1" Margin="8,0,0,0" SelectionChanged="QueueFilterChanged">
@@ -611,7 +612,11 @@
                             <ComboBoxItem Tag="ArchiveXl">ArchiveXL changes</ComboBoxItem>
                             <ComboBoxItem Tag="Diagnostic">Scan problems</ComboBoxItem>
                         </ComboBox>
-                        <ComboBox x:Name="QueueProviderComboBox" Grid.Column="3" Margin="8,0,0,0" SelectionChanged="QueueFilterChanged" />
+                        <ComboBox x:Name="QueueProviderComboBox" Grid.Column="3" Margin="8,0,0,0" SelectionChanged="QueueFilterChanged" AutomationProperties.Name="First mod" />
+                        <DockPanel Grid.Column="4" Margin="8,0,0,0">
+                            <TextBlock Text="With" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource Muted}" />
+                            <ComboBox x:Name="QueueOtherProviderComboBox" SelectionChanged="QueueFilterChanged" AutomationProperties.Name="Second mod" ToolTip="Show findings involving both selected mods. Other contributors remain included." />
+                        </DockPanel>
                     </Grid>
                     <DataGrid x:Name="WorkQueueDataGrid" Grid.Row="3" CanUserResizeColumns="True" SelectionMode="Extended" SelectionUnit="FullRow" ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectionChanged="QueueSelectionChanged">
                         <DataGrid.CellStyle>
@@ -706,7 +711,11 @@
                             <StackPanel>
                                 <TextBlock x:Name="SelectedClassificationTextBlock" Foreground="#FFD166" Text="Select a case" />
                                 <DockPanel Margin="0,3,0,0">
-                                    <Button x:Name="ViewCodeButton" DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Top" Content="View code" IsEnabled="False" Click="ViewCodeClicked" ToolTip="Compare the recorded source blocks for this finding." ToolTipService.ShowOnDisabled="True" />
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Top">
+                                        <Button x:Name="PreviousFindingButton" Content="‹" Padding="8,6" Click="PreviousFindingClicked" IsEnabled="False" ToolTip="Previous finding in this view" AutomationProperties.Name="Previous finding" />
+                                        <Button x:Name="NextFindingButton" Content="›" Margin="5,0,8,0" Padding="8,6" Click="NextFindingClicked" IsEnabled="False" ToolTip="Next finding in this view" AutomationProperties.Name="Next finding" />
+                                        <Button x:Name="ViewCodeButton" Content="View code" IsEnabled="False" Click="ViewCodeClicked" ToolTip="Compare the recorded source blocks for this finding." ToolTipService.ShowOnDisabled="True" />
+                                    </StackPanel>
                                     <TextBlock x:Name="SelectedTargetTextBlock" FontSize="17" FontWeight="SemiBold" Text="Select a row to see details" TextWrapping="Wrap" />
                                 </DockPanel>
                                 <TextBlock Margin="0,9,0,0" FontSize="10" Foreground="{StaticResource Muted}" Text="WHAT THIS MEANS" />

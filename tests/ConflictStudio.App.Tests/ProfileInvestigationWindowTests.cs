@@ -350,6 +350,46 @@ public sealed class ProfileInvestigationWindowTests
         StringAssert.Contains(coverage.Details, "ArchiveXL unsupported operations: 3");
     }
 
+    [TestMethod]
+    public void PairViewKeepsTheThirdProviderAndFindingNavigationUsesVisibleRows()
+    {
+        RunAsync(async () =>
+        {
+            using Fixture fixture = new();
+            fixture.Scan(2, 0);
+            File.AppendAllText(fixture.Profile.ModlistPath, "+Gamma\n");
+            string gamma = Path.Combine(fixture.Mo2, "mods", "Gamma", "r6", "tweaks");
+            Directory.CreateDirectory(gamma);
+            File.WriteAllText(Path.Combine(gamma, "Gamma.yaml"), "Items.Test.value: 3\nItems.Second.value: 3\n");
+            File.AppendAllText(Path.Combine(fixture.Mo2, "mods", "Alpha", "r6", "tweaks", "Alpha.yaml"), "\nItems.Second.value: 1\n");
+            File.AppendAllText(Path.Combine(fixture.Mo2, "mods", "Beta", "r6", "tweaks", "Beta.yaml"), "\nItems.Second.value: 2\n");
+            ProfileScanReceipt receipt = ProfileScanCoordinator.Scan(fixture.Mo2, fixture.Profile, DateTimeOffset.UtcNow);
+            MainWindow window = new(fixture.State);
+            try
+            {
+                await Load(window, fixture, receipt);
+                Get<ComboBox>(window, "QueueProviderComboBox").SelectedItem = "Alpha";
+                Get<ComboBox>(window, "QueueOtherProviderComboBox").SelectedItem = "Beta";
+                DataGrid grid = Get<DataGrid>(window, "WorkQueueDataGrid");
+                Assert.AreEqual(2, grid.Items.Count);
+                Assert.IsTrue(grid.Items.Cast<ConflictWorkItem>().All(item => item.Providers.Contains("Gamma", StringComparer.Ordinal)));
+                string first = ((ConflictWorkItem)grid.SelectedItem).Target;
+                Get<Button>(window, "NextFindingButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.AreNotEqual(first, ((ConflictWorkItem)grid.SelectedItem).Target);
+                Assert.IsFalse(Get<Button>(window, "NextFindingButton").IsEnabled);
+                Get<Button>(window, "PreviousFindingButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.AreEqual(first, ((ConflictWorkItem)grid.SelectedItem).Target);
+                Invoke(window, "SaveCurrentView");
+                await window.PendingUserStateWrites;
+                Assert.AreEqual("Beta", new ProfileViewStateStore(fixture.State).Load(receipt.ManagerKind, receipt.InstallationId!, receipt.ProfileName).CodeOtherProvider);
+                await Load(window, fixture, receipt with { ScannedAtUtc = receipt.ScannedAtUtc.AddSeconds(1) });
+                Assert.AreEqual("Alpha", Get<ComboBox>(window, "QueueProviderComboBox").SelectedItem);
+                Assert.AreEqual("Beta", Get<ComboBox>(window, "QueueOtherProviderComboBox").SelectedItem);
+            }
+            finally { await Finish(window); }
+        });
+    }
+
     private static ConflictWorkItem Item(ProfileScanReceipt receipt) => ConflictWorkQueueBuilder.Build(receipt, []).Single(item => item.Target == "Items.Test.value");
     private static T Get<T>(MainWindow window, string name) where T : FrameworkElement => (T)window.FindName(name);
     private static void Invoke(MainWindow window, string method, params object[] args) => typeof(MainWindow).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, args);
