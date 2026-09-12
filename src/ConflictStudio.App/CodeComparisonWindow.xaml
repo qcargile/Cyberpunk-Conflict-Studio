@@ -68,7 +68,7 @@
                     </StackPanel>
                     <TextBlock x:Name="SourcesTextBlock" VerticalAlignment="Center" />
                 </StackPanel>
-                <CheckBox x:Name="ContextDifferencesCheckBox" Margin="0,5,12,0" Content="Highlight other text differences" Checked="ContextHighlightChanged" Unchecked="ContextHighlightChanged" ToolTip="Include text differences outside the statements supporting this finding." />
+                <CheckBox x:Name="ContextDifferencesCheckBox" Margin="0,5,12,0" Content="Compare surrounding text" Checked="ContextHighlightChanged" Unchecked="ContextHighlightChanged" ToolTip="Blue highlights compare the surrounding text in these excerpts. They do not identify additional conflicts or change this finding." />
             </StackPanel>
         </DockPanel>
         <Grid Grid.Row="3" Grid.IsSharedSizeScope="True">

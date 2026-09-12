@@ -62,11 +62,16 @@ public sealed class SupportCapsuleWriterTests
             Assert.IsTrue(File.Exists(Path.Combine(root, "conflict-casefile.json")));
             Assert.IsTrue(File.Exists(Path.Combine(root, "conflict-casefile.html")));
             Assert.IsTrue(File.Exists(Path.Combine(root, "runtime-probe", "probe-manifest.json")));
+            RuntimeProbeBundleManifest probeManifest = RuntimeProbeBundleStore.ReadManifest(Path.Combine(root, "runtime-probe", "probe-manifest.json"));
+            Assert.AreEqual(2, probeManifest.SchemaVersion);
+            Assert.IsNull(probeManifest.Binding);
+            Assert.IsEmpty(probeManifest.Requests);
             string html = File.ReadAllText(Path.Combine(root, "conflict-casefile.html"));
             Assert.IsTrue(html.Contains("Archive order", StringComparison.Ordinal));
             Assert.IsTrue(html.Contains("Reviewed decisions", StringComparison.Ordinal));
             Assert.IsTrue(html.Contains("ArchiveXL evidence", StringComparison.Ordinal));
             Assert.IsTrue(html.Contains("Archive overview", StringComparison.Ordinal));
+            Assert.IsTrue(html.Contains("Runtime observations", StringComparison.Ordinal));
         }
         finally
         {

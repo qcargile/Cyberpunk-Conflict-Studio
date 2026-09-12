@@ -279,6 +279,7 @@ public sealed class ProfileInvestigationWindowTests
     [TestMethod]
     [DataRow("_noteSaveTask")]
     [DataRow("_baselineWriteTask")]
+    [DataRow("_runtimeWriteTask")]
     public void RescanWaitsForPendingUserWritesBeforeReadingState(string pendingField)
     {
         RunAsync(async () =>
@@ -308,7 +309,9 @@ public sealed class ProfileInvestigationWindowTests
     }
 
     [TestMethod]
-    public void ExportWaitsUntilSavedNotesHaveLoaded()
+    [DataRow("_viewSaveTask")]
+    [DataRow("_runtimeWriteTask")]
+    public void ExportWaitsUntilProfileStateHasLoaded(string pendingField)
     {
         RunAsync(async () =>
         {
@@ -317,7 +320,7 @@ public sealed class ProfileInvestigationWindowTests
             TaskCompletionSource pendingView = new(TaskCreationOptions.RunContinuationsAsynchronously);
             try
             {
-                typeof(MainWindow).GetField("_viewSaveTask", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, pendingView.Task);
+                typeof(MainWindow).GetField(pendingField, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, pendingView.Task);
                 Task loading = Load(window, fixture, fixture.Scan(2, 0));
                 Assert.IsFalse(Get<Button>(window, "ExportButton").IsEnabled);
                 pendingView.SetResult();
@@ -390,6 +393,118 @@ public sealed class ProfileInvestigationWindowTests
         });
     }
 
+    [TestMethod]
+    public void RuntimeChecksRequireAnExplicitFindingActionBeforePreparingRequests()
+    {
+        RunAsync(async () =>
+        {
+            using Fixture fixture = new();
+            ProfileScanReceipt receipt = fixture.Scan(2, 0);
+            MainWindow window = new(fixture.State);
+            try
+            {
+                await Load(window, fixture, receipt);
+                Assert.IsTrue(Get<Button>(window, "CheckInGameButton").IsEnabled);
+                Assert.IsNull(Get<DataGrid>(window, "RuntimeRequestsDataGrid").ItemsSource);
+
+                await window.PrepareSelectedRuntimeCheckAsync();
+
+                Assert.AreEqual(4, Get<TabControl>(window, "MainTabControl").SelectedIndex);
+                Assert.IsTrue(Get<DataGrid>(window, "RuntimeRequestsDataGrid").Items.Count > 0);
+                Assert.IsTrue(Get<Button>(window, "GenerateRuntimePackageButton").IsEnabled);
+            }
+            finally { await Finish(window); }
+        });
+    }
+
+    [TestMethod]
+    public void ClosingWaitsForThePendingRuntimeStateWrite()
+    {
+        RunAsync(async () =>
+        {
+            using Fixture fixture = new();
+            ProfileScanReceipt receipt = fixture.Scan(2, 0);
+            MainWindow window = new(fixture.State);
+            TaskCompletionSource pendingWrite = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            await Load(window, fixture, receipt);
+            typeof(MainWindow).GetField("_runtimeWriteTask", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, pendingWrite.Task);
+            bool closed = false;
+            window.Closed += (_, _) => closed = true;
+
+            window.Close();
+
+            Assert.IsFalse(closed);
+            Assert.IsTrue((bool)typeof(MainWindow).GetField("_closingForWrites", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!);
+            pendingWrite.SetResult();
+            await window.PendingUserStateWrites;
+            await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            Assert.IsTrue(closed);
+        });
+    }
+
+    [TestMethod]
+    public void RuntimeChecksGenerateImportDisplayAndForgetWithoutDeletingThePackage()
+    {
+        RunAsync(async () =>
+        {
+            using Fixture fixture = new();
+            ProfileScanReceipt receipt = fixture.Scan(2, 0);
+            MainWindow window = new(fixture.State);
+            string package = Path.Combine(fixture.State, "generated-package");
+            string log = Path.Combine(fixture.State, "probe.log");
+            try
+            {
+                await Load(window, fixture, receipt);
+                await window.PrepareSelectedRuntimeCheckAsync();
+                await window.GenerateRuntimePackageAsync(package);
+                RuntimeInvestigationView current = Get<DataGrid>(window, "RuntimeRunsDataGrid").Items.Cast<RuntimeInvestigationView>().Single();
+                RuntimeProbeBundleRequest automated = current.Run.Manifest.Requests.Single(value => value.Execution == RuntimeProbeExecution.Automated);
+                File.WriteAllText(log, $"[ConflictStudioProbe] BEGIN manifest={current.Run.Manifest.ManifestId} run={current.Run.Manifest.RunId} profile={current.Run.Manifest.ProfileName}\n[ConflictStudioProbe] RESULT manifest={current.Run.Manifest.ManifestId} run={current.Run.Manifest.RunId} id={automated.Id} state=observed value=8\n[ConflictStudioProbe] END manifest={current.Run.Manifest.ManifestId} run={current.Run.Manifest.RunId}\n");
+
+                await window.ImportRuntimeResultsAsync(log, null);
+
+                Assert.IsTrue(Get<DataGrid>(window, "RuntimeRequestsDataGrid").Items.Cast<RuntimeRequestPresentation>().Any(value => value.State == "Observed" && value.Result == "8"));
+                Assert.IsTrue(Get<Button>(window, "ImportRuntimeResultsButton").IsEnabled);
+                await Load(window, fixture, fixture.Scan(3, 1));
+                Assert.AreEqual(RuntimeInvestigationFreshness.Stale, ((RuntimeInvestigationView)Get<DataGrid>(window, "RuntimeRunsDataGrid").SelectedItem).Freshness);
+                Assert.IsFalse(Get<Button>(window, "ImportRuntimeResultsButton").IsEnabled);
+                await window.ForgetSelectedRuntimeRunAsync();
+                Assert.AreEqual(0, Get<DataGrid>(window, "RuntimeRunsDataGrid").Items.Count);
+                Assert.IsTrue(Directory.Exists(package));
+            }
+            finally { await Finish(window); }
+        });
+    }
+
+    [TestMethod]
+    public void ProfileSwitchClearsThePreviousRuntimeRunBeforeTheNextReadCompletes()
+    {
+        RunAsync(async () =>
+        {
+            using Fixture fixture = new();
+            ProfileScanReceipt receipt = fixture.Scan(2, 0);
+            MainWindow window = new(fixture.State);
+            TaskCompletionSource pendingWrite = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            try
+            {
+                await Load(window, fixture, receipt);
+                await window.PrepareSelectedRuntimeCheckAsync();
+                await window.GenerateRuntimePackageAsync(Path.Combine(fixture.State, "old-package"));
+                Assert.AreEqual(1, Get<DataGrid>(window, "RuntimeRunsDataGrid").Items.Count);
+                typeof(MainWindow).GetField("_runtimeWriteTask", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, pendingWrite.Task);
+
+                Invoke(window, "LoadReceipt", receipt with { ProfileName = "Other", ScannedAtUtc = receipt.ScannedAtUtc.AddSeconds(1) }, fixture.Mo2, fixture.Profile, false);
+
+                Assert.IsNull(Get<DataGrid>(window, "RuntimeRunsDataGrid").ItemsSource);
+                Assert.IsFalse(Get<Button>(window, "ImportRuntimeResultsButton").IsEnabled);
+                pendingWrite.SetResult();
+                await window.RuntimeChecksReady;
+                Assert.AreEqual(0, Get<DataGrid>(window, "RuntimeRunsDataGrid").Items.Count);
+            }
+            finally { pendingWrite.TrySetResult(); await Finish(window); }
+        });
+    }
+
     private static ConflictWorkItem Item(ProfileScanReceipt receipt) => ConflictWorkQueueBuilder.Build(receipt, []).Single(item => item.Target == "Items.Test.value");
     private static T Get<T>(MainWindow window, string name) where T : FrameworkElement => (T)window.FindName(name);
     private static void Invoke(MainWindow window, string method, params object[] args) => typeof(MainWindow).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, args);
@@ -401,7 +516,7 @@ public sealed class ProfileInvestigationWindowTests
         Get<ComboBox>(window, "ProfileComboBox").ItemsSource = new[] { fixture.Profile };
         Get<ComboBox>(window, "ProfileComboBox").SelectedIndex = 0;
         Invoke(window, "LoadReceipt", receipt, fixture.Mo2, fixture.Profile, false);
-        await window.InvestigationReady;
+        await Task.WhenAll(window.InvestigationReady, window.RuntimeChecksReady);
     }
 
     private static async Task Finish(MainWindow window)

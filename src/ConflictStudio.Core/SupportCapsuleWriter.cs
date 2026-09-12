@@ -111,6 +111,15 @@ public static class SupportCapsuleWriter
         }
         html.Append("<h2>Runtime requests</h2>");
         foreach (RuntimeProbeRequest request in capsule.Probes.Requests) html.Append("<div class=\"item\"><strong>").Append(E(request.Target)).Append("</strong><p>").Append(E(request.Observation)).Append("</p></div>");
+        html.Append("<h2>Runtime observations</h2>");
+        foreach (RuntimeInvestigationEvidence evidence in capsule.RuntimeEvidence)
+        {
+            RuntimeProbeBinding? binding = evidence.Receipt.Binding;
+            html.Append("<div class=\"item\"><strong>").Append(E(binding?.Target ?? evidence.Receipt.ManifestId)).Append(" · ").Append(E(evidence.Freshness.ToString())).Append("</strong>");
+            if (!string.IsNullOrWhiteSpace(evidence.StaleReason)) html.Append("<p class=\"muted\">").Append(E(evidence.StaleReason)).Append("</p>");
+            foreach (RuntimeProbeObservation observation in evidence.Receipt.Observations) html.Append("<p><code>").Append(E(observation.Id)).Append(" · ").Append(E(observation.State.ToString())).Append(" · ").Append(E(observation.Value ?? observation.Message ?? string.Empty)).Append("</code></p>");
+            html.Append("</div>");
+        }
         return html.ToString();
     }
 

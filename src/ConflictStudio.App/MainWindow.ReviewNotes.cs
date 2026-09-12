@@ -62,7 +62,7 @@ public partial class MainWindow
         _userStateWriteFailed = false;
         SaveOpenNoteButton.IsEnabled = false;
         SaveReviewButton.IsEnabled = false;
-        ExportButton.IsEnabled = false;
+        UpdateSupportExportAvailability();
         ReviewRationaleTextBox.IsEnabled = false;
         try
         {
@@ -83,7 +83,7 @@ public partial class MainWindow
             if (!_investigationClosed && ReferenceEquals(receipt, _receipt) && !_historyBusy)
             {
                 ReviewRationaleTextBox.IsEnabled = true;
-                ExportButton.IsEnabled = true;
+                UpdateSupportExportAvailability();
                 SaveOpenNoteButton.IsEnabled = WorkQueueDataGrid.SelectedItems.Count > 0 && WorkQueueDataGrid.SelectedItems.Cast<ConflictWorkItem>().All(item => item.State != ConflictWorkState.Reviewed);
                 SaveReviewButton.IsEnabled = WorkQueueDataGrid.SelectedItems.Count > 0 && WorkQueueDataGrid.SelectedItems.Cast<ConflictWorkItem>().All(item => item.Classification != EvidenceClassification.Unresolved);
             }

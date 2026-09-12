@@ -259,6 +259,7 @@ public partial class CodeComparisonWindow : Window
         RenderPane(RightCodeBox, RightStatusTextBlock, comparison.Right, right, rightExcerpt, _rightError, showContextDifferences, declarationEvidence, operationEvidence);
         MoreContextButton.IsEnabled = _lineLimit < MaximumLineLimit && (HasMore(_leftDocument, leftExcerpt) || HasMore(_rightDocument, rightExcerpt));
         List<string> notes = ["Read-only source, verified when loaded. No files are modified."];
+        if (showContextDifferences) notes.Add("Blue marks surrounding text differences, not additional conflicts.");
         if (_leftError is not null || _rightError is not null) notes[0] = "One or more sources could not be verified. Available sources remain visible.";
         if (leftExcerpt is not null && rightExcerpt is not null && !comparison.Left.Any(value => value.IsDifferent) && !comparison.Right.Any(value => value.IsDifferent)) notes.Add(_witness?.IsDuplicateDeclaration == true
             ? "Both locations contain the repeated declaration or addition; identical text does not remove that duplication."
@@ -301,8 +302,9 @@ public partial class CodeComparisonWindow : Window
             }
             else if (line.IsDifferent && line.DifferenceLength > 0 && (showContextDifferences || focus && !declarationEvidence))
             {
+                bool context = !focus || declarationEvidence;
                 paragraph.Inlines.Add(new Run(line.Text[..line.DifferenceStart]));
-                paragraph.Inlines.Add(new Run(line.Text.Substring(line.DifferenceStart, line.DifferenceLength)) { Background = new SolidColorBrush(Color.FromRgb(88, 61, 14)), Foreground = new SolidColorBrush(Color.FromRgb(255, 216, 132)) });
+                paragraph.Inlines.Add(new Run(line.Text.Substring(line.DifferenceStart, line.DifferenceLength)) { Background = new SolidColorBrush(context ? Color.FromRgb(32, 59, 88) : Color.FromRgb(88, 61, 14)), Foreground = new SolidColorBrush(context ? Color.FromRgb(202, 233, 255) : Color.FromRgb(255, 216, 132)) });
                 paragraph.Inlines.Add(new Run(line.Text[(line.DifferenceStart + line.DifferenceLength)..]));
             }
             else paragraph.Inlines.Add(new Run(line.Text));
