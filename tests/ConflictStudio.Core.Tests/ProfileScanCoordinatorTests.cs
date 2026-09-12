@@ -27,7 +27,7 @@ public sealed class ProfileScanCoordinatorTests
             Assert.HasCount(1, first.InteractionFindings);
             Assert.AreEqual(JsonSerializer.Serialize(first.InteractionFindings), JsonSerializer.Serialize(cached.InteractionFindings));
             Assert.AreEqual(1, cached.Metrics!.CodeCacheHits);
-            Assert.AreEqual("0.5.0", first.ToolVersion);
+            Assert.AreEqual("1.0.0", first.ToolVersion);
             Assert.AreEqual("packed-1/code-9", first.AnalysisVersion);
             string? initialHash = first.InteractionFindings.Single().TweakRuntimeEvidence!.Writes.Single().CallSha256;
             WriteRoot(root, "bin\\x64\\plugins\\cyber_engine_tweaks\\mods\\Test\\init.lua", "TweakDB:SetFlat('Items.Test.value', 3)");
