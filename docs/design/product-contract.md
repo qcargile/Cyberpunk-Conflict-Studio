@@ -33,4 +33,4 @@ The remaining App history/view/review integration returns to that baseline. Exis
 
 The next work should improve conflict accuracy, explanations, source navigation, responsiveness and error recovery within the existing inspector. A roadmap milestone does not justify another subsystem. New workflows require a concrete user problem and a proportionate solution.
 
-This is a removal contract, not a public-release certification. The executable version and public 0.5.0 ZIP are not changed by the removal.
+Release 1.0 finalizes these existing workflows. The completed detector parity work and source/UI reviews remain the functional baseline. Release preparation updates version metadata, documentation and screenshots; the existing publisher verifies the executable, Vortex identity, source commit and package hashes. It adds no detector or investigation subsystem. The previous public 0.5.0 ZIP is retained.

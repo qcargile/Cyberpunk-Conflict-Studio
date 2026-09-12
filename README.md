@@ -2,7 +2,7 @@
 
 Conflict Studio shows what is happening inside one Cyberpunk 2077 mod profile. It reads MO2, Vortex, or the deployed game folder and traces archive order, loose files, REDmods, RedScript, CET hooks, TweakXL changes, and ArchiveXL manifests.
 
-This is a beta. Keep a backup and read the preview before changing archive order.
+Read the preview before changing archive order. The application backs up each applied order and offers Undo.
 
 ## What it does
 
@@ -10,11 +10,14 @@ This is a beta. Keep a backup and read the preview before changing archive order
 - Finds loose files installed by more than one active mod.
 - Separates replaced methods, wrappers, CET callbacks, and TweakXL changes instead of calling every shared target a conflict.
 - Opens the exact recorded operations behind supported code findings, with highlighted source and expandable context.
+- Lists the contributors to a code finding, searches source text, and follows supported local TweakXL record references.
+- Filters findings by a pair of mods while keeping other contributors visible.
 - Shows the selected source-file path and can open the file, show it in its folder, or copy the path.
 - Lets you show non-conflicting files only inside archives that also contain an overlap.
 - Previews archive-order changes before writing anything.
 - Backs up and verifies `modlist.txt`, then offers Undo.
 - Exports a privacy-filtered support report when something goes wrong.
+- Saves reviews, open notes and view preferences for each profile, and compares saved scans in Changes.
 
 Conflict Studio does not decide that two mods are compatible or incompatible. A shared method or record is only a place to inspect. Compile results, the loaded game state, and an in-game reproduction still matter.
 
@@ -42,7 +45,7 @@ See [GitHub releases](https://github.com/qcargile/Cyberpunk-Conflict-Studio/rele
 
 ## Install
 
-Download `Cyberpunk-Conflict-Studio-0.5.0-Nexus.zip` from Nexus Mods.
+The release ZIP is `Cyberpunk-Conflict-Studio-1.0.0.zip`. The same package supports MO2, Vortex and manual installations.
 
 ### Vortex
 
@@ -72,10 +75,10 @@ Run `ConflictStudio.exe` from the extracted folder, choose Manual, and select th
 The public package is a self-contained Windows x64 executable:
 
 ```powershell
-.\scripts\publish-win-x64.ps1 -Version 0.5.0
+.\scripts\publish-win-x64.ps1 -Version 1.0.0
 ```
 
-The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/0.5.0.json`.
+The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/1.0.0.json`.
 
 ## Credits
 

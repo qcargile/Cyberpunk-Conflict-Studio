@@ -1,0 +1,12 @@
+Version 1.0.0
+Added a contributor overview and source search to code comparisons
+Supported local TweakXL record references can be opened from the source inspector
+Added two-mod filtering while keeping other contributors visible
+Source files can open at the recorded line in a configured VS Code or Notepad++ editor
+Added notes that keep a finding open and explanations when an earlier review needs attention
+Added saved scan comparisons and an optional pinned baseline
+Filters, columns and view layout are remembered per profile
+Scan coverage and analysis limits are visible in the main window
+Clarified optional surrounding-text highlights in source comparisons
+Fixed a crash when selecting Manual without a game folder
+Support exports now contain reports only
