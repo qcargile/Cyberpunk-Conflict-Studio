@@ -29,26 +29,10 @@
 [/list]
 
 [img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/01-overview.png[/img]
-[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/04-archive-expanded.png[/img]
-[line]
-
-[font=Arial][size=5][color=#FCEE0A][b]▍ NEW IN 0.5.0[/b][/color][/size][/font]
-
-[font=Arial][b]View code[/b] opens the exact recorded operations behind a code finding and highlights the relevant source. You can switch between the operations involved and expand the surrounding context. File-ownership rows that show one installed copy taking priority use [b]Files involved[/b] instead.[/font]
-
-[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/14-code-interactions.jpg[/img]
-
-[font=Arial]The [b]Files involved[/b] column lists the filenames. Select a finding to see each file's location on disk, open the file, show it in its folder, or copy its path.[/font]
-
-[font=Arial]This comparison shows code requesting a value of 8 while another mod declares 0 for the same field.[/font]
-[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/15-source-comparison.jpg[/img]
-
-[font=Arial]This array comparison shows one source adding an entry while another removes it.[/font]
-[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/16-array-comparison.jpg[/img]
 
 [font=Arial]Turn on [b]Show non-conflicting files[/b] to inspect unique files alongside overlaps. [b]Only in conflicting archives[/b] keeps that expanded view inside archives that have an overlap.[/font]
 
-[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/17-conflicting-archives.jpg[/img]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/17-conflicting-archives.png[/img]
 [line]
 
 [font=Arial][size=5][color=#FCEE0A][b]▍ HOW TO READ CODE RESULTS[/b][/color][/size][/font]
@@ -60,9 +44,21 @@
 [*][font=Arial][b]Different values assigned[/b] proves that active sources assign different values. It does not prove the final in-game value without a runtime observation.[/font][/*]
 [/list]
 
-[font=Arial]Use [b]Reviewed[/b] to revisit findings you have already decided for this profile. Reviews are stored at [b]%LOCALAPPDATA%\Cyberpunk Conflict Studio\decisions\evidence-decisions.json[/b] and nothing is uploaded automatically. A support bundle you choose to export can include your review notes.[/font]
-
 [font=Arial]The detail card explains what the source shows, why Conflict Studio showed it, what it does not prove, the mods involved, and what to do.[/font]
+
+[font=Arial]The [b]Files involved[/b] column lists the filenames. Select a finding to see each file's location on disk, open the file, show it in its folder, or copy its path.[/font]
+
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/14-code-interactions.png[/img]
+
+[font=Arial][b]View code[/b] opens the exact recorded operations behind a code finding and highlights the relevant source. You can switch between the operations involved and expand the surrounding context. File-ownership rows that show one installed copy taking priority use [b]Files involved[/b] instead.[/font]
+
+[font=Arial]This comparison shows code requesting a value of 8 while another mod declares 0 for the same field.[/font]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/15-source-comparison.png[/img]
+
+[font=Arial]This array comparison shows one source adding an entry while another removes it.[/font]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/16-array-comparison.png[/img]
+
+[font=Arial]Use [b]Reviewed[/b] to revisit findings you have already decided for this profile. Reviews are stored at [b]%LOCALAPPDATA%\Cyberpunk Conflict Studio\decisions\evidence-decisions.json[/b] and nothing is uploaded automatically. A support bundle you choose to export can include your review notes.[/font]
 [line]
 
 [font=Arial][size=5][color=#FCEE0A][b]▍ VORTEX SETUP[/b][/color][/size][/font]
