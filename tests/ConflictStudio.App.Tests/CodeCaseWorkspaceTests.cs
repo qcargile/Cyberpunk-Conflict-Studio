@@ -9,6 +9,20 @@ public sealed class CodeCaseWorkspaceTests
     private static readonly string[] ExpectedActionableTargets = ["blocked", "check"];
 
     [TestMethod]
+    public void SearchFindsSourceFileNamesAndRelativePaths()
+    {
+        ConflictWorkItem item = Item("target", EvidenceClassification.Review, "Alpha", "Beta") with
+        {
+            SourceFiles = [new("Alpha", "r6\\tweaks\\WeaponStats.yaml")]
+        };
+
+        Assert.AreEqual(item, CodeCaseWorkspace.Filter([item], "weaponstats.yaml", "All", "All", "All mods").Single());
+        Assert.AreEqual(item, CodeCaseWorkspace.Filter([item], "r6\\tweaks", "All", "All", "All mods").Single());
+        Assert.IsEmpty(CodeCaseWorkspace.Filter([item], "missing.yaml", "All", "All", "All mods"));
+        Assert.IsEmpty(CodeCaseWorkspace.Filter([item], "weaponstats.yaml", "All", "All", "Gamma"));
+    }
+
+    [TestMethod]
     public void ActionableViewHidesCompositionAndSharedTargetNoise()
     {
         ConflictWorkItem[] items = [Item("blocked", EvidenceClassification.Exclusive, "Alpha", "Beta"), Item("check", EvidenceClassification.Review, "Alpha", "Gamma"), Item("compose", EvidenceClassification.Composable, "Beta", "Gamma"), Item("shared", EvidenceClassification.Informational, "Alpha", "Delta")];

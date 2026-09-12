@@ -21,4 +21,5 @@ internal sealed record CodeProfileAnalysis(
     SourceAnalysisFailure[] SourceFailures,
     int SourceItemCount,
     int ArchiveXlSourceCount,
-    CodeCoverageReceipt? CodeCoverage = null);
+    CodeCoverageReceipt? CodeCoverage = null,
+    CodeSourceEvidence[]? CodeEvidence = null);

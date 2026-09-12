@@ -20,6 +20,9 @@ public sealed class ProfileScanCoordinatorTests
             ProfileScanReceipt cached = ProfileScanCoordinator.ScanManual(root, DateTimeOffset.UtcNow, null, CancellationToken.None);
 
             Assert.IsEmpty(first.TweakOverlaps);
+            Assert.AreEqual(root, first.SourceProviders.Single().RootPath);
+            Assert.AreEqual(root, cached.SourceProviders.Single().RootPath);
+            Assert.IsFalse(JsonSerializer.Serialize(first).Contains("SourceProviders", StringComparison.Ordinal));
             Assert.IsEmpty(first.SharedStateWrites);
             Assert.HasCount(1, first.InteractionFindings);
             Assert.AreEqual(JsonSerializer.Serialize(first.InteractionFindings), JsonSerializer.Serialize(cached.InteractionFindings));
@@ -69,6 +72,7 @@ public sealed class ProfileScanCoordinatorTests
             Assert.AreEqual(ModManagerKind.Vortex, receipt.ManagerKind);
             Assert.AreEqual("Standard", receipt.ProfileName);
             CollectionAssert.AreEqual(ExpectedVortexProviders, receipt.ActiveProviders);
+            Assert.AreEqual(beta, receipt.SourceProviders.Single(value => value.Name == "Beta").RootPath);
             Assert.AreEqual("Beta", receipt.VirtualFileShadows.Single().WinnerProvider);
             Assert.IsTrue(receipt.RedScriptFlows.All(value => value.Provider == "Beta"));
             Assert.AreEqual(Path.GetFullPath(contextPath), receipt.ManagerContextPath);
@@ -302,6 +306,7 @@ public sealed class ProfileScanCoordinatorTests
             ProfileScanReceipt receipt = ProfileScanCoordinator.Scan(root, new Mo2Profile("Standard", modlist), new DateTimeOffset(2026, 8, 25, 16, 0, 0, TimeSpan.Zero));
 
             Assert.AreEqual(2, receipt.ActiveProviders.Length);
+            Assert.AreEqual(Path.Combine(root, "mods", "Alpha"), receipt.SourceProviders.Single(value => value.Name == "Alpha").RootPath);
             Assert.AreEqual(1, receipt.ArchiveFailures.Length);
             Assert.IsFalse(receipt.InteractionFindings.Any(value => value.Kind == InteractionFindingKind.Exclusive));
             Assert.IsTrue(receipt.VirtualFileShadows.Any(value => value.RelativePath == "r6\\scripts\\shared.reds"));

@@ -16,6 +16,9 @@ public sealed class CodeInteractionWindowTests
         ProfileScanReceipt receipt = new(2, "Standard", DateTimeOffset.UtcNow, ["Alpha", "Beta"], [], [], [], [],
             InteractionReportBuilder.Build(inventory), [], [], [], [], [], []);
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single();
+        Assert.AreEqual("initial.yaml, runtime.lua", item.FilesSummary);
+        StringAssert.Contains(item.FilesDetails, "Alpha: initial.yaml");
+        StringAssert.Contains(item.FilesDetails, "Beta: runtime.lua");
         MainWindow window = (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));
         typeof(MainWindow).GetField("_receipt", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(window, receipt);
         string details = (string)typeof(MainWindow).GetMethod("ExactEvidence", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(window, [item])!;
@@ -47,6 +50,8 @@ public sealed class CodeInteractionWindowTests
         Assert.AreEqual("Bool", declarations[0].GetProperty("Type").GetString());
         Assert.AreEqual(2, declarations[0].GetProperty("Line").GetInt32());
         Assert.AreEqual(4, declarations[1].GetProperty("Line").GetInt32());
+        Assert.AreEqual("fields.reds", item.FilesSummary);
+        Assert.AreEqual("Alpha: fields.reds", item.FilesDetails);
     }
 
     [TestMethod]

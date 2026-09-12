@@ -784,6 +784,46 @@ public sealed class ConflictWorkQueueBuilderTests
         Assert.AreNotEqual(originalHash, changedHash);
     }
 
+    [TestMethod]
+    public void FileColumnDistinguishesMatchingNamesAndPreservesReviewedEvidence()
+    {
+        ModSourceInventory inventory = new([
+            new("Alpha", "r6/scripts/alpha/combat.reds", "@replaceMethod(PlayerPuppet)\npublic func Value() -> Int32 { return 1; }"),
+            new("Beta", "r6/scripts/beta/combat.reds", "@replaceMethod(PlayerPuppet)\npublic func Value() -> Int32 { return 2; }")
+        ], [], [], []);
+        ProfileScanReceipt receipt = Receipt() with
+        {
+            InteractionFindings = InteractionReportBuilder.Build(inventory),
+            RedScriptFlows = RedScriptFlowEvidenceAnalyzer.Analyze(inventory.RedScripts)
+        };
+        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
+        EvidenceDecision decision = Decision(receipt, item, item.EvidenceSha256, "Chosen replacement.");
+        ConflictWorkItem reviewed = ConflictWorkQueueBuilder.Build(receipt, [decision]).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
+
+        Assert.AreEqual("combat.reds", item.FilesSummary);
+        Assert.AreEqual("Alpha: r6\\scripts\\alpha\\combat.reds" + Environment.NewLine + "Beta: r6\\scripts\\beta\\combat.reds", item.FilesDetails);
+        Assert.AreEqual(item.FilesDetails, reviewed.FilesDetails);
+        Assert.AreEqual(item.EvidenceSha256, reviewed.EvidenceSha256);
+        Assert.AreEqual(ConflictWorkState.Reviewed, reviewed.State);
+        string serialized = System.Text.Json.JsonSerializer.Serialize(item);
+        Assert.IsFalse(serialized.Contains("FilesSummary", StringComparison.Ordinal));
+        Assert.IsFalse(serialized.Contains("FilesDetails", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void FileColumnShowsRuntimeSourcesAndLeavesMissingEvidenceExplicit()
+    {
+        SharedStateWriteFinding shared = SharedStateWriteAnalyzer.Analyze([], [new("Alpha", "a.lua", "TweakDB:SetFlat('Camera.limit', 1)"), new("Beta", "b.lua", "TweakDB:SetFlat('Camera.limit', 2)")]).Single();
+        ConflictWorkItem[] items = ConflictWorkQueueBuilder.Build(Receipt() with { SharedStateWrites = [shared] }, []);
+        ConflictWorkItem item = items.Single(value => value.Surface == ConflictSurface.SharedState);
+
+        Assert.AreEqual("a.lua, b.lua", item.FilesSummary);
+        StringAssert.Contains(item.FilesDetails, "Alpha: a.lua");
+        StringAssert.Contains(item.FilesDetails, "Beta: b.lua");
+        Assert.AreEqual("Not recorded", items.Single(value => value.Surface == ConflictSurface.Diagnostic).FilesSummary);
+        Assert.AreEqual("same.reds", items.Single(value => value.Surface == ConflictSurface.VirtualFile).FilesSummary);
+    }
+
     private static ProfileScanReceipt Receipt()
     {
         ResourceProvider alpha = new("alpha.archive", 7, "base\\shared.mesh", new string('a', 40), ProviderName: "Alpha");

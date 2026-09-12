@@ -97,13 +97,14 @@ public sealed class ArchiveConflictTreeViewModel
         ResultSummary = "Run a profile scan to find archive conflicts.";
     }
 
-    public void Filter(string modQuery, string fileQuery, bool showNoConflicts)
+    public void Filter(string modQuery, string fileQuery, bool showNoConflicts, bool onlyConflictingArchives = false)
     {
         string modSearch = modQuery?.Trim() ?? string.Empty;
         string fileSearch = fileQuery?.Trim() ?? string.Empty;
         List<ArchiveConflictNode> archives = [];
         foreach (ArchiveConflictSummary summary in _summaries.OrderBy(value => value.OrderPosition ?? int.MaxValue))
         {
+            if (onlyConflictingArchives && summary.Winning.Length == 0 && summary.Losing.Length == 0 && summary.Redundant.Length == 0 && summary.Unresolved.Length == 0) continue;
             if (modSearch.Length > 0 && !summary.ArchiveName.Contains(modSearch, StringComparison.OrdinalIgnoreCase) && !summary.Provider.Contains(modSearch, StringComparison.OrdinalIgnoreCase)) continue;
             ArchiveConflictGroupNode[] groups = Groups(summary, fileSearch, showNoConflicts);
             if (groups.Length == 0) continue;

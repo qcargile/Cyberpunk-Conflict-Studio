@@ -44,12 +44,19 @@ public sealed record ProfileScanReceipt(
     ModManagerKind ManagerKind = ModManagerKind.Mo2,
     string? ManagerContextPath = null,
     bool DeploymentFresh = true,
-    CodeCoverageReceipt? CodeCoverage = null);
+    CodeCoverageReceipt? CodeCoverage = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public DeploymentProvider[] SourceProviders { get; init; } = [];
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public CodeSourceEvidence[] CodeEvidence { get; init; } = [];
+}
 
 public static class ProfileScanCoordinator
 {
     private const int PackedAnalysisSchema = 1;
-    private const int CodeAnalysisSchema = 5;
+    private const int CodeAnalysisSchema = 8;
 
     public static ProfileScanReceipt Scan(string mo2Root, Mo2Profile profile, DateTimeOffset scannedAtUtc)
         => Scan(mo2Root, profile, scannedAtUtc, null, CancellationToken.None);
@@ -274,6 +281,7 @@ public static class ProfileScanCoordinator
             LuaCallbackEvidence[] callbacks = LuaCallbackEvidenceAnalyzer.Analyze(inventory.LuaSources);
             TweakAnalysisResult tweakAnalysis = TweakInteractionAnalyzer.AnalyzeDetailed(inventory.TweakSources);
             InteractionFinding[] interactions = InteractionReportBuilder.Build(inventory, flows, callbacks, tweakAnalysis.Overlaps, tweakAnalysis.Operations, runtimeWrites);
+            CodeSourceEvidence[] codeEvidence = CodeSourceEvidenceBuilder.Build(prepared.FileManifest, inventory, interactions, flows, callbacks, runtimeWrites, stateWrites, tweakAnalysis.Operations);
             int sourceItemCount = inventory.RedScripts.Length + inventory.LuaSources.Length + inventory.TweakSources.Length;
             phases.Add(new ScanPhaseMetric("effective source", phase.ElapsedMilliseconds, sourceItemCount));
             progress?.Report(new ScanProgress("effective source", 2, 2));
@@ -286,7 +294,7 @@ public static class ProfileScanCoordinator
             ArchiveXlSourceFailure[] xlFailures = archiveXlSources.Failures.Concat(archiveXlAnalysis.Failures).ToArray();
             SourceAnalysisFailure[] sourceFailures = inventory.Failures.Concat(tweakAnalysis.Failures).Concat(virtualShadowScan.Failures).ToArray();
             CodeCoverageReceipt coverage = CodeCoverageReceipt.Build(inventory, callbacks, inventory.Failures.Concat(prepared.AdditionalFailures).ToArray(), archiveXlSources.Sources.Length);
-            code = new CodeProfileAnalysis(CodeAnalysisSchema, virtualShadowScan.Shadows, interactions, flows, stateWrites, callbacks, tweakAnalysis.Overlaps, chains, xlFailures, sourceFailures, sourceItemCount, archiveXlSources.Sources.Length, coverage);
+            code = new CodeProfileAnalysis(CodeAnalysisSchema, virtualShadowScan.Shadows, interactions, flows, stateWrites, callbacks, tweakAnalysis.Overlaps, chains, xlFailures, sourceFailures, sourceItemCount, archiveXlSources.Sources.Length, coverage, codeEvidence);
             codeToCache = code;
             phases.Add(new ScanPhaseMetric("ArchiveXL", phase.ElapsedMilliseconds, code.ArchiveXlSourceCount));
         }
@@ -377,7 +385,11 @@ public static class ProfileScanCoordinator
             prepared.ManagerKind,
             prepared.ManagerContextPath,
             prepared.DeploymentFresh,
-            codeResult.CodeCoverage);
+            codeResult.CodeCoverage)
+        {
+            SourceProviders = prepared.DeploymentProviders,
+            CodeEvidence = codeResult.CodeEvidence ?? []
+        };
     }
 
     private static string PackedCacheKey(PreparedProfileScan prepared, IReadOnlyList<string> exclusions)

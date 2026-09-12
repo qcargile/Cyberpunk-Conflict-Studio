@@ -27,6 +27,8 @@ public partial class MainWindow : Window, IDisposable
     private string? _vortexContextPath;
     private ProfileScanReceipt? _receipt;
     private ConflictWorkItem[] _workItems = [];
+    private SourceFileLocations? _sourceFileLocations;
+    private CodeComparisonWindow? _codeComparisonWindow;
     private EvidenceDecision[] _decisions = [];
     private CancellationTokenSource? _scanCancellation;
     private bool _scanLocked;
@@ -361,6 +363,13 @@ public partial class MainWindow : Window, IDisposable
     {
         Dispatcher.BeginInvoke(ConnectStyledScrollbars, DispatcherPriority.Loaded);
         ConflictWorkItem[] selected = WorkQueueDataGrid.SelectedItems.Cast<ConflictWorkItem>().ToArray();
+        ViewCodeButton.IsEnabled = selected.Length == 1 && selected[0].Comparisons.Length > 0;
+        ViewCodeButton.ToolTip = selected.Length != 1 ? "Select one finding to view its supporting code." : ViewCodeButton.IsEnabled
+            ? "Compare the exact operations supporting this finding."
+            : "No exact supporting comparison was recorded for this finding. Its files remain available below.";
+        SelectedFileComboBox.ItemsSource = _sourceFileLocations?.ForItems(selected) ?? [];
+        SelectedFileComboBox.SelectedIndex = SelectedFileComboBox.Items.Count > 0 ? 0 : -1;
+        SelectedFilesPanel.Visibility = SelectedFileComboBox.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (selected.Length == 0)
         {
             SelectedClassificationTextBlock.Text = "Select a case";
@@ -593,6 +602,7 @@ public partial class MainWindow : Window, IDisposable
         ArchiveModFilterTextBox.Text = string.Empty;
         ArchiveFileFilterTextBox.Text = string.Empty;
         ShowNonConflictingFilesCheckBox.IsChecked = false;
+        OnlyConflictingArchivesCheckBox.IsChecked = false;
         _archiveFilterTimer.Stop();
         ApplyArchiveTreeFilter();
     }
@@ -731,6 +741,58 @@ public partial class MainWindow : Window, IDisposable
         });
     }
 
+    private void SelectedFileChanged(object sender, SelectionChangedEventArgs e)
+    {
+        SourceFileLocation? file = SelectedFileComboBox.SelectedItem as SourceFileLocation;
+        SelectedFilePathTextBox.Text = file?.PhysicalPath ?? "Scan the profile again to locate this file.";
+        OpenSourceFileButton.IsEnabled = file?.PhysicalPath is not null;
+        ShowSourceFileButton.IsEnabled = file?.PhysicalPath is not null;
+        CopySourcePathButton.IsEnabled = file?.PhysicalPath is not null;
+    }
+
+    private void OpenSourceFileClicked(object sender, RoutedEventArgs e)
+    {
+        Execute("open-source-file", () =>
+        {
+            SourceFileLocation file = SelectedFileComboBox.SelectedItem as SourceFileLocation ?? throw new InvalidOperationException("Select a file first.");
+            SourceFileActions.OpenEditor(file);
+        });
+    }
+
+    private void ShowSourceFileClicked(object sender, RoutedEventArgs e)
+    {
+        Execute("show-source-file", () =>
+        {
+            SourceFileLocation file = SelectedFileComboBox.SelectedItem as SourceFileLocation ?? throw new InvalidOperationException("Select a file first.");
+            SourceFileActions.ShowInFolder(file);
+        });
+    }
+
+    private void CopySourcePathClicked(object sender, RoutedEventArgs e)
+    {
+        Execute("copy-source-path", () =>
+        {
+            if (SelectedFileComboBox.SelectedItem is not SourceFileLocation { PhysicalPath: string path }) throw new InvalidOperationException("Select a file with a recorded location first.");
+            Clipboard.SetText(path);
+            FooterStatusTextBlock.Text = "Copied file location";
+        });
+    }
+
+    private void ViewCodeClicked(object sender, RoutedEventArgs e)
+    {
+        Execute("view-code", () =>
+        {
+            if (WorkQueueDataGrid.SelectedItems.Count != 1 || WorkQueueDataGrid.SelectedItem is not ConflictWorkItem item) throw new InvalidOperationException("Select one finding to compare its source code.");
+            CodeFindingWitness[] comparisons = item.Comparisons;
+            if (comparisons.Length == 0) throw new InvalidOperationException("The exact supporting operations are unavailable for this finding. Run a fresh scan or open its files.");
+            _codeComparisonWindow?.Close();
+            CodeComparisonWindow window = new(this, item, comparisons);
+            _codeComparisonWindow = window;
+            window.Closed += (_, _) => { if (ReferenceEquals(_codeComparisonWindow, window)) _codeComparisonWindow = null; };
+            window.Show();
+        });
+    }
+
     private void OpenCodeProviderClicked(object sender, RoutedEventArgs e)
     {
         Execute("open-code-provider", () =>
@@ -829,6 +891,7 @@ public partial class MainWindow : Window, IDisposable
 
     private void LoadReceipt(ProfileScanReceipt receipt, string managerRoot, object profile, bool preserveArchiveUndo = false)
     {
+        _codeComparisonWindow?.Close();
         EvidenceDecisionStore decisionStore = new(_decisionDirectory);
         EvidenceDecision[] decisions = decisionStore.Load();
         if (decisionStore.LastRecoveryPath is not null) RecordAction("evidence-decisions", "recovered", $"Preserved unreadable review data as {Path.GetFileName(decisionStore.LastRecoveryPath)} and started with an empty review set");
@@ -877,6 +940,7 @@ public partial class MainWindow : Window, IDisposable
         _workspace.SetResourceProviders(receipt.InstallationId, receipt.ProfileName, receipt.ResourceConflicts.SelectMany(value => value.Providers).ToArray());
         _workspace.SetUnreadableArchives(receipt.ArchiveFailures.Select(value => value.ArchiveName).ToArray());
         _receipt = receipt;
+        _sourceFileLocations = new SourceFileLocations(receipt);
         _decisions = decisions;
         _workItems = workItems;
         _archiveRelationshipResources = receipt.ResourceConflicts.SelectMany(value => value.Providers).ToArray();
@@ -956,7 +1020,7 @@ public partial class MainWindow : Window, IDisposable
         string? selectedName = _selectedArchiveNode?.ArchiveName;
         string[] selectedNames = _selectedArchiveNames;
         int revision = ++_archiveFilterRevision;
-        _archiveTree.Filter(ArchiveModFilterTextBox?.Text ?? string.Empty, ArchiveFileFilterTextBox?.Text ?? string.Empty, ShowNonConflictingFilesCheckBox?.IsChecked == true);
+        _archiveTree.Filter(ArchiveModFilterTextBox?.Text ?? string.Empty, ArchiveFileFilterTextBox?.Text ?? string.Empty, ShowNonConflictingFilesCheckBox?.IsChecked == true, OnlyConflictingArchivesCheckBox?.IsChecked == true);
         ArchiveConflictTreeView.ItemsSource = _archiveTree.VisibleArchives;
         string previewState = _archivePreviewUnavailable ? "Preview unavailable · applied results shown · " : _previewingArchiveOrder ? "Preview · not applied · " : string.Empty;
         ArchiveConflictCountTextBlock.Text = previewState + _archiveTree.ResultSummary + (ShowNonConflictingFilesCheckBox?.IsChecked == true ? string.Empty : " Non-conflicting files are hidden.");
@@ -1143,9 +1207,13 @@ public partial class MainWindow : Window, IDisposable
 
     private void InvalidateReceipt()
     {
+        _codeComparisonWindow?.Close();
         _workspace.ClearProfileState();
         if (WorkQueueDataGrid is null) return;
         _receipt = null;
+        _sourceFileLocations = null;
+        SelectedFileComboBox.ItemsSource = null;
+        SelectedFilesPanel.Visibility = Visibility.Collapsed;
         _selectedArchiveNode = null;
         _orderProblemLane = ArchiveOrderProblemLane.None;
         _previewingArchiveOrder = false;
@@ -1700,6 +1768,7 @@ public partial class MainWindow : Window, IDisposable
 
     public void Dispose()
     {
+        _codeComparisonWindow?.Close();
         _archiveDragActive = false;
         _archiveDragWheelRemainder = 0;
         _archiveDragScrollTimer.Stop();

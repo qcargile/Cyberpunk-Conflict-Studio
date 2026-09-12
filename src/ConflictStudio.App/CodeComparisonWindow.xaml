@@ -1,0 +1,68 @@
+<Window x:Class="ConflictStudio.App.CodeComparisonWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Source comparison" Width="1320" Height="860" MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterOwner" Background="#070B0F" Foreground="#F2F6F7" FontFamily="Segoe UI">
+    <Grid Margin="18" Background="#070B0F">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,14">
+            <TextBlock Text="Source comparison" Foreground="#00F0FF" FontSize="13" />
+            <TextBlock x:Name="TargetTextBlock" Margin="0,5,0,0" FontSize="19" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <ComboBox x:Name="WitnessComboBox" Margin="0,9,0,0" SelectionChanged="WitnessSelectionChanged" Visibility="Collapsed" />
+            <TextBlock x:Name="WitnessTitleTextBlock" Margin="0,8,0,0" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock x:Name="ExplanationTextBlock" Margin="0,7,0,0" Foreground="#BAC7C5" TextWrapping="Wrap" MaxHeight="64" />
+            <TextBlock x:Name="ScopeTextBlock" Margin="0,5,0,0" Foreground="#8EA2AD" TextWrapping="Wrap" />
+            <TextBlock x:Name="BoundaryTextBlock" Margin="0,5,0,0" Foreground="#8EA2AD" TextWrapping="Wrap" MaxHeight="42" />
+        </StackPanel>
+        <DockPanel Grid.Row="1" Margin="0,0,0,12">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="MoreContextButton" Click="MoreContextClicked" Content="Show more context" IsEnabled="False" />
+                <Button Margin="8,0,0,0" Click="ResetContextClicked" Content="Reset context" />
+            </StackPanel>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock x:Name="SourcesTextBlock" />
+                <CheckBox x:Name="ContextDifferencesCheckBox" Margin="0,5,12,0" Content="Highlight other text differences" Checked="ContextHighlightChanged" Unchecked="ContextHighlightChanged" ToolTip="Include text differences outside the statements supporting this finding." />
+            </StackPanel>
+        </DockPanel>
+        <Grid Grid.Row="2" Grid.IsSharedSizeScope="True">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" SharedSizeGroup="SourceSelector" /><RowDefinition Height="Auto" SharedSizeGroup="SourcePath" /><RowDefinition Height="Auto" SharedSizeGroup="SourceStatus" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <StackPanel>
+                    <TextBlock x:Name="LeftRoleTextBlock" Margin="0,0,0,6" FontWeight="SemiBold" Foreground="#FFD884" TextWrapping="Wrap" MaxHeight="42" />
+                    <ComboBox x:Name="LeftSourceComboBox" SelectionChanged="SourceSelectionChanged" />
+                </StackPanel>
+                <TextBox x:Name="LeftPathTextBox" Grid.Row="1" Margin="0,7,0,0" IsReadOnly="True" Background="#090F14" Foreground="#BAC7C5" BorderThickness="0" TextWrapping="Wrap" MaxHeight="52" VerticalScrollBarVisibility="Auto" />
+                <TextBlock x:Name="LeftStatusTextBlock" Grid.Row="2" Margin="0,7,0,7" Foreground="#8EA2AD" TextWrapping="Wrap" />
+                <RichTextBox x:Name="LeftCodeBox" Grid.Row="3" IsReadOnly="True" IsDocumentEnabled="False" FontFamily="Consolas" FontSize="13" Background="#090F14" Foreground="#E7ECEB" BorderBrush="#28404D" BorderThickness="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AutomationProperties.Name="Left source code" />
+                <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button x:Name="LeftOpenButton" Tag="Left" Click="OpenFileClicked" Content="Open file" />
+                    <Button x:Name="LeftFolderButton" Tag="Left" Margin="8,0,0,0" Click="ShowFolderClicked" Content="Show in folder" />
+                    <Button x:Name="LeftCopyButton" Tag="Left" Margin="8,0,0,0" Click="CopyPathClicked" Content="Copy path" />
+                </StackPanel>
+            </Grid>
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" Background="#28404D" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions><RowDefinition Height="Auto" SharedSizeGroup="SourceSelector" /><RowDefinition Height="Auto" SharedSizeGroup="SourcePath" /><RowDefinition Height="Auto" SharedSizeGroup="SourceStatus" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <StackPanel>
+                    <TextBlock x:Name="RightRoleTextBlock" Margin="0,0,0,6" FontWeight="SemiBold" Foreground="#FFD884" TextWrapping="Wrap" MaxHeight="42" />
+                    <ComboBox x:Name="RightSourceComboBox" SelectionChanged="SourceSelectionChanged" />
+                </StackPanel>
+                <TextBox x:Name="RightPathTextBox" Grid.Row="1" Margin="0,7,0,0" IsReadOnly="True" Background="#090F14" Foreground="#BAC7C5" BorderThickness="0" TextWrapping="Wrap" MaxHeight="52" VerticalScrollBarVisibility="Auto" />
+                <TextBlock x:Name="RightStatusTextBlock" Grid.Row="2" Margin="0,7,0,7" Foreground="#8EA2AD" TextWrapping="Wrap" />
+                <RichTextBox x:Name="RightCodeBox" Grid.Row="3" IsReadOnly="True" IsDocumentEnabled="False" FontFamily="Consolas" FontSize="13" Background="#090F14" Foreground="#E7ECEB" BorderBrush="#28404D" BorderThickness="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AutomationProperties.Name="Right source code" />
+                <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button x:Name="RightOpenButton" Tag="Right" Click="OpenFileClicked" Content="Open file" />
+                    <Button x:Name="RightFolderButton" Tag="Right" Margin="8,0,0,0" Click="ShowFolderClicked" Content="Show in folder" />
+                    <Button x:Name="RightCopyButton" Tag="Right" Margin="8,0,0,0" Click="CopyPathClicked" Content="Copy path" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+        <TextBlock x:Name="ComparisonStatusTextBlock" Grid.Row="3" Margin="0,10,0,0" Foreground="#8EA2AD" TextWrapping="Wrap" />
+    </Grid>
+</Window>

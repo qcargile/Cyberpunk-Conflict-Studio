@@ -22,7 +22,20 @@ public sealed record RedScriptFlowEvidence(
     EvidenceImpact Impact,
     int Line,
     string SourceHash,
-    string? BodySha256 = null);
+    string? BodySha256 = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string OperationId { get; init; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int OperationOccurrence { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal int SourceStartIndex { get; init; } = -1;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal int SourceEndIndex { get; init; } = -1;
+}
 
 public static class RedScriptFlowEvidenceAnalyzer
 {
@@ -62,14 +75,18 @@ public static class RedScriptFlowEvidenceAnalyzer
                     ImpactFor(kind, continuation),
                     LineAt(source.Text, method.Index),
                     Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(source.Text))),
-                    SemanticEvidence.Sha256(target + "|" + declarationAndBody)));
+                    SemanticEvidence.Sha256(target + "|" + declarationAndBody))
+                {
+                    SourceStartIndex = annotation.Index,
+                    SourceEndIndex = closingBrace
+                });
             }
         }
 
-        return evidence.OrderBy(value => value.Provider, StringComparer.OrdinalIgnoreCase)
+        return CodeOperationIdentity.NumberFlows(evidence.OrderBy(value => value.Provider, StringComparer.OrdinalIgnoreCase)
             .ThenBy(value => value.FilePath, StringComparer.OrdinalIgnoreCase)
             .ThenBy(value => value.Line)
-            .ToArray();
+            .ToArray()).ToArray();
     }
 
     private static int ClosingBrace(string text, int openingBrace)
@@ -343,7 +360,12 @@ public static class RedScriptFlowEvidenceAnalyzer
         int line = 1;
         for (int position = 0; position < index; position++)
         {
-            if (text[position] == '\n') line++;
+            if (text[position] == '\r')
+            {
+                line++;
+                if (position + 1 < index && text[position + 1] == '\n') position++;
+            }
+            else if (text[position] == '\n') line++;
         }
 
         return line;
@@ -352,7 +374,20 @@ public static class RedScriptFlowEvidenceAnalyzer
 
 public enum SharedStateSurface { TweakDb, Blackboard, StatusEffect, StatPool, Persistence }
 
-public sealed record SharedStateWrite(string Provider, string FilePath, SharedStateSurface Surface, string Target, int Line, string Operation = "", string Evidence = "", string SourceHash = "", string? CallSha256 = null);
+public sealed record SharedStateWrite(string Provider, string FilePath, SharedStateSurface Surface, string Target, int Line, string Operation = "", string Evidence = "", string SourceHash = "", string? CallSha256 = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string OperationId { get; init; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int OperationOccurrence { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal int SourceStartIndex { get; init; } = -1;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal int SourceEndIndex { get; init; } = -1;
+}
 
 public sealed record SharedStateWriteFinding(
     SharedStateSurface Surface,
@@ -399,7 +434,7 @@ public static class SharedStateWriteAnalyzer
         List<SharedStateWrite> writes = [];
         foreach (RedScriptSource source in RedScriptConditionalSourceFilter.Filter(redScripts)) Extract(source.Provider, source.FilePath, SourceTextMask.RedScript(source.Text, false), SourceTextMask.RedScript(source.Text, true), writes);
         foreach (LuaSource source in luaSources) Extract(source.Provider, source.FilePath, SourceTextMask.Lua(source.Text), SourceTextMask.Lua(source.Text, true), writes, lua: true);
-        return writes.ToArray();
+        return CodeOperationIdentity.NumberWrites(writes).ToArray();
     }
 
     public static SharedStateWriteFinding[] Analyze(IReadOnlyList<SharedStateWrite> writes)
@@ -439,7 +474,11 @@ public static class SharedStateWriteAnalyzer
             string operation = Regex.Match(match.Value, "(?:\\.|:)(?<operation>[A-Za-z_][A-Za-z0-9_]*)\\s*\\(").Groups["operation"].Value;
             int end = surface == SharedStateSurface.TweakDb ? CallEnd(syntax, syntax.IndexOf('(', match.Index)) : -1;
             string evidence = surface == SharedStateSurface.TweakDb ? SemanticEvidence.Normalize(end < 0 ? match.Value : text[match.Index..(end + 1)]) : Regex.Replace(match.Value, "\\s+", " ").Trim();
-            writes.Add(new SharedStateWrite(provider, filePath, surface, match.Groups["target"].Value, RedScriptFlowEvidenceAnalyzer.LineAt(text, match.Index), operation, evidence, sourceHash, end < 0 ? null : SemanticEvidence.Sha256(evidence)));
+            writes.Add(new SharedStateWrite(provider, filePath, surface, match.Groups["target"].Value, RedScriptFlowEvidenceAnalyzer.LineAt(text, match.Index), operation, evidence, sourceHash, end < 0 ? null : SemanticEvidence.Sha256(evidence))
+            {
+                SourceStartIndex = match.Index,
+                SourceEndIndex = end
+            });
         }
     }
 
@@ -471,7 +510,14 @@ public sealed record LuaCallbackEvidence(
     int Line,
     string SourceHash,
     LuaSourceCopy[] Copies,
-    string? CallbackSha256 = null);
+    string? CallbackSha256 = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string OperationId { get; init; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int OperationOccurrence { get; init; }
+}
 
 public static class LuaCallbackEvidenceAnalyzer
 {
@@ -502,9 +548,9 @@ public static class LuaCallbackEvidenceAnalyzer
             }
         }
 
-        return evidence.OrderBy(value => value.Target, StringComparer.Ordinal)
+        return CodeOperationIdentity.NumberCallbacks(evidence.OrderBy(value => value.Target, StringComparer.Ordinal)
             .ThenBy(value => value.Kind)
-            .ToArray();
+            .ToArray()).ToArray();
     }
 
     private static (string Target, bool Literal) Target(string expression)

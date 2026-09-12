@@ -130,4 +130,28 @@ public sealed class ResourcePathIndexTests
         File.WriteAllText(path, provider);
         return path;
     }
+
+    [TestMethod]
+    public void OversizedUnsignedKarkHeaderReturnsFailedEvidence()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-kark-recovery-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string index = WriteIndex(root, "Alpha");
+            byte[] bytes = new byte[9];
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes, 0x4B52414B);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), uint.MaxValue);
+            File.WriteAllBytes(index, bytes);
+            string decoder = Path.Combine(root, "bin", "x64", "oo2ext_7_win64.dll");
+            Directory.CreateDirectory(Path.GetDirectoryName(decoder)!);
+            File.WriteAllText(decoder, "unused");
+            Mo2InstancePaths paths = new(root, root, string.Empty, string.Empty, root, "MO2");
+
+            ResourcePathIndexResult result = ResourcePathIndex.Resolve(paths, [new("Alpha", Path.Combine(root, "Alpha"))], new HashSet<ulong> { 1 });
+
+            Assert.AreEqual(ResourcePathIndexState.Failed, result.Evidence.State);
+            StringAssert.Contains(result.Evidence.Message, "unsafe output size");
+        }
+        finally { Directory.Delete(root, true); }
+    }
 }

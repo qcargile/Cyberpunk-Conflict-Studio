@@ -6,7 +6,14 @@ namespace ConflictStudio.Core;
 
 public enum InteractionFindingKind { Exclusive, Review, Composable, Informational }
 
-public sealed record RedScriptFieldDeclaration(string Provider, string FilePath, int Line, string Type);
+public sealed record RedScriptFieldDeclaration(string Provider, string FilePath, int Line, string Type)
+{
+    [JsonIgnore]
+    public string OperationId { get; init; } = string.Empty;
+
+    [JsonIgnore]
+    public int OperationOccurrence { get; init; }
+}
 
 public sealed record TweakRuntimeEvidence(TweakOperation[] Declarations, SharedStateWrite[] Writes)
 {
