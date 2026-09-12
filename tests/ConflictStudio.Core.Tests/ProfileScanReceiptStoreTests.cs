@@ -12,13 +12,15 @@ public sealed class ProfileScanReceiptStoreTests
         string path = Path.Combine(Path.GetTempPath(), "conflict-studio-receipt-" + Guid.NewGuid().ToString("N") + ".json");
         try
         {
-            ProfileScanReceipt receipt = new(2, "Standard", new DateTimeOffset(2026, 8, 25, 16, 0, 0, TimeSpan.Zero), ["Alpha"], ["Alpha.archive"], [], [], [], [], [], [], [], [], [], []);
+            ProfileScanReceipt receipt = new(2, "Standard", new DateTimeOffset(2026, 8, 25, 16, 0, 0, TimeSpan.Zero), ["Alpha"], ["Alpha.archive"], [], [], [], [], [], [], [], [], [], [], ToolVersion: "0.5.0", AnalysisVersion: "packed-1/code-8");
 
             ProfileScanReceiptStore.Write(path, receipt);
             ProfileScanReceipt loaded = ProfileScanReceiptStore.Read(path);
 
             Assert.AreEqual("Standard", loaded.ProfileName);
             Assert.AreEqual("Alpha", loaded.ActiveProviders.Single());
+            Assert.AreEqual("0.5.0", loaded.ToolVersion);
+            Assert.AreEqual("packed-1/code-8", loaded.AnalysisVersion);
         }
         finally
         {

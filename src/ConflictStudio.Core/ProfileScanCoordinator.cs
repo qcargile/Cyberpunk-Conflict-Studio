@@ -44,7 +44,9 @@ public sealed record ProfileScanReceipt(
     ModManagerKind ManagerKind = ModManagerKind.Mo2,
     string? ManagerContextPath = null,
     bool DeploymentFresh = true,
-    CodeCoverageReceipt? CodeCoverage = null)
+    CodeCoverageReceipt? CodeCoverage = null,
+    string? ToolVersion = null,
+    string? AnalysisVersion = null)
 {
     [System.Text.Json.Serialization.JsonIgnore]
     public DeploymentProvider[] SourceProviders { get; init; } = [];
@@ -385,7 +387,9 @@ public static class ProfileScanCoordinator
             prepared.ManagerKind,
             prepared.ManagerContextPath,
             prepared.DeploymentFresh,
-            codeResult.CodeCoverage)
+            codeResult.CodeCoverage,
+            typeof(ProfileScanCoordinator).Assembly.GetName().Version?.ToString(3),
+            $"packed-{PackedAnalysisSchema}/code-{CodeAnalysisSchema}")
         {
             SourceProviders = prepared.DeploymentProviders,
             CodeEvidence = codeResult.CodeEvidence ?? []

@@ -1,6 +1,8 @@
 using ConflictStudio.App;
 using ConflictStudio.Core;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ConflictStudio.App.Tests;
 
@@ -137,6 +139,7 @@ public sealed class ProfileScanReceiptHistoryTests
             Assert.IsFalse(result.LatestReplaced);
             Assert.AreEqual("unreadable historical receipt", File.ReadAllText(latest));
             Assert.AreEqual(receipt.ScannedAtUtc, ProfileScanReceiptStore.Read(result.TimestampedScanPath).ScannedAtUtc);
+            Assert.IsNull(result.PreviousReceipt);
         }
         finally
         {
@@ -195,10 +198,101 @@ public sealed class ProfileScanReceiptHistoryTests
             Assert.AreEqual(previous.ScannedAtUtc, ProfileScanReceiptStore.Read(result.PreservedInvalidPath!).ScannedAtUtc);
             Assert.AreEqual(current.ScannedAtUtc, ProfileScanReceiptStore.Read(latest).ScannedAtUtc);
             Assert.IsNull(result.Drift);
+            Assert.IsNull(result.PreviousReceipt);
         }
         finally
         {
             Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void PersistenceReturnsTheCompatiblePreviousReceipt()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-previous-receipt-" + Guid.NewGuid().ToString("N"));
+        ProfileScanReceipt previous = Receipt() with { InstallationId = "installation" };
+        ProfileScanReceipt current = previous with { ScannedAtUtc = previous.ScannedAtUtc.AddMinutes(1) };
+        try
+        {
+            ProfileScanReceiptPersistence.Save(root, previous);
+
+            ProfileScanReceiptPersistenceResult result = ProfileScanReceiptPersistence.Save(root, current);
+
+            Assert.AreEqual(previous.ScannedAtUtc, result.PreviousReceipt?.ScannedAtUtc);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void OlderCompletedScanDoesNotReplaceTheNewerLatestReceipt()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-out-of-order-receipt-" + Guid.NewGuid().ToString("N"));
+        ProfileScanReceipt older = Receipt() with { InstallationId = "installation" };
+        ProfileScanReceipt newer = older with { ScannedAtUtc = older.ScannedAtUtc.AddMinutes(1) };
+        try
+        {
+            ProfileScanReceiptPersistence.Save(root, newer);
+
+            ProfileScanReceiptPersistenceResult result = ProfileScanReceiptPersistence.Save(root, older);
+
+            Assert.IsFalse(result.LatestReplaced);
+            Assert.IsNull(result.PreviousReceipt);
+            Assert.AreEqual(newer.ScannedAtUtc, ProfileScanReceiptStore.Read(Path.Combine(root, "latest.json")).ScannedAtUtc);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void QueuedSaveCanBeCanceledWithoutWritingOrBlockingTheNextSave()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-canceled-history-save-" + Guid.NewGuid().ToString("N"));
+        string fullRoot = Path.GetFullPath(root);
+        string mutexIdentity = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(fullRoot.TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant())));
+        using Mutex holder = new(false, "Local\\CyberpunkConflictStudio-ReceiptHistory-" + mutexIdentity);
+        using CancellationTokenSource cancellation = new();
+        using ManualResetEventSlim started = new();
+        Exception? failure = null;
+        ProfileScanReceipt stale = Receipt() with { InstallationId = "installation" };
+        Thread queued = new(() =>
+        {
+            started.Set();
+            try { ProfileScanReceiptPersistence.Save(root, stale, cancellationToken: cancellation.Token); }
+            catch (Exception exception) { failure = exception; }
+        }) { IsBackground = true };
+        bool ownsMutex = false;
+        try
+        {
+            ownsMutex = holder.WaitOne(TimeSpan.FromSeconds(2));
+            Assert.IsTrue(ownsMutex);
+            queued.Start();
+            Assert.IsTrue(started.Wait(TimeSpan.FromSeconds(2)));
+            Assert.IsTrue(SpinWait.SpinUntil(() => (queued.ThreadState & ThreadState.WaitSleepJoin) != 0, TimeSpan.FromSeconds(2)));
+
+            cancellation.Cancel();
+
+            Assert.IsTrue(queued.Join(TimeSpan.FromSeconds(2)));
+            Assert.IsInstanceOfType<OperationCanceledException>(failure);
+            Assert.IsFalse(Directory.Exists(root));
+            holder.ReleaseMutex();
+            ownsMutex = false;
+
+            ProfileScanReceiptPersistenceResult recovered = ProfileScanReceiptPersistence.Save(root, stale);
+
+            Assert.IsTrue(recovered.LatestReplaced);
+            Assert.AreEqual(stale.ScannedAtUtc, ProfileScanReceiptStore.Read(Path.Combine(root, "latest.json")).ScannedAtUtc);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            if (queued.IsAlive) queued.Join(TimeSpan.FromSeconds(2));
+            if (ownsMutex) holder.ReleaseMutex();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
 
