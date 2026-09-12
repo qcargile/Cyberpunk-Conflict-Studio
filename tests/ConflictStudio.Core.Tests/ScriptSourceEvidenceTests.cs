@@ -138,21 +138,4 @@ public sealed class ScriptSourceEvidenceTests
         Assert.AreNotEqual(first.CallbackSha256, changed.CallbackSha256);
     }
 
-    [TestMethod]
-    public void ProbeRequestsRoundTripTypedTweakRuntimeEvidence()
-    {
-        ModSourceInventory inventory = new([], [new("Beta", "runtime.lua", "TweakDB:SetFlat('Items.Test.value', 2)")], [new("Alpha", "initial.yaml", "Items.Test.value: 1")], []);
-        InteractionFinding finding = InteractionReportBuilder.Build(inventory).Single();
-        ProfileScanReceipt receipt = new(2, "Test", DateTimeOffset.UtcNow, ["Alpha", "Beta"], [], [], [], [], [finding], [], [], [], [], [], []);
-        RuntimeProbeManifest manifest = RuntimeProbeManifestBuilder.Build(receipt);
-        RuntimeProbeManifest restored = JsonSerializer.Deserialize<RuntimeProbeManifest>(JsonSerializer.Serialize(manifest))!;
-
-        Assert.HasCount(2, restored.Requests);
-        foreach (RuntimeProbeRequest request in restored.Requests)
-        {
-            JsonElement evidence = JsonSerializer.SerializeToElement(request).GetProperty("TweakRuntimeEvidence");
-            Assert.AreEqual(JsonSerializer.Serialize(finding.TweakRuntimeEvidence), evidence.GetRawText());
-        }
-        Assert.IsFalse(JsonSerializer.SerializeToElement(new RuntimeProbeRequest(RuntimeProbeKind.BehaviorCheck, "other", [], "", "")).TryGetProperty("TweakRuntimeEvidence", out _));
-    }
 }

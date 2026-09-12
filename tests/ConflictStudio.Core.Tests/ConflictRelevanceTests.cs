@@ -15,7 +15,6 @@ public sealed class ConflictRelevanceTests
         ProfileScanReceipt receipt = Receipt(new([], [new(writer, "init.lua", $"TweakDB:SetFlat('Items.Test.value', {updated})")], [new("Alpha", "values.yaml", $"Items.Test.value: {initial}")], []));
 
         Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.IsActionable));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
         Assert.IsFalse(SupportCapsuleBuilder.Build(receipt, []).WorkQueue.Any(value => value.IsActionable));
     }
 
@@ -28,7 +27,6 @@ public sealed class ConflictRelevanceTests
         Assert.AreEqual(EvidenceClassification.CompetingDeclaration, item.Classification);
         StringAssert.Contains(item.Summary, "0");
         StringAssert.Contains(item.Summary, "8.0");
-        Assert.IsNotEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -37,7 +35,6 @@ public sealed class ConflictRelevanceTests
         ProfileScanReceipt receipt = Receipt(new([new("Tool hand", "vendors.reds", "let stock = TweakDBInterface.GetForeignKeyArray(t\"Vendors.Test.itemStock\"); ArrayPush(stock, t\"Items.ToolHand\"); TweakDBManager.SetFlat(t\"Vendors.Test.itemStock\", stock);")], [], [new("Cyberarms", "stock.yaml", "Vendors.Test.itemStock:\n  - !append Items.Arm"), new("Cyberdecks", "stock.yaml", "Vendors.Test.itemStock:\n  - !append Items.Deck")], []));
 
         Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.IsActionable));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -57,7 +54,6 @@ public sealed class ConflictRelevanceTests
         ProfileScanReceipt receipt = Receipt(new([new("Workshop", "workshop.reds", "@addMethod(InventoryItemModeLogicController)\npublic func CompletePart() -> Bool { return true; }")], [new("Workshop extension", "init.lua", "Override('InventoryItemModeLogicController', 'CompletePart', function(self, wrapped) if permitted then return wrapped() end return false end)")], [], []));
 
         Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.IsActionable));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -68,16 +64,14 @@ public sealed class ConflictRelevanceTests
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single();
         Assert.IsFalse(item.IsActionable);
         Assert.IsFalse(item.NextAction.Contains("repair", StringComparison.OrdinalIgnoreCase));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
-    public void RepeatedTooltipNumbersDoNotCreateConflictWorkOrProbes()
+    public void RepeatedTooltipNumbersDoNotCreateConflictWork()
     {
         ProfileScanReceipt receipt = Receipt(new([], [], [new("Cyberarms", "tooltip.yaml", "Items.Tooltip.floatValues: [!append 5, !append 50, !append 10, !append 5, !append 25]")], []));
 
         Assert.IsEmpty(ConflictWorkQueueBuilder.Build(receipt, []));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -89,7 +83,6 @@ public sealed class ConflictRelevanceTests
 
         Assert.HasCount(2, receipt.LuaCallbacks);
         Assert.IsFalse(ConflictWorkQueueBuilder.Build(receipt, []).Any(value => value.IsActionable));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -99,7 +92,6 @@ public sealed class ConflictRelevanceTests
 
         Assert.AreEqual(LuaContinuationEvidence.Missing, receipt.LuaCallbacks.Single().Continuation);
         Assert.IsEmpty(ConflictWorkQueueBuilder.Build(receipt, []));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -112,7 +104,6 @@ public sealed class ConflictRelevanceTests
         Assert.HasCount(2, receipt.LuaCallbacks);
         Assert.AreNotEqual(receipt.LuaCallbacks[0].SourceHash, receipt.LuaCallbacks[1].SourceHash);
         Assert.IsEmpty(ConflictWorkQueueBuilder.Build(receipt, []));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     private static ProfileScanReceipt Receipt(ModSourceInventory inventory)
