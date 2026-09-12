@@ -221,7 +221,7 @@ public partial class MainWindow : Window, IDisposable
             try { LoadVortexContext(DefaultVortexContextPath, false); }
             catch (Exception exception) { ShowError("vortex-context", exception); }
         }
-        else if (kind == ModManagerKind.Manual && (Directory.Exists(Path.Combine(Mo2RootTextBox.Text, "archive", "pc", "content")) || File.Exists(Path.Combine(Mo2RootTextBox.Text, "bin", "x64", "Cyberpunk2077.exe"))))
+        else if (kind == ModManagerKind.Manual && !string.IsNullOrWhiteSpace(Mo2RootTextBox.Text) && (Directory.Exists(Path.Combine(Mo2RootTextBox.Text, "archive", "pc", "content")) || File.Exists(Path.Combine(Mo2RootTextBox.Text, "bin", "x64", "Cyberpunk2077.exe"))))
         {
             ManualProfileOption option = new("Deployed game", Path.GetFullPath(Mo2RootTextBox.Text));
             ProfileComboBox.ItemsSource = new[] { option };
