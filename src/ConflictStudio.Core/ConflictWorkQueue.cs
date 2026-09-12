@@ -39,6 +39,12 @@ public sealed record ConflictWorkItem(
     public ConflictSourceFile[] SourceFiles { get; init; } = [];
     [JsonIgnore]
     public CodeFindingWitness[] Comparisons { get; init; } = [];
+    public string AnalysisLabel { get; init; } = string.Empty;
+    public string? ReviewStatusLabel { get; init; }
+    public EvidenceDecision? PreviousReview { get; init; }
+    public string? PreviousReviewReason { get; init; }
+    public EvidenceNote? OpenNote { get; init; }
+    public bool NoteIsStale { get; init; }
     public string StateLabel => State switch
     {
         ConflictWorkState.NeedsAttention => "Needs attention",
@@ -128,10 +134,12 @@ public sealed record ConflictWorkItem(
 
 public static class ConflictWorkQueueBuilder
 {
-    public static ConflictWorkItem[] Build(ProfileScanReceipt receipt, IReadOnlyList<EvidenceDecision> decisions)
+    public static ConflictWorkItem[] Build(ProfileScanReceipt receipt, IReadOnlyList<EvidenceDecision> decisions, IReadOnlyList<EvidenceNote>? notes = null)
     {
         ArgumentNullException.ThrowIfNull(receipt);
         ArgumentNullException.ThrowIfNull(decisions);
+        ILookup<(ConflictSurface Surface, string Target), EvidenceDecision> reviewContext = decisions.Where(value => value.InstallationId == receipt.InstallationId && value.ProfileName == receipt.ProfileName).ToLookup(value => (value.Surface, value.Target));
+        ILookup<(ConflictSurface Surface, string Target), EvidenceNote> noteContext = (notes ?? []).Where(value => value.InstallationId == receipt.InstallationId && value.ProfileName == receipt.ProfileName).ToLookup(value => (value.Surface, value.Target));
         List<ConflictWorkItem> items = [];
         InteractionLookup interactions = new(receipt);
         CodeFindingWitnessBuilder comparisons = new(receipt);
@@ -217,7 +225,7 @@ public static class ConflictWorkQueueBuilder
         }
         foreach (RdarArchiveWarning warning in receipt.ArchiveWarnings ?? []) Add(items, receipt, decisions, ConflictSurface.Diagnostic, warning.ArchiveName + " path metadata", EvidenceClassification.Unresolved, warning.Message, "Files in this archive can still be compared by their IDs, but some names could not be read. Verify the game files if the error names a missing game library. If it names the archive, share the report with the mod author.", null, [warning.Provider], [warning.ArchiveName, warning.Message]);
         if (receipt.ResourcePathIndexEvidence is { State: not ResourcePathIndexState.Resolved } pathEvidence) Add(items, receipt, decisions, ConflictSurface.Diagnostic, "Global resource path index", EvidenceClassification.Unresolved, pathEvidence.Message, "Some file names could not be read. Check the named missing or unreadable files, repair the CET or game installation as appropriate, then scan again. Share the report if you need help.", null, pathEvidence.Provider is null ? ["Resource path resolver"] : [pathEvidence.Provider], [pathEvidence.State.ToString(), pathEvidence.Message]);
-        return items.OrderBy(value => StateOrder(value.State)).ThenBy(value => value.Classification == EvidenceClassification.Unresolved ? 0 : 1).ThenBy(value => value.Surface).ThenBy(value => value.Target, StringComparer.OrdinalIgnoreCase).ToArray();
+        return items.Select(value => WithReviewContext(receipt, reviewContext[(value.Surface, value.Target)], noteContext[(value.Surface, value.Target)], value)).OrderBy(value => StateOrder(value.State)).ThenBy(value => value.Classification == EvidenceClassification.Unresolved ? 0 : 1).ThenBy(value => value.Surface).ThenBy(value => value.Target, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     private static bool IsParserCoverageLimitation(SourceAnalysisFailure failure)
@@ -243,6 +251,7 @@ public static class ConflictWorkQueueBuilder
             .OrderBy(value => value.Provider, StringComparer.OrdinalIgnoreCase).ThenBy(value => value.FilePath, StringComparer.OrdinalIgnoreCase).ToArray();
         items.Add(new ConflictWorkItem(surface, target, effectiveClassification, state, summary, action, winner, providers, hash, reviewed ? decision!.Rationale : null, resultOverride, proofOverride, meaningOverride, boundaryOverride)
         {
+            AnalysisLabel = AnalysisLabel(classification, resultOverride, providers.Length),
             RelatedTargets = relatedTargets ?? [target],
             Comparisons = comparisonFactory?.Invoke(hash) ?? [],
             SourceFiles = files.Select(value => new ConflictSourceFile(value.Provider, value.FilePath)).ToArray(),
@@ -250,6 +259,53 @@ public static class ConflictWorkQueueBuilder
             FilesDetails = files.Length == 0 ? "No source file was recorded for this item." : string.Join(Environment.NewLine, files.Select(value => $"{value.Provider}: {value.FilePath}"))
         });
     }
+
+    private static ConflictWorkItem WithReviewContext(ProfileScanReceipt receipt, IEnumerable<EvidenceDecision> decisions, IEnumerable<EvidenceNote> notes, ConflictWorkItem item)
+    {
+        bool reviewed = item.State == ConflictWorkState.Reviewed;
+        EvidenceDecision? previous = reviewed || receipt.InstallationId is null ? null : decisions
+            .Where(value => string.Equals(value.InstallationId, receipt.InstallationId, StringComparison.Ordinal)
+                && string.Equals(value.ProfileName, receipt.ProfileName, StringComparison.Ordinal)
+                && value.Surface == item.Surface
+                && string.Equals(value.Target, item.Target, StringComparison.Ordinal))
+            .OrderByDescending(value => value.ReviewedAtUtc)
+            .FirstOrDefault();
+        string? previousReason = previous is null ? null : previous.Providers.SequenceEqual(item.Providers, StringComparer.OrdinalIgnoreCase)
+            ? "Review expired because the evidence changed."
+            : "Review expired because the providers changed.";
+        EvidenceNote? note = receipt.InstallationId is null ? null : notes
+            .Where(value => string.Equals(value.InstallationId, receipt.InstallationId, StringComparison.Ordinal)
+                && string.Equals(value.ProfileName, receipt.ProfileName, StringComparison.Ordinal)
+                && value.Surface == item.Surface
+                && string.Equals(value.Target, item.Target, StringComparison.Ordinal))
+            .OrderByDescending(value => value.Providers.SequenceEqual(item.Providers, StringComparer.OrdinalIgnoreCase) && string.Equals(value.EvidenceSha256, item.EvidenceSha256, StringComparison.Ordinal))
+            .ThenByDescending(value => value.UpdatedAtUtc)
+            .FirstOrDefault();
+        bool noteIsStale = note is not null && (!note.Providers.SequenceEqual(item.Providers, StringComparer.OrdinalIgnoreCase) || !string.Equals(note.EvidenceSha256, item.EvidenceSha256, StringComparison.Ordinal));
+        return item with
+        {
+            ReviewStatusLabel = reviewed ? "Reviewed" : previous is null ? null : "Review expired",
+            PreviousReview = previous,
+            PreviousReviewReason = previousReason,
+            OpenNote = note,
+            NoteIsStale = noteIsStale
+        };
+    }
+
+    private static string AnalysisLabel(EvidenceClassification classification, string? resultOverride, int providerCount)
+        => resultOverride ?? (classification switch
+        {
+            EvidenceClassification.Redundant => "No action: same change",
+            EvidenceClassification.EffectiveOverwrite => "One installed copy takes priority",
+            EvidenceClassification.Exclusive => "Confirmed: different replacements",
+            EvidenceClassification.Review => "Review: behavior must be checked",
+            EvidenceClassification.CompilerEvidence => "Review: duplicate code definitions",
+            EvidenceClassification.Composable => "No action: no competing outcome found",
+            EvidenceClassification.OrderSensitive => providerCount == 1 ? "Review: one source may stop the next" : "Review: one mod may stop the next",
+            EvidenceClassification.Informational => "Information: shared target",
+            EvidenceClassification.CompetingDeclaration => "Review: different values assigned",
+            _ => "Review: evidence is incomplete"
+        });
 
     private static IEnumerable<(string Provider, string FilePath)> InteractionFiles(InteractionFinding finding, InteractionLookup interactions)
     {

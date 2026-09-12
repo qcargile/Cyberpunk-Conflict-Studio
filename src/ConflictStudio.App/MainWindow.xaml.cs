@@ -19,7 +19,7 @@ public partial class MainWindow : Window, IDisposable
     private readonly ArchiveOrderWorkspaceViewModel _workspace = new();
     private readonly Mo2ProfileWorkspaceViewModel _profiles = new();
     private readonly DiagnosticLog _diagnostics;
-    private readonly WorkspacePreferenceStore _preferences = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cyberpunk Conflict Studio"));
+    private readonly WorkspacePreferenceStore _preferences;
     private readonly string _decisionDirectory;
     private readonly ArchiveConflictTreeViewModel _archiveTree = new();
     private readonly List<DiagnosticAction> _sessionActions = [];
@@ -63,13 +63,17 @@ public partial class MainWindow : Window, IDisposable
     private bool _applyingPendingOrderForClose;
     private static string DefaultVortexContextPath => VortexDeploymentGuard.DefaultContextPath;
 
-    public MainWindow()
+    public MainWindow() : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cyberpunk Conflict Studio")) { }
+
+    internal MainWindow(string applicationData)
     {
-        string applicationData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cyberpunk Conflict Studio");
+        ArgumentException.ThrowIfNullOrWhiteSpace(applicationData);
+        _preferences = new WorkspacePreferenceStore(applicationData);
         _diagnostics = new DiagnosticLog(applicationData);
         _decisionDirectory = Path.Combine(applicationData, "decisions");
         InitializeComponent();
         DataContext = _workspace;
+        InitializeInvestigation(applicationData);
         ArchiveOrderListBox.AllowDrop = true;
         ArchiveOrderListBox.PreviewMouseLeftButtonDown += ArchiveOrderMouseDown;
         ArchiveOrderListBox.MouseMove += ArchiveOrderMouseMove;
@@ -342,7 +346,7 @@ public partial class MainWindow : Window, IDisposable
         finally
         {
             SetScanLocked(false);
-            ExportButton.IsEnabled = _receipt is not null;
+            ExportButton.IsEnabled = _receipt is not null && !_historyBusy && _noteSaveTask.IsCompleted;
         }
     }
 
@@ -357,7 +361,12 @@ public partial class MainWindow : Window, IDisposable
         _scanCancellation.Cancel();
     }
 
-    private void QueueFilterChanged(object sender, EventArgs e) => ApplyQueueFilter();
+    private void QueueFilterChanged(object sender, EventArgs e)
+    {
+        if (_restoringView) return;
+        ApplyQueueFilter();
+        ScheduleViewSave();
+    }
 
     private void QueueSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -372,6 +381,7 @@ public partial class MainWindow : Window, IDisposable
         SelectedFilesPanel.Visibility = SelectedFileComboBox.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (selected.Length == 0)
         {
+            PresentReviewContext(selected);
             SelectedClassificationTextBlock.Text = "Select a case";
             SelectedTargetTextBlock.Text = "Select a row to see details";
             SelectedMeaningTextBlock.Text = string.Empty;
@@ -393,11 +403,12 @@ public partial class MainWindow : Window, IDisposable
             ReopenButton.IsEnabled = false;
             return;
         }
-        SaveReviewButton.IsEnabled = selected.All(value => value.Classification != EvidenceClassification.Unresolved);
+        SaveReviewButton.IsEnabled = !_historyBusy && _noteSaveTask.IsCompleted && selected.All(value => value.Classification != EvidenceClassification.Unresolved);
         int reopenableCount = selected.Count(IsReviewed);
         ReopenButton.IsEnabled = reopenableCount > 0;
         if (selected.Length > 1)
         {
+            PresentReviewContext(selected);
             string[] providers = selected.SelectMany(value => value.Providers).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray();
             SelectedClassificationTextBlock.Text = "MULTIPLE CASES";
             SelectedTargetTextBlock.Text = $"{selected.Length:N0} cases selected";
@@ -420,7 +431,7 @@ public partial class MainWindow : Window, IDisposable
             return;
         }
         ConflictWorkItem item = selected[0];
-        SelectedClassificationTextBlock.Text = item.ClassificationLabel;
+        SelectedClassificationTextBlock.Text = string.IsNullOrWhiteSpace(item.AnalysisLabel) ? item.ClassificationLabel : item.AnalysisLabel;
         SelectedTargetTextBlock.Text = item.Target;
         SelectedMeaningTextBlock.Text = item.MeaningLabel;
         SelectedSummaryTextBlock.Text = item.Summary;
@@ -443,10 +454,12 @@ public partial class MainWindow : Window, IDisposable
         CopyEvidenceButton.IsEnabled = true;
         SaveReviewButton.Content = "Save review";
         ReopenButton.Content = "Reopen";
+        PresentReviewContext(selected);
     }
 
     private void ReviewClicked(object sender, RoutedEventArgs e)
     {
+        if (_historyBusy || !_noteSaveTask.IsCompleted) return;
         string? outcome = (ReviewOutcomeComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
         if (string.IsNullOrWhiteSpace(outcome))
         {
@@ -593,8 +606,10 @@ public partial class MainWindow : Window, IDisposable
 
     private void ArchiveTreeFilterChanged(object sender, EventArgs e)
     {
+        if (_restoringView) return;
         _archiveFilterTimer.Stop();
         _archiveFilterTimer.Start();
+        ScheduleViewSave();
     }
 
     private void ClearArchiveFiltersClicked(object sender, RoutedEventArgs e)
@@ -878,12 +893,17 @@ public partial class MainWindow : Window, IDisposable
 
     private void ExportClicked(object sender, RoutedEventArgs e)
     {
+        if (_historyBusy || !_noteSaveTask.IsCompleted)
+        {
+            WorkspaceStatusTextBlock.Text = "Wait for saved notes to finish loading or saving before exporting.";
+            return;
+        }
         Execute("support-export", () =>
         {
             if (_receipt is null) throw new InvalidOperationException("Run a profile scan before exporting.");
             string safeProfile = string.Concat(_receipt.ProfileName.Select(value => Path.GetInvalidFileNameChars().Contains(value) ? '_' : value));
             string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Cyberpunk Conflict Studio Exports", safeProfile + " " + DateTime.Now.ToString("yyyy-MM-dd HHmmss", System.Globalization.CultureInfo.InvariantCulture));
-            SupportCapsuleWriter.Write(directory, SupportCapsuleBuilder.Build(_receipt, _decisions));
+            SupportCapsuleWriter.Write(directory, SupportCapsuleBuilder.Build(_receipt, _decisions, _notes));
             WorkspaceStatusTextBlock.Text = $"Support bundle exported to {directory}";
             FooterStatusTextBlock.Text = "Support bundle exported";
         });
@@ -891,11 +911,21 @@ public partial class MainWindow : Window, IDisposable
 
     private void LoadReceipt(ProfileScanReceipt receipt, string managerRoot, object profile, bool preserveArchiveUndo = false)
     {
+        bool restoreView = _receipt is null || _receipt.InstallationId != receipt.InstallationId || _receipt.ProfileName != receipt.ProfileName || _receipt.ManagerKind != receipt.ManagerKind;
+        SaveCurrentView();
+        _restoringView = true;
+        try { LoadReceiptContents(receipt, managerRoot, profile, preserveArchiveUndo); }
+        finally { _restoringView = false; }
+        BeginInvestigation(receipt, restoreView);
+    }
+
+    private void LoadReceiptContents(ProfileScanReceipt receipt, string managerRoot, object profile, bool preserveArchiveUndo)
+    {
         _codeComparisonWindow?.Close();
         EvidenceDecisionStore decisionStore = new(_decisionDirectory);
         EvidenceDecision[] decisions = decisionStore.Load();
         if (decisionStore.LastRecoveryPath is not null) RecordAction("evidence-decisions", "recovered", $"Preserved unreadable review data as {Path.GetFileName(decisionStore.LastRecoveryPath)} and started with an empty review set");
-        ConflictWorkItem[] workItems = ConflictWorkQueueBuilder.Build(receipt, decisions);
+        ConflictWorkItem[] workItems = ConflictWorkQueueBuilder.Build(receipt, decisions, _notes);
         if (receipt.EditableArchiveInventory is null || receipt.EditableArchiveOrder is null) throw new InvalidDataException("The scan receipt has no editable legacy archive snapshot.");
         Mo2ArchiveWriteTarget target;
         Func<Mo2ArchiveProfile> refresh;
@@ -975,13 +1005,6 @@ public partial class MainWindow : Window, IDisposable
         DiagnosticsSummaryTextBlock.Text = failureCount == 0 ? "No scan failures. If an action misbehaves, reproduce it once and copy the report." : $"{failureCount} scan issue{(failureCount == 1 ? string.Empty : "s")} recorded. Copy the report when requesting support.";
         UpdateSupportSurface();
         HistoricalDiagnosticsTextBox.Text = _diagnostics.ReadRecent();
-        Exception? persistenceFailure = ProfileScanReceiptHistory.TryPersist(() => PersistReceipt(receipt));
-        if (persistenceFailure is not null)
-        {
-            _diagnostics.TryWrite("receipt-history", persistenceFailure);
-            RecordAction("receipt-history", "failed", $"{persistenceFailure.GetType().Name}: {persistenceFailure.Message}");
-            FooterStatusTextBlock.Text += " · scan history could not be saved";
-        }
     }
 
     private void PresentArchiveOrderEvidence(ArchiveOrderEvidence evidence)
@@ -1010,7 +1033,9 @@ public partial class MainWindow : Window, IDisposable
         string provider = QueueProviderComboBox?.SelectedItem as string ?? "All mods";
         ConflictWorkItem[] rows = CodeCaseWorkspace.Filter(CodeWorkItems(), query, view, surface, provider);
         ConflictWorkItem? selected = WorkQueueDataGrid.SelectedItem as ConflictWorkItem;
+        SortDescription[] sort = CurrentCodeSort();
         WorkQueueDataGrid.ItemsSource = rows;
+        RestoreCodeSort(sort);
         WorkQueueDataGrid.SelectedItem = selected is null ? rows.FirstOrDefault() : rows.FirstOrDefault(value => value.Target == selected.Target && value.Surface == selected.Surface) ?? rows.FirstOrDefault();
     }
 
@@ -1069,14 +1094,14 @@ public partial class MainWindow : Window, IDisposable
         SetOverviewSelection([]);
     }
 
-    private void ReloadQueue(ConflictWorkItem selected)
+    private void ReloadQueue(ConflictWorkItem? selected)
     {
         if (_receipt is null) return;
-        _workItems = ConflictWorkQueueBuilder.Build(_receipt, _decisions);
+        _workItems = ConflictWorkQueueBuilder.Build(_receipt, _decisions, _notes);
         ConflictWorkItem[] codeItems = CodeWorkItems();
         UpdateCodeCaseCounts(codeItems);
         ApplyQueueFilter();
-        WorkQueueDataGrid.SelectedItem = (WorkQueueDataGrid.ItemsSource as IEnumerable<ConflictWorkItem>)?.FirstOrDefault(value => value.Target == selected.Target && value.Surface == selected.Surface);
+        if (selected is not null) WorkQueueDataGrid.SelectedItem = (WorkQueueDataGrid.ItemsSource as IEnumerable<ConflictWorkItem>)?.FirstOrDefault(value => value.Target == selected.Target && value.Surface == selected.Surface);
     }
 
     private ConflictWorkItem[] CodeWorkItems() => _workItems.Where(value => value.Surface != ConflictSurface.PackedResource).ToArray();
@@ -1123,25 +1148,6 @@ public partial class MainWindow : Window, IDisposable
         lines.AddRange((receipt.SourceFailures ?? []).Select(value => $"{value.Surface} · {value.Provider} · {value.FilePath} · {value.Message}"));
         lines.AddRange(receipt.ArchiveXlFailures.Select(value => $"ArchiveXL · {value.Provider} · {value.FilePath} · {value.Message}"));
         return lines.Count == 0 ? "No diagnostics." : string.Join(Environment.NewLine, lines);
-    }
-
-    private void PersistReceipt(ProfileScanReceipt receipt)
-    {
-        if (receipt.InstallationId is null) return;
-        string safeProfile = string.Concat(receipt.ProfileName.Select(value => Path.GetInvalidFileNameChars().Contains(value) ? '_' : value));
-        string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cyberpunk Conflict Studio", "receipts", receipt.InstallationId, safeProfile);
-        ProfileScanReceiptPersistenceResult result = ProfileScanReceiptPersistence.Save(directory, receipt);
-        if (result.Drift is not null)
-        {
-            ProfileScanDrift drift = result.Drift;
-            if (drift.NewWorkItems.Length + drift.RemovedWorkItems.Length + drift.ChangedWorkItems.Length > 0) FooterStatusTextBlock.Text += " · " + ScanHistoryPresentation.Describe(drift);
-        }
-        else if (result.InvalidHistory)
-        {
-            FooterStatusTextBlock.Text += result.PreservedInvalidPath is null ? " · previous scan history could not be preserved and was not replaced"
-                : result.IncompatibleHistory ? " · previous scan history used a different scan identity and was preserved"
-                : " · previous scan history was preserved because it could not be read";
-        }
     }
 
     private void UpdateProgress(ScanProgress progress)
@@ -1207,6 +1213,8 @@ public partial class MainWindow : Window, IDisposable
 
     private void InvalidateReceipt()
     {
+        SaveCurrentView();
+        ClearInvestigation();
         _codeComparisonWindow?.Close();
         _workspace.ClearProfileState();
         if (WorkQueueDataGrid is null) return;
@@ -1768,6 +1776,7 @@ public partial class MainWindow : Window, IDisposable
 
     public void Dispose()
     {
+        DisposeInvestigation();
         _codeComparisonWindow?.Close();
         _archiveDragActive = false;
         _archiveDragWheelRemainder = 0;
@@ -1779,6 +1788,7 @@ public partial class MainWindow : Window, IDisposable
 
     protected override void OnClosing(CancelEventArgs e)
     {
+        if (FlushInvestigationBeforeClose(e)) return;
         if (_allowClose || !_workspace.CanReset && !_workspace.CanApply)
         {
             base.OnClosing(e);

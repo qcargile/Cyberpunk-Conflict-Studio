@@ -51,4 +51,27 @@ public sealed class SupportCapsuleBuilderTests
         Assert.AreEqual(0, capsule.Decisions.Length);
         Assert.AreEqual(0, capsule.Summary.ReviewDecisions);
     }
+
+    [TestMethod]
+    public void BuildExportsOnlyRelevantPrivacySafeNotes()
+    {
+        TweakOperation alpha = new("Alpha", "alpha.yaml", "Items.Pistol.damage", "10", false);
+        TweakOperation beta = new("Beta", "beta.yaml", "Items.Pistol.damage", "20", false);
+        InteractionFinding finding = new(alpha.Target, InteractionFindingKind.Review, "review", ["Alpha", "Beta"]);
+        ProfileScanReceipt receipt = new ProfileScanReceipt(1, "Standard", DateTimeOffset.UtcNow, ["Alpha", "Beta"], [], [], [], [], [finding], [], [], [], [new TweakOverlap(finding.Target, TweakOverlapKind.ScalarOverwrite, [alpha, beta])], [], []) with { InstallationId = "install" };
+        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single();
+        EvidenceNote relevant = new("Standard", "install", item.Surface, item.Target, item.Providers, item.EvidenceSha256, "Check C:/private/runtime.log", DateTimeOffset.UtcNow);
+        EvidenceNote otherProfile = relevant with { ProfileName = "Other", Text = "Other profile note." };
+        EvidenceNote otherTarget = relevant with { Target = "Other.Target", Text = "Other target note." };
+
+        SupportCapsule capsule = SupportCapsuleBuilder.Build(receipt, [], [otherProfile, otherTarget, relevant]);
+
+        Assert.AreEqual(1, capsule.Notes.Length);
+        Assert.AreEqual("Check [private path]", capsule.Notes.Single().Text);
+        Assert.AreEqual("Check [private path]", capsule.WorkQueue.Single().OpenNote!.Text);
+        string serialized = System.Text.Json.JsonSerializer.Serialize(capsule);
+        Assert.IsFalse(serialized.Contains("C:/private", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(serialized.Contains("Other profile note.", StringComparison.Ordinal));
+        Assert.IsFalse(serialized.Contains("Other target note.", StringComparison.Ordinal));
+    }
 }

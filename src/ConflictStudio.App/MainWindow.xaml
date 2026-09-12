@@ -335,7 +335,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="58" />
-            <RowDefinition Height="74" />
+            <RowDefinition Height="Auto" MinHeight="74" />
             <RowDefinition Height="*" />
             <RowDefinition Height="30" />
         </Grid.RowDefinitions>
@@ -357,6 +357,7 @@
             </Grid>
         </Border>
         <Border Grid.Row="1" Padding="18,10" Background="#0B1218" BorderBrush="#28404D" BorderThickness="0,0,0,1">
+            <StackPanel>
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="125" />
@@ -392,6 +393,13 @@
                     <TextBlock x:Name="ScanPhaseTextBlock" Margin="0,5,0,0" FontSize="11" Foreground="{StaticResource Muted}" Text="Ready" />
                 </StackPanel>
             </Grid>
+            <Expander x:Name="ScanCoverageExpander" Margin="0,8,0,0" IsExpanded="False">
+                <Expander.Header><TextBlock x:Name="CoverageSummaryTextBlock" Foreground="{StaticResource Muted}" Text="Run a scan to see its coverage." TextWrapping="Wrap" /></Expander.Header>
+                <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto" Margin="0,7,0,0">
+                    <TextBlock x:Name="CoverageDetailsTextBlock" TextWrapping="Wrap" Foreground="#BAC7C5" />
+                </ScrollViewer>
+            </Expander>
+            </StackPanel>
         </Border>
         <TabControl x:Name="MainTabControl" Grid.Row="2" Margin="12" Background="{StaticResource Panel}" BorderBrush="#2A393C">
             <TabItem Header="Archives" IsSelected="True">
@@ -548,9 +556,9 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="0" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="2*" MinHeight="110" />
+                        <RowDefinition Height="2*" MinHeight="90" />
                         <RowDefinition Height="6" />
-                        <RowDefinition Height="3*" MinHeight="240" />
+                        <RowDefinition Height="3*" MinHeight="160" />
                     </Grid.RowDefinitions>
                     <Expander x:Name="CodeSummaryExpander" IsExpanded="True" Header="Code interactions · what to check">
                         <Grid Margin="0,6,0,0">
@@ -558,7 +566,10 @@
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                 <TextBlock Foreground="{StaticResource Muted}" Text="Confirmed conflicts are changes that cannot both take effect. Items marked Review may be intentional and are not confirmed problems. Select an item to see what differs and what you can do. Identical overlaps are hidden from the default view." TextWrapping="Wrap" />
-                                <TextBlock x:Name="ColumnResizeHint" Grid.Column="1" Margin="18,0,0,0" Foreground="#80F8FF" FontWeight="SemiBold" Text="COLUMNS  ↔  Drag a divider to resize" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="14,0,0,0">
+                                    <Button x:Name="ColumnsButton" Content="Columns" Click="ColumnsClicked" ToolTip="Choose visible columns. Drag column dividers to resize." />
+                                    <Button Margin="7,0,0,0" Content="Reset view" Click="ResetViewClicked" />
+                                </StackPanel>
                             </Grid>
                             <UniformGrid Grid.Row="1" Margin="0,10,0,0" Columns="4">
                                 <Border Padding="10" Margin="0,0,8,0" Background="#151E20" BorderBrush="#2A393C" BorderThickness="1">
@@ -634,7 +645,8 @@
                             <DataGridTemplateColumn Header="What CS found" Width="245">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock FontWeight="SemiBold" Text="{Binding ClassificationLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Summary}">
+                                        <StackPanel>
+                                        <TextBlock FontWeight="SemiBold" Text="{Binding AnalysisLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Summary}">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Foreground" Value="#D7E0DE" />
@@ -651,6 +663,10 @@
                                                 </Style>
                                             </TextBlock.Style>
                                         </TextBlock>
+                                        <TextBlock Text="{Binding ReviewStatusLabel}" Foreground="#C6ACF4" FontSize="11" TextTrimming="CharacterEllipsis">
+                                            <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding ReviewStatusLabel}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                        </TextBlock>
+                                        </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -697,8 +713,6 @@
                                 <TextBlock x:Name="SelectedMeaningTextBlock" Margin="0,3,0,0" Foreground="#E7ECEB" TextWrapping="Wrap" />
                                 <TextBlock Margin="0,8,0,0" FontSize="10" Foreground="{StaticResource Muted}" Text="WHAT THE SOURCE SHOWS" />
                                 <TextBlock x:Name="SelectedSummaryTextBlock" Margin="0,3,0,0" Foreground="#BAC7C5" TextWrapping="Wrap" />
-                                <TextBlock Margin="0,8,0,0" FontSize="10" Foreground="{StaticResource Muted}" Text="WHY CS SHOWED IT" />
-                                <TextBlock x:Name="SelectedProofTextBlock" Margin="0,3,0,0" Foreground="#E7ECEB" TextWrapping="Wrap" />
                                 <TextBlock Margin="0,8,0,0" FontSize="10" Foreground="{StaticResource Muted}" Text="WHAT THIS DOES NOT PROVE" />
                                 <TextBlock x:Name="SelectedBoundaryTextBlock" Margin="0,3,0,0" Foreground="#9FB0AE" TextWrapping="Wrap" />
                                 <TextBlock Margin="0,8,0,0" FontSize="10" Foreground="{StaticResource Muted}" Text="MODS INVOLVED" />
@@ -709,7 +723,10 @@
                                 <Expander x:Name="TechnicalEvidenceExpander" Margin="0,8,0,0" Header="Technical details">
                                     <Grid Margin="0,5,0,0">
                                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                                        <Button x:Name="CopyEvidenceButton" HorizontalAlignment="Right" IsEnabled="False" Click="CopyEvidenceClicked" Content="Copy details" />
+                                        <DockPanel>
+                                            <Button x:Name="CopyEvidenceButton" DockPanel.Dock="Right" HorizontalAlignment="Right" IsEnabled="False" Click="CopyEvidenceClicked" Content="Copy details" />
+                                            <TextBlock x:Name="SelectedProofTextBlock" Margin="0,3,12,0" Foreground="#E7ECEB" TextWrapping="Wrap" />
+                                        </DockPanel>
                                         <TextBox x:Name="ExpertEvidenceTextBox" Grid.Row="1" Margin="0,6,0,0" Height="170" FontFamily="Consolas" FontSize="11" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AutomationProperties.Name="Selected technical evidence" />
                                     </Grid>
                                 </Expander>
@@ -729,6 +746,7 @@
                                         <Button x:Name="CopySourcePathButton" IsEnabled="False" Margin="7,0,0,0" Click="CopySourcePathClicked" Content="Copy path" />
                                     </UniformGrid>
                                 </StackPanel>
+                                <TextBlock x:Name="ReviewContextTextBlock" Margin="0,0,0,9" TextWrapping="Wrap" Foreground="#D4B8FF" Visibility="Collapsed" />
                                 <TextBlock Foreground="{StaticResource Muted}" Text="REVIEW OUTCOME" />
                                 <ComboBox x:Name="ReviewOutcomeComboBox" Margin="0,5,0,0">
                                     <ComboBoxItem Tag="Works as intended">Works as intended</ComboBoxItem>
@@ -737,6 +755,7 @@
                                     <ComboBoxItem Tag="Ignore for this profile">Ignore for this profile</ComboBoxItem>
                                 </ComboBox>
                                 <TextBox x:Name="ReviewRationaleTextBox" Margin="0,5,0,0" Height="54" AcceptsReturn="True" TextWrapping="Wrap" ToolTip="Optional notes" />
+                                <Button x:Name="SaveOpenNoteButton" Margin="0,7,0,0" Content="Save note · keep open" IsEnabled="False" Click="SaveOpenNoteClicked" ToolTip="Save this note without accepting or hiding the finding. Empty text clears its open note." />
                                 <UniformGrid Margin="0,7,0,0" Columns="2">
                                     <Button x:Name="SaveReviewButton" Click="ReviewClicked" Content="Save review" />
                                     <Button x:Name="ReopenButton" Margin="7,0,0,0" Click="ReopenClicked" Content="Reopen" />
@@ -785,6 +804,70 @@
                     <Expander Grid.Row="3" Margin="0,8,0,0" Header="Raw application error log">
                         <TextBox x:Name="HistoricalDiagnosticsTextBox" Margin="0,6,0,0" Height="160" FontFamily="Consolas" FontSize="11" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AutomationProperties.Name="Raw application error log" />
                     </Expander>
+                </Grid>
+            </TabItem>
+            <TabItem x:Name="HistoryTab" Header="Changes">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" MinHeight="80" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock FontSize="22" FontWeight="SemiBold" Text="Changes between scans" />
+                    <WrapPanel Grid.Row="1" Margin="0,10,0,8" VerticalAlignment="Center">
+                        <TextBlock Text="Compare with" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox x:Name="HistoryReferenceComboBox" Width="170" Margin="0,0,10,0" IsEnabled="False" SelectionChanged="HistoryReferenceChanged" AutomationProperties.Name="Comparison baseline">
+                            <ComboBoxItem Tag="previous" IsSelected="True">Previous scan</ComboBoxItem>
+                            <ComboBoxItem Tag="baseline">Pinned baseline</ComboBoxItem>
+                        </ComboBox>
+                        <ComboBox x:Name="HistoryFilterComboBox" Width="180" Margin="0,0,10,0" IsEnabled="False" SelectionChanged="HistoryFilterChanged" AutomationProperties.Name="Change status">
+                            <ComboBoxItem Tag="Changes" IsSelected="True">Changes only</ComboBoxItem>
+                            <ComboBoxItem Tag="All">All findings</ComboBoxItem>
+                            <ComboBoxItem Tag="New">New</ComboBoxItem>
+                            <ComboBoxItem Tag="Changed">Changed evidence</ComboBoxItem>
+                            <ComboBoxItem Tag="NoLongerDetected">No longer detected</ComboBoxItem>
+                            <ComboBoxItem Tag="Unchanged">Unchanged</ComboBoxItem>
+                        </ComboBox>
+                        <Button x:Name="PinBaselineButton" Content="Pin current scan" IsEnabled="False" Click="PinBaselineClicked" ToolTip="Keep the current scan as your baseline. Clicking again replaces it with the current scan." />
+                        <Button x:Name="ClearBaselineButton" Margin="7,0,0,0" Content="Clear baseline" IsEnabled="False" Click="ClearBaselineClicked" />
+                    </WrapPanel>
+                    <StackPanel Grid.Row="2" Margin="0,0,0,8">
+                        <TextBlock x:Name="HistorySummaryTextBlock" Text="Run a scan to compare recorded findings." TextWrapping="Wrap" />
+                        <TextBlock x:Name="BaselineStatusTextBlock" Margin="0,5,0,0" Foreground="{StaticResource Muted}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="HistoryAnalysisNoticeTextBlock" Margin="0,5,0,0" Foreground="#FFD166" TextWrapping="Wrap">
+                            <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers></Style></TextBlock.Style>
+                        </TextBlock>
+                        <Expander Header="Comparison context" Margin="0,5,0,0">
+                            <ScrollViewer MaxHeight="130" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="HistoryNoticeTextBlock" Margin="0,5,0,0" TextWrapping="Wrap" Foreground="{StaticResource Muted}" /></ScrollViewer>
+                        </Expander>
+                    </StackPanel>
+                    <DataGrid x:Name="HistoryDataGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" SelectionUnit="FullRow" SelectionChanged="HistorySelectionChanged" EnableRowVirtualization="True" CellStyle="{Binding CellStyle, ElementName=WorkQueueDataGrid}">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="Background" Value="#0D171C" />
+                                <Setter Property="Foreground" Value="#F2F6F7" />
+                                <Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#075A66" /><Setter Property="Foreground" Value="#FFFFFF" /></Trigger></Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Change" Binding="{Binding ChangeLabel}" Width="145" />
+                            <DataGridTextColumn Header="Area" Binding="{Binding SurfaceLabel}" Width="160" />
+                            <DataGridTextColumn Header="Target" Binding="{Binding Target}" Width="2*" MinWidth="160" />
+                            <DataGridTextColumn Header="Mods involved" Binding="{Binding ProviderSummary}" Width="*" MinWidth="140" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <Grid Grid.Row="4" Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <StackPanel><TextBlock Text="BEFORE" Foreground="{StaticResource Muted}" /><TextBox x:Name="HistoryBeforeTextBox" Height="100" Margin="0,5,0,0" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Earlier recorded evidence" /></StackPanel>
+                        <StackPanel Grid.Column="2"><TextBlock Text="NOW" Foreground="{StaticResource Muted}" /><TextBox x:Name="HistoryAfterTextBox" Height="100" Margin="0,5,0,0" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Current recorded evidence" /></StackPanel>
+                    </Grid>
+                    <DockPanel Grid.Row="5" Margin="0,10,0,0">
+                        <Button x:Name="OpenHistoryFindingButton" DockPanel.Dock="Right" Content="Open current finding" IsEnabled="False" Click="OpenHistoryFindingClicked" />
+                        <TextBlock Margin="0,0,15,0" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Text="No longer detected does not mean fixed. Historical rows show recorded evidence, not the current contents of old source files." />
+                    </DockPanel>
                 </Grid>
             </TabItem>
         </TabControl>

@@ -51,6 +51,8 @@ public static class SupportCapsuleWriter
         foreach (ConflictWorkItem item in capsule.WorkQueue) html.Append("<div class=\"item\"><strong>").Append(E(item.Target)).Append("</strong><p>").Append(E(item.State.ToString())).Append(" · ").Append(E(item.Classification.ToString())).Append(" · ").Append(E(item.Summary)).Append("</p><p>Proof: ").Append(E(item.ProofLabel)).Append("</p><p>Meaning: ").Append(E(item.MeaningLabel)).Append("</p><p>Boundary: ").Append(E(item.BoundaryLabel)).Append("</p><span class=\"muted\">").Append(E(string.Join(", ", item.Providers))).Append("</span><p>").Append(E(item.NextAction)).Append("</p></div>");
         html.Append("<h2>Reviewed decisions</h2>");
         foreach (EvidenceDecision decision in capsule.Decisions) html.Append("<div class=\"item\"><strong>").Append(E(decision.Target)).Append("</strong><p>").Append(E(decision.Rationale)).Append("</p><code>").Append(E(decision.EvidenceSha256)).Append("</code></div>");
+        html.Append("<h2>Open notes</h2>");
+        foreach (EvidenceNote note in capsule.Notes) html.Append("<div class=\"item\"><strong>").Append(E(note.Target)).Append("</strong><p>").Append(E(note.Text)).Append("</p><code>").Append(E(note.EvidenceSha256)).Append("</code></div>");
         html.Append("<h2>Diagnostics</h2>");
         foreach (RdarArchiveFailure failure in capsule.Evidence.ArchiveFailures) Diagnostic(html, failure.ArchiveName, failure.Provider, failure.Message);
         foreach (RdarArchiveWarning warning in capsule.Evidence.ArchiveWarnings ?? []) Diagnostic(html, warning.ArchiveName, warning.Provider, warning.Message);
