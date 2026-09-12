@@ -117,7 +117,7 @@ $runner = {
     return 0
 }
 try {
-    & $scriptPath -RepositoryRoot $repositoryRoot -OutputRoot $outputRoot -CommandRunner $runner
+    & $scriptPath -Version '0.5.0' -RepositoryRoot $repositoryRoot -OutputRoot $outputRoot -CommandRunner $runner
     exit 9
 }
 catch {
@@ -144,7 +144,7 @@ catch {
     [TestMethod]
     public void ApplicationAssemblyUsesThePublishedProductVersion()
     {
-        Assert.AreEqual("0.5.0", typeof(MainWindow).Assembly.GetName().Version?.ToString(3));
+        Assert.AreEqual("1.0.0", typeof(MainWindow).Assembly.GetName().Version?.ToString(3));
     }
 
     private static string RepositoryRoot()

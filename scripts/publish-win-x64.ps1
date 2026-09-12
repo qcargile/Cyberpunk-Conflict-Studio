@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '0.5.0',
+    [string]$Version = '1.0.0',
     [string]$OutputRoot = (Join-Path $env:LOCALAPPDATA 'Cyberpunk Conflict Studio\releases'),
     [switch]$Force,
     [string]$RepositoryRoot,
@@ -110,7 +110,7 @@ try {
     Move-Item -LiteralPath $stageRoot -Destination $packageRoot
     & (Join-Path $PSScriptRoot 'verify-package.ps1') -PackageRoot $packageRoot -MetadataPath $metadataPath -DirectoryOnly
     if ($LASTEXITCODE -ne 0) { throw 'Package verification failed.' }
-    $nexusArchive = Join-Path (Split-Path -Parent $packageRoot) "Cyberpunk-Conflict-Studio-$Version-Nexus.zip"
+    $nexusArchive = Join-Path (Split-Path -Parent $packageRoot) "Cyberpunk-Conflict-Studio-$Version.zip"
     if (Test-Path -LiteralPath $nexusArchive) { if (-not $Force) { throw "Nexus archive already exists. Use -Force to replace it: $nexusArchive" }; Remove-Item -LiteralPath $nexusArchive -Force }
     $archiveInputs = @('ConflictStudio.exe', 'Licenses', 'ConflictStudio.png', 'bridge.js', 'index.js', 'info.json') | ForEach-Object { Join-Path $packageRoot $_ }
     Compress-Archive -Path $archiveInputs -DestinationPath $nexusArchive -CompressionLevel Optimal

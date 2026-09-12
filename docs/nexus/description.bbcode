@@ -10,9 +10,7 @@
 [font=Arial]Conflict Studio was inspired by [b]rfuzzo's[/b] [url=https://www.nexusmods.com/cyberpunk2077/mods/11126]Archive Conflict Checker[/url]. Please endorse the original tool. Conflict Studio is a separate implementation and does not copy its code or assets.[/font]
 [line]
 
-[font=Arial][size=5][color=#FCEE0A][b]▍ BETA[/b][/color][/size][/font]
-
-[font=Arial]This is a beta.[/font]
+[font=Arial][size=5][color=#FCEE0A][b]▍ DOWNLOAD[/b][/color][/size][/font]
 
 [font=Arial]The application is unsigned and self-contained. Windows may show an unknown-publisher warning. Download it only from Nexus Mods or the linked GitHub release. A SHA-256 checksum is available alongside the ZIP on GitHub.[/font]
 [line]
@@ -46,11 +44,17 @@
 
 [font=Arial]The detail card explains what the source shows, why Conflict Studio showed it, what it does not prove, the mods involved, and what to do.[/font]
 
+[font=Arial]Use the two mod filters to narrow the list to a pair of mods. Findings still show any other contributors involved. The scan coverage summary shows which files were checked and where analysis is limited.[/font]
+
 [font=Arial]The [b]Files involved[/b] column lists the filenames. Select a finding to see each file's location on disk, open the file, show it in its folder, or copy its path.[/font]
 
 [img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/14-code-interactions.png[/img]
 
 [font=Arial][b]View code[/b] opens the exact recorded operations behind a code finding and highlights the relevant source. You can switch between the operations involved and expand the surrounding context. File-ownership rows that show one installed copy taking priority use [b]Files involved[/b] instead.[/font]
+
+[font=Arial]The contributor overview lists the recorded operations and their source locations. [b]Inspect / find[/b] searches within a source file and lets you adjust its text size. Supported local TweakXL record references can be opened from the inspector, with [b]Back[/b] returning to the original source.[/font]
+
+[font=Arial][b]Compare surrounding text[/b] is optional. Its blue highlights show ordinary text differences between the excerpts; amber highlights identify the source supporting the selected finding.[/font]
 
 [font=Arial]This comparison shows code requesting a value of 8 while another mod declares 0 for the same field.[/font]
 [img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/15-source-comparison.png[/img]
@@ -58,7 +62,14 @@
 [font=Arial]This array comparison shows one source adding an entry while another removes it.[/font]
 [img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/16-array-comparison.png[/img]
 
-[font=Arial]Use [b]Reviewed[/b] to revisit findings you have already decided for this profile. Reviews are stored at [b]%LOCALAPPDATA%\Cyberpunk Conflict Studio\decisions\evidence-decisions.json[/b] and nothing is uploaded automatically. A support bundle you choose to export can include your review notes.[/font]
+[font=Arial]Following a local record reference opens its captured definition. These are the file's declared fields, not a calculation of the final value in game.[/font]
+[img]https://raw.githubusercontent.com/qcargile/Cyberpunk-Conflict-Studio/main/docs/nexus/media/18-source-definition.png[/img]
+
+[font=Arial]Use [b]Reviewed[/b] to revisit findings you have already decided for this profile. [b]Save note · keep open[/b] records a note without accepting the finding. If source evidence changes, the previous review shows why it needs attention. Reviews are stored at [b]%LOCALAPPDATA%\Cyberpunk Conflict Studio\decisions\evidence-decisions.json[/b] and nothing is uploaded automatically. A support bundle you choose to export can include your review notes.[/font]
+
+[font=Arial][b]Changes[/b] compares the current scan with the previous scan or a baseline you pin. It shows new findings, changed evidence and findings no longer detected. A disappeared finding is not automatically a fixed problem. Filters, columns and view layout are saved separately for each profile.[/font]
+
+[font=Arial]Source files can open normally in Windows or at their recorded line in a configured VS Code or Notepad++ editor. The built-in source views are read-only.[/font]
 [line]
 
 [font=Arial][size=5][color=#FCEE0A][b]▍ VORTEX SETUP[/b][/color][/size][/font]
