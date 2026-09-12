@@ -38,7 +38,7 @@ public sealed class ProfileViewStateStore
     private const double MaximumColumnWidth = 1600;
     private const double MinimumDetailFraction = 0.15;
     private const double MaximumDetailFraction = 0.85;
-    private const int TabCount = 5;
+    private const int TabCount = 4;
     private static readonly string[] CodeViews = ["Actionable", "Proven", "NeedsDecision", "Reviewed", "Compatible", "All"];
     private static readonly string[] CodeSurfaces = ["All", "VirtualFile", "ScriptAndTweak", "SharedState", "ArchiveXl", "Diagnostic"];
     private static readonly string[] SortDirections = ["Ascending", "Descending"];

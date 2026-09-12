@@ -22,19 +22,16 @@ public sealed record SupportEvidence(
     bool DeploymentFresh = true,
     CodeCoverageReceipt? CodeCoverage = null);
 
-public sealed record SupportCapsule(int SchemaVersion, ConflictCasefile Casefile, ConflictWorkItem[] WorkQueue, SupportEvidence Evidence, EvidenceDecision[] Decisions, RuntimeProbeManifest Probes, SupportCapsuleSummary Summary)
+public sealed record SupportCapsule(int SchemaVersion, ConflictCasefile Casefile, ConflictWorkItem[] WorkQueue, SupportEvidence Evidence, EvidenceDecision[] Decisions, SupportCapsuleSummary Summary)
 {
     public EvidenceNote[] Notes { get; init; } = [];
-    public RuntimeInvestigationEvidence[] RuntimeEvidence { get; init; } = [];
 }
 
-public sealed record RuntimeInvestigationEvidence(RuntimeProbeReceipt Receipt, RuntimeInvestigationFreshness Freshness, string? StaleReason);
-
-public sealed record SupportCapsuleSummary(int ActiveProviders, int Archives, int ArchiveFailures, int ResourceConflicts, int VirtualShadows, int InteractionFindings, int ReviewDecisions, int RuntimeRequests);
+public sealed record SupportCapsuleSummary(int ActiveProviders, int Archives, int ArchiveFailures, int ResourceConflicts, int VirtualShadows, int InteractionFindings, int ReviewDecisions);
 
 public static class SupportCapsuleBuilder
 {
-    public static SupportCapsule Build(ProfileScanReceipt receipt, IReadOnlyList<EvidenceDecision> decisions, IReadOnlyList<EvidenceNote>? notes = null, IReadOnlyList<RuntimeInvestigationView>? runtimeInvestigations = null)
+    public static SupportCapsule Build(ProfileScanReceipt receipt, IReadOnlyList<EvidenceDecision> decisions, IReadOnlyList<EvidenceNote>? notes = null)
     {
         ArgumentNullException.ThrowIfNull(receipt);
         ArgumentNullException.ThrowIfNull(decisions);
@@ -59,25 +56,7 @@ public static class SupportCapsuleBuilder
         ArchiveOrderEvidence? archiveOrderEvidence = receipt.ArchiveOrderEvidence is null ? null : receipt.ArchiveOrderEvidence with { SourcePath = null, SourcePaths = [], SourceFingerprints = [], AbsentSources = [], Message = PrivatePathRedactor.Redact(receipt.ArchiveOrderEvidence.Message) };
         ResourcePathIndexEvidence? resourcePathIndexEvidence = receipt.ResourcePathIndexEvidence is null ? null : receipt.ResourcePathIndexEvidence with { SourcePath = null, Message = PrivatePathRedactor.Redact(receipt.ResourcePathIndexEvidence.Message) };
         SupportEvidence evidence = new(archiveFailures, shadows, receipt.RedScriptFlows, receipt.SharedStateWrites, receipt.LuaCallbacks, receipt.TweakOverlaps, receipt.ArchiveXlChains, archiveXlFailures, sourceFailures, receipt.Metrics, receipt.InstallationId, archiveSummaries, archiveOrderEvidence, resourcePathIndexEvidence, archiveWarnings, receipt.ManagerKind, receipt.DeploymentFresh, receipt.CodeCoverage);
-        RuntimeProbeManifest probes = RuntimeProbeManifestBuilder.Build(receipt);
-        RuntimeInvestigationEvidence[] runtimeEvidence = (runtimeInvestigations ?? [])
-            .Where(value => value.Run.Receipt is not null && value.Run.Manifest.Binding is { } binding
-                && binding.ManagerKind == receipt.ManagerKind
-                && string.Equals(binding.InstallationId, receipt.InstallationId, StringComparison.Ordinal)
-                && string.Equals(binding.ProfileName, receipt.ProfileName, StringComparison.Ordinal))
-            .Select(value => new RuntimeInvestigationEvidence(
-                value.Run.Receipt! with
-                {
-                    Observations = value.Run.Receipt!.Observations.Select(observation => observation with
-                    {
-                        Value = observation.Value is null ? null : PrivatePathRedactor.Redact(observation.Value),
-                        Message = observation.Message is null ? null : PrivatePathRedactor.Redact(observation.Message)
-                    }).ToArray()
-                },
-                value.Freshness,
-                value.StaleReason is null ? null : PrivatePathRedactor.Redact(value.StaleReason)))
-            .ToArray();
-        SupportCapsuleSummary summary = new(receipt.ActiveProviders.Length, receipt.ArchiveOrder.Length, receipt.ArchiveFailures.Length, receipt.ResourceConflicts.Length, receipt.VirtualFileShadows.Length, receipt.InteractionFindings.Length, profileDecisions.Length, probes.Requests.Length);
-        return PrivatePathRedactor.RedactObject(new SupportCapsule(5, casefile, workQueue, evidence, profileDecisions, probes, summary) { Notes = profileNotes, RuntimeEvidence = runtimeEvidence });
+        SupportCapsuleSummary summary = new(receipt.ActiveProviders.Length, receipt.ArchiveOrder.Length, receipt.ArchiveFailures.Length, receipt.ResourceConflicts.Length, receipt.VirtualFileShadows.Length, receipt.InteractionFindings.Length, profileDecisions.Length);
+        return PrivatePathRedactor.RedactObject(new SupportCapsule(6, casefile, workQueue, evidence, profileDecisions, summary) { Notes = profileNotes });
     }
 }

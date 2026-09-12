@@ -346,7 +346,7 @@ public partial class MainWindow : Window, IDisposable
         finally
         {
             SetScanLocked(false);
-            UpdateSupportExportAvailability();
+            ExportButton.IsEnabled = _receipt is not null && !_historyBusy && _noteSaveTask.IsCompleted;
         }
     }
 
@@ -373,7 +373,6 @@ public partial class MainWindow : Window, IDisposable
         UpdateFindingNavigation();
         Dispatcher.BeginInvoke(ConnectStyledScrollbars, DispatcherPriority.Loaded);
         ConflictWorkItem[] selected = WorkQueueDataGrid.SelectedItems.Cast<ConflictWorkItem>().ToArray();
-        RuntimeFindingSelectionChanged(selected);
         ViewCodeButton.IsEnabled = selected.Length == 1 && selected[0].Comparisons.Length > 0;
         ViewCodeButton.ToolTip = selected.Length != 1 ? "Select one finding to view its supporting code." : ViewCodeButton.IsEnabled
             ? "Compare the exact operations supporting this finding."
@@ -895,9 +894,9 @@ public partial class MainWindow : Window, IDisposable
 
     private void ExportClicked(object sender, RoutedEventArgs e)
     {
-        if (_historyBusy || !_noteSaveTask.IsCompleted || _runtimeLoading || _runtimeWriting || _runtimeBusy)
+        if (_historyBusy || !_noteSaveTask.IsCompleted)
         {
-            WorkspaceStatusTextBlock.Text = "Wait for profile notes and runtime checks to finish loading or saving before exporting.";
+            WorkspaceStatusTextBlock.Text = "Wait for saved notes to finish loading or saving before exporting.";
             return;
         }
         Execute("support-export", () =>
@@ -905,7 +904,7 @@ public partial class MainWindow : Window, IDisposable
             if (_receipt is null) throw new InvalidOperationException("Run a profile scan before exporting.");
             string safeProfile = string.Concat(_receipt.ProfileName.Select(value => Path.GetInvalidFileNameChars().Contains(value) ? '_' : value));
             string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Cyberpunk Conflict Studio Exports", safeProfile + " " + DateTime.Now.ToString("yyyy-MM-dd HHmmss", System.Globalization.CultureInfo.InvariantCulture));
-            SupportCapsuleWriter.Write(directory, SupportCapsuleBuilder.Build(_receipt, _decisions, _notes, _runtimeViews));
+            SupportCapsuleWriter.Write(directory, SupportCapsuleBuilder.Build(_receipt, _decisions, _notes));
             WorkspaceStatusTextBlock.Text = $"Support bundle exported to {directory}";
             FooterStatusTextBlock.Text = "Support bundle exported";
         });
@@ -1001,7 +1000,7 @@ public partial class MainWindow : Window, IDisposable
         QueueOtherProviderComboBox.ItemsSource = QueueProviderComboBox.ItemsSource;
         QueueOtherProviderComboBox.SelectedItem = providers.Contains(previousOtherProvider, StringComparer.Ordinal) ? previousOtherProvider : "All mods";
         ApplyQueueFilter();
-        UpdateSupportExportAvailability();
+        ExportButton.IsEnabled = true;
         ScanProfileButton.Content = "Refresh";
         CodeCaseCounts codeCounts = CodeCaseWorkspace.Counts(codeItems);
         WorkspaceStatusTextBlock.Text = $"Scan complete: {receipt.ResourceConflicts.Length:N0} archive conflicts; {codeCounts.ProvenConflicts} confirmed code conflicts; {codeCounts.NeedsDecision} code items to review.";

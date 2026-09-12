@@ -715,7 +715,6 @@
                                         <Button x:Name="PreviousFindingButton" Content="‹" Padding="8,6" Click="PreviousFindingClicked" IsEnabled="False" ToolTip="Previous finding in this view" AutomationProperties.Name="Previous finding" />
                                         <Button x:Name="NextFindingButton" Content="›" Margin="5,0,8,0" Padding="8,6" Click="NextFindingClicked" IsEnabled="False" ToolTip="Next finding in this view" AutomationProperties.Name="Next finding" />
                                         <Button x:Name="ViewCodeButton" Content="View code" IsEnabled="False" Click="ViewCodeClicked" ToolTip="Compare the recorded source blocks for this finding." ToolTipService.ShowOnDisabled="True" />
-                                        <Button x:Name="CheckInGameButton" Margin="7,0,0,0" Content="Check in game" IsEnabled="False" Click="CheckInGameClicked" ToolTip="Prepare optional runtime observations for this finding." ToolTipService.ShowOnDisabled="True" />
                                     </StackPanel>
                                     <TextBlock x:Name="SelectedTargetTextBlock" FontSize="17" FontWeight="SemiBold" Text="Select a row to see details" TextWrapping="Wrap" />
                                 </DockPanel>
@@ -801,7 +800,7 @@
                             <TextBlock x:Name="DiagnosticsSummaryTextBlock" Margin="0,3,0,0" Foreground="{StaticResource Muted}" Text="No scan has run. Reproduce a problem once, then copy the report below." />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
-                            <Button x:Name="ExportButton" Margin="0,0,8,0" IsEnabled="False" Click="ExportClicked" Content="Export support bundle" ToolTip="Save the scan details, your reviews, and any requested checks for troubleshooting." />
+                            <Button x:Name="ExportButton" Margin="0,0,8,0" IsEnabled="False" Click="ExportClicked" Content="Export support bundle" ToolTip="Save the scan details and your reviews for troubleshooting." />
                             <Button Margin="8,0,0,0" Click="CopyDiagnosticReportClicked" Content="Copy report" />
                             <Button Margin="8,0,0,0" Click="SaveDiagnosticReportClicked" Content="Save report" />
                             <Button Margin="8,0,0,0" Click="OpenDiagnosticsFolderClicked" Content="Open logs folder" />
@@ -878,72 +877,6 @@
                         <Button x:Name="OpenHistoryFindingButton" DockPanel.Dock="Right" Content="Open current finding" IsEnabled="False" Click="OpenHistoryFindingClicked" />
                         <TextBlock Margin="0,0,15,0" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Text="No longer detected does not mean fixed. Historical rows show recorded evidence, not the current contents of old source files." />
                     </DockPanel>
-                </Grid>
-            </TabItem>
-            <TabItem x:Name="RuntimeChecksTab" Header="Runtime checks">
-                <Grid Margin="14">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="3*" MinHeight="140" />
-                    </Grid.RowDefinitions>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock FontSize="22" FontWeight="SemiBold" Text="Optional runtime checks" />
-                            <TextBlock x:Name="RuntimeSummaryTextBlock" Margin="0,4,0,0" Foreground="{StaticResource Muted}" Text="Select one code finding and choose Check in game. Nothing is installed or launched automatically." TextWrapping="Wrap" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="14,0,0,0">
-                            <Button x:Name="GenerateRuntimePackageButton" Content="Generate package" IsEnabled="False" Click="GenerateRuntimePackageClicked" />
-                            <Button x:Name="ImportRuntimeResultsButton" Margin="7,0,0,0" Content="Import results" IsEnabled="False" Click="ImportRuntimeResultsClicked" />
-                        </StackPanel>
-                    </Grid>
-                    <Border Grid.Row="1" Margin="0,10,0,8" Padding="10,7" Background="#171F21" BorderBrush="#2A393C" BorderThickness="1">
-                        <TextBlock x:Name="RuntimeGuidanceTextBlock" Foreground="#B7C6C4" Text="Generated packages stay outside the game and modlist. Install the bin folder as a separate mod, collect the matching CET log, then remove or disable that probe mod." TextWrapping="Wrap" />
-                    </Border>
-                    <DataGrid x:Name="RuntimeRunsDataGrid" Grid.Row="2" MinHeight="80" MaxHeight="180" CellStyle="{Binding CellStyle, ElementName=WorkQueueDataGrid}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" SelectionUnit="FullRow" SelectionChanged="RuntimeRunSelectionChanged">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Updated" Binding="{Binding Run.UpdatedAtUtc.LocalDateTime, StringFormat={}{0:g}}" Width="155" />
-                            <DataGridTextColumn Header="Finding" Binding="{Binding Run.Manifest.Binding.Target}" Width="2*" MinWidth="180" />
-                            <DataGridTemplateColumn Header="Status" Width="135">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock>
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Text" Value="Awaiting results" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Run.Receipt.CompleteRun}" Value="True"><Setter Property="Text" Value="Results imported" /></DataTrigger>
-                                                        <DataTrigger Binding="{Binding Run.Receipt.CompleteRun}" Value="False"><Setter Property="Text" Value="Incomplete log" /></DataTrigger>
-                                                        <DataTrigger Binding="{Binding Freshness}" Value="Stale"><Setter Property="Text" Value="Stale" /><Setter Property="Foreground" Value="#FFD166" /></DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                    <DockPanel Grid.Row="3" Margin="0,9,0,8">
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                            <Button x:Name="OpenRuntimePackageButton" Content="Open package folder" IsEnabled="False" Click="OpenRuntimePackageClicked" />
-                            <Button x:Name="OpenRuntimeInstructionsButton" Margin="7,0,0,0" Content="Open instructions" IsEnabled="False" Click="OpenRuntimeInstructionsClicked" />
-                            <Button x:Name="ForgetRuntimeRunButton" Margin="7,0,0,0" Content="Forget local run" IsEnabled="False" Click="ForgetRuntimeRunClicked" ToolTip="Remove this run from Conflict Studio. The generated package is left in place so you can uninstall it through your mod manager." />
-                        </StackPanel>
-                        <TextBlock x:Name="RuntimeRunStatusTextBlock" Margin="0,5,14,0" Foreground="{StaticResource Muted}" Text="No generated runs for this profile." TextWrapping="Wrap" />
-                    </DockPanel>
-                    <DataGrid x:Name="RuntimeRequestsDataGrid" Grid.Row="4" CellStyle="{Binding CellStyle, ElementName=WorkQueueDataGrid}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" SelectionUnit="FullRow" MinRowHeight="34">
-                        <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="Requested observation" Width="2*" MinWidth="180"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Padding="3" Text="{Binding RequestedObservation}" TextWrapping="Wrap" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="Limits" Width="2*" MinWidth="180"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Padding="3" Text="{Binding Decides}" TextWrapping="Wrap" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Method" Binding="{Binding Execution}" Width="105" />
-                            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="125" />
-                            <DataGridTemplateColumn Header="Result" Width="2*" MinWidth="160"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Padding="3" Text="{Binding Result}" TextWrapping="Wrap" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                        </DataGrid.Columns>
-                    </DataGrid>
                 </Grid>
             </TabItem>
         </TabControl>

@@ -55,23 +55,31 @@ public sealed class SupportCapsuleWriterTests
         {
             ConflictCasefile casefile = new(1, "Standard", new DateTimeOffset(2026, 8, 25, 16, 0, 0, TimeSpan.Zero), [], [], [], []);
             SupportEvidence evidence = new([], [], [], [], [], [], [], [], [], null);
-            SupportCapsule capsule = new(3, casefile, [], evidence, [], new RuntimeProbeManifest(1, "Standard", DateTimeOffset.UtcNow, []), new SupportCapsuleSummary(0, 0, 0, 0, 0, 0, 0, 0));
+            SupportCapsule capsule = new(6, casefile, [], evidence, [], new SupportCapsuleSummary(0, 0, 0, 0, 0, 0, 0));
 
             SupportCapsuleWriter.Write(root, capsule);
 
             Assert.IsTrue(File.Exists(Path.Combine(root, "conflict-casefile.json")));
             Assert.IsTrue(File.Exists(Path.Combine(root, "conflict-casefile.html")));
-            Assert.IsTrue(File.Exists(Path.Combine(root, "runtime-probe", "probe-manifest.json")));
-            RuntimeProbeBundleManifest probeManifest = RuntimeProbeBundleStore.ReadManifest(Path.Combine(root, "runtime-probe", "probe-manifest.json"));
-            Assert.AreEqual(2, probeManifest.SchemaVersion);
-            Assert.IsNull(probeManifest.Binding);
-            Assert.IsEmpty(probeManifest.Requests);
+            Assert.IsFalse(Directory.Exists(Path.Combine(root, "runtime-probe")));
+            Assert.IsFalse(Directory.EnumerateFiles(root, "*.lua", SearchOption.AllDirectories).Any());
             string html = File.ReadAllText(Path.Combine(root, "conflict-casefile.html"));
             Assert.IsTrue(html.Contains("Archive order", StringComparison.Ordinal));
             Assert.IsTrue(html.Contains("Reviewed decisions", StringComparison.Ordinal));
             Assert.IsTrue(html.Contains("ArchiveXL evidence", StringComparison.Ordinal));
             Assert.IsTrue(html.Contains("Archive overview", StringComparison.Ordinal));
-            Assert.IsTrue(html.Contains("Runtime observations", StringComparison.Ordinal));
+            Assert.IsFalse(html.Contains("Runtime requests", StringComparison.Ordinal));
+            Assert.IsFalse(html.Contains("Runtime observations", StringComparison.Ordinal));
+
+            string casefilePath = Path.Combine(root, "conflict-casefile.json");
+            string previousFormat = File.ReadAllText(casefilePath)
+                .Replace("\"schemaVersion\": 6", "\"schemaVersion\": 5", StringComparison.Ordinal)
+                .Replace("\"summary\": {", "\"probes\": { \"schemaVersion\": 1, \"profileName\": \"Standard\", \"createdAtUtc\": \"2026-08-25T16:00:00Z\", \"requests\": [] }, \"runtimeEvidence\": [], \"summary\": {", StringComparison.Ordinal)
+                .Replace("\"reviewDecisions\": 0", "\"reviewDecisions\": 0, \"runtimeRequests\": 0", StringComparison.Ordinal);
+            File.WriteAllText(casefilePath, previousFormat);
+            SupportCapsule restored = SupportCapsuleWriter.Read(casefilePath);
+            Assert.AreEqual("Standard", restored.Casefile.ProfileName);
+            Assert.AreEqual(0, restored.Summary.ReviewDecisions);
         }
         finally
         {

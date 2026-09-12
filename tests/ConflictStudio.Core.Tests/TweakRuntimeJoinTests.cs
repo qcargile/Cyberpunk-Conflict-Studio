@@ -29,15 +29,13 @@ public sealed class TweakRuntimeJoinTests
     }
 
     [TestMethod]
-    public void MatchingRuntimeValuePreservesRedundantDeclarationsWithoutProbes()
+    public void MatchingRuntimeValuePreservesRedundantDeclarations()
     {
         ModSourceInventory inventory = Inventory("TweakDB:SetFlat('Items.Test.value', 1)");
         inventory = inventory with { TweakSources = [.. inventory.TweakSources, new("Gamma", "g.yaml", "Items.Test.value: 1")] };
         ProfileScanReceipt receipt = Receipt(inventory);
         Assert.IsEmpty(ConflictWorkQueueBuilder.Build(receipt, []));
         Assert.IsNotNull(receipt.InteractionFindings.Single().TweakRuntimeEvidence);
-        RuntimeProbeManifest probes = RuntimeProbeManifestBuilder.Build(receipt);
-        Assert.IsEmpty(probes.Requests);
     }
 
     [TestMethod]

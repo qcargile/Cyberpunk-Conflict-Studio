@@ -19,7 +19,7 @@ public partial class MainWindow
     private bool _skipCloseFlush;
     private bool _userStateWriteFailed;
     private int _viewChangeRevision;
-    internal Task PendingUserStateWrites => Task.WhenAll(_viewSaveTask, _noteSaveTask, _baselineWriteTask, _runtimeWriteTask);
+    internal Task PendingUserStateWrites => Task.WhenAll(_viewSaveTask, _noteSaveTask, _baselineWriteTask);
     private static readonly double[] DefaultColumnWidths = [245, 320, 150, 520, 420, 320];
     private static readonly string[] ColumnSortMembers = ["AnalysisLabel", "ProofLabel", "SurfaceLabel", "Target", "ProviderSummary", "FilesSummary"];
 
@@ -208,7 +208,7 @@ public partial class MainWindow
         if (_skipCloseFlush) { _skipCloseFlush = false; return false; }
         if (_closingForWrites) { e.Cancel = true; return true; }
         SaveCurrentView();
-        Task writes = PendingUserStateWrites;
+        Task writes = Task.WhenAll(_viewSaveTask, _noteSaveTask, _baselineWriteTask);
         if (writes.IsCompleted) return false;
         e.Cancel = true;
         _closingForWrites = true;
@@ -241,7 +241,6 @@ public partial class MainWindow
         _previousScan = null;
         _baseline = null;
         _historyComparison = null;
-        DisposeRuntimeChecks();
         if (!_viewInitialized) return;
         foreach (DataGridColumn column in WorkQueueDataGrid.Columns)
         {

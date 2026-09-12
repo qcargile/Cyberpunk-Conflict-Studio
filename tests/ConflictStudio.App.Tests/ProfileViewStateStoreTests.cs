@@ -29,7 +29,7 @@ public sealed class ProfileViewStateStoreTests
                 Columns = [new ProfileColumnState("target", 640, false, "Descending", 1)],
                 CodeDetailFraction = 0.72,
                 SummaryExpanded = false,
-                SelectedTab = 4,
+                SelectedTab = 2,
                 HistoryReference = "baseline",
                 HistoryFilter = "Changed"
             };
@@ -84,7 +84,9 @@ public sealed class ProfileViewStateStoreTests
     }
 
     [TestMethod]
-    public void StoreClampsAndRejectsInvalidPersistedValues()
+    [DataRow(4)]
+    [DataRow(99)]
+    public void StoreClampsAndRejectsInvalidPersistedValues(int obsoleteTab)
     {
         string root = TemporaryRoot();
         try
@@ -114,7 +116,7 @@ public sealed class ProfileViewStateStoreTests
                         new { key = "target", width = 220, visible = false, sortDirection = "Descending", sortPriority = 2 }
                     },
                     codeDetailFraction = 4.0,
-                    selectedTab = 99,
+                    selectedTab = obsoleteTab,
                     historyReference = "unknown",
                     historyFilter = "unknown"
                 }

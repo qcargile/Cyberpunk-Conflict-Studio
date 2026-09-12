@@ -17,7 +17,6 @@ public sealed class ResultAdmissionTests
         SupportCapsule support = SupportCapsuleBuilder.Build(receipt, []);
         Assert.IsNotEmpty(support.Casefile.Findings);
         Assert.IsEmpty(support.WorkQueue);
-        Assert.IsEmpty(support.Probes.Requests);
     }
 
     [TestMethod]
@@ -42,7 +41,6 @@ public sealed class ResultAdmissionTests
         Assert.HasCount(2, receipt.RedScriptFlows);
         Assert.IsTrue(receipt.InteractionFindings.All(value => value.Kind == InteractionFindingKind.Informational));
         Assert.IsEmpty(ConflictWorkQueueBuilder.Build(receipt, []));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -57,7 +55,6 @@ public sealed class ResultAdmissionTests
         Assert.IsNotEmpty(receipt.InteractionFindings);
         Assert.IsTrue(receipt.InteractionFindings.All(value => value.Kind == InteractionFindingKind.Informational));
         Assert.IsEmpty(ConflictWorkQueueBuilder.Build(receipt, []));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -96,7 +93,6 @@ public sealed class ResultAdmissionTests
         Assert.IsFalse(item.NextAction.Contains("no forwarding", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(item.Summary.Contains("Gamma", StringComparison.Ordinal));
         Assert.IsFalse(item.Summary.Contains("Delta", StringComparison.Ordinal));
-        Assert.IsEmpty(RuntimeProbeManifestBuilder.Build(receipt).Requests);
     }
 
     [TestMethod]
@@ -113,7 +109,6 @@ public sealed class ResultAdmissionTests
 
         ConflictWorkItem[] cases = ConflictWorkQueueBuilder.Build(receipt, []);
         Assert.AreEqual(conflict ? 1 : 0, cases.Length);
-        Assert.AreEqual(conflict, RuntimeProbeManifestBuilder.Build(receipt).Requests.Length > 0);
         if (conflict)
         {
             Assert.AreEqual(EvidenceClassification.CompetingDeclaration, cases[0].Classification);
