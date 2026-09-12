@@ -377,6 +377,58 @@ public sealed class CodeComparisonWindowTests
         Assert.IsTrue(excerpt.Lines.All(value => value.Length <= CodeComparisonExcerpt.MaximumLineCharacters + 2));
     }
 
+    [TestMethod]
+    public void CompactComparisonKeepsBothCodePanesAndTheirActionsVisible()
+    {
+        Run(async () =>
+        {
+            CodeSourceEvidence[] sources = Enumerable.Range(0, 6).Select(index => Evidence("Provider " + index, 1)).ToArray();
+            CodeComparisonWindow window = new(Item(), [Witness(sources)], (source, _) => Task.FromResult(new CodeSourceDocument(source, ["first", "second", "third"])));
+            try
+            {
+                await window.LoadSelectionAsync();
+                FrameworkElement layout = (FrameworkElement)window.Content;
+                layout.Measure(new Size(900, 570));
+                layout.Arrange(new Rect(0, 0, 900, 570));
+                layout.UpdateLayout();
+                await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                layout.UpdateLayout();
+                Assert.IsTrue(((RichTextBox)window.FindName("LeftCodeBox")).ActualHeight >= 60, "The contributor overview hid the left code pane.");
+                Assert.IsTrue(((RichTextBox)window.FindName("RightCodeBox")).ActualHeight >= 60, "The contributor overview hid the right code pane.");
+                Button open = (Button)window.FindName("LeftOpenButton");
+                Assert.IsTrue(open.TranslatePoint(new Point(0, open.ActualHeight), layout).Y <= layout.ActualHeight);
+            }
+            finally { window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void ContextSelectionCannotReplaceTheSupportingPairAndTextSizePreservesIt()
+    {
+        Run(async () =>
+        {
+            CodeSourceEvidence add = Evidence("Alpha", 1) with { EndLine = 1, FocusEndLine = 1 };
+            CodeSourceEvidence remove = Evidence("Beta", 1) with { EndLine = 1, FocusEndLine = 1 };
+            CodeSourceEvidence context = Evidence("Alpha", 3) with { EndLine = 3, FocusEndLine = 3, OperationId = "context", OperationKind = CodeEvidenceOperationKind.TweakArrayAppendOnce, NormalizedValue = "Items.other" };
+            CodeFindingWitness witness = ArrayWitness("Items.armor", add, remove);
+            CodeComparisonWindow window = new(Item(), [witness], (source, _) => Task.FromResult(new CodeSourceDocument(source, ["Items.armor", "", "Items.other"])), [add, remove, context]);
+            try
+            {
+                await window.LoadSelectionAsync();
+                DataGrid contributors = (DataGrid)window.FindName("ContributorsDataGrid");
+                contributors.SelectedItem = contributors.Items.OfType<CodeContributorRow>().Single(row => row.Source == context);
+                Assert.IsFalse(((Button)window.FindName("CompareContributorButton")).IsEnabled);
+                ((Button)window.FindName("CompareContributorButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.AreEqual("Items.armor", ((CodeSourceChoice)((ComboBox)window.FindName("LeftSourceComboBox")).SelectedItem).Participant.Member);
+                ((ComboBox)window.FindName("ComparisonFontComboBox")).SelectedIndex = 4;
+                Assert.AreEqual(20d, ((RichTextBox)window.FindName("LeftCodeBox")).Document.FontSize);
+                StringAssert.Contains(HighlightedText(window, "LeftCodeBox"), "Items.armor");
+                Assert.IsFalse(HighlightedText(window, "LeftCodeBox").Contains("Items.other", StringComparison.Ordinal));
+            }
+            finally { window.Close(); }
+        });
+    }
+
     private static CodeSourceEvidence Evidence(string provider, int line)
         => new(ConflictSurface.ScriptAndTweak, "Target", provider, "code.reds", provider + ".reds", new string('a', 64), line, line + 2, line, line + 2, true, "Method");
 

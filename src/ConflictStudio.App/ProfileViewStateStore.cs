@@ -15,6 +15,7 @@ public sealed record ProfileViewState(ModManagerKind ManagerKind, string Install
     public string CodeView { get; init; } = "Actionable";
     public string CodeSurface { get; init; } = "All";
     public string CodeProvider { get; init; } = "All mods";
+    public string CodeOtherProvider { get; init; } = "All mods";
     public string ArchiveModFilter { get; init; } = string.Empty;
     public string ArchiveFileFilter { get; init; } = string.Empty;
     public bool ShowNonConflictingFiles { get; init; }
@@ -135,6 +136,7 @@ public sealed class ProfileViewStateStore
             CodeView = AllowedOrDefault(state.CodeView, CodeViews, "Actionable"),
             CodeSurface = AllowedOrDefault(state.CodeSurface, CodeSurfaces, "All"),
             CodeProvider = BoundedOrDefault(state.CodeProvider, "All mods"),
+            CodeOtherProvider = BoundedOrDefault(state.CodeOtherProvider, "All mods"),
             ArchiveModFilter = BoundedOrDefault(state.ArchiveModFilter, string.Empty),
             ArchiveFileFilter = BoundedOrDefault(state.ArchiveFileFilter, string.Empty),
             Columns = NormalizeColumns(state.Columns),

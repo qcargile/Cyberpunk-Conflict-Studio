@@ -52,6 +52,15 @@ public sealed record TweakOperation(
 
     [System.Text.Json.Serialization.JsonIgnore]
     internal bool IsAliasSource { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal string? RecordTarget { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal int RecordStartLine { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal int RecordEndLine { get; init; }
 }
 
 public sealed record TweakOverlap(string Target, TweakOverlapKind Kind, TweakOperation[] Operations);
@@ -193,17 +202,19 @@ public static class TweakInteractionAnalyzer
                 string target = key.Value;
                 if (valueNode is LooseYamlMapping record)
                 {
+                    int recordEndLine = LooseEndLine(record);
                     if (TryGetLoose(record, "$instances", out LooseYamlNode? instancesNode) && instancesNode is LooseYamlSequence instances)
                     {
                         foreach (LooseYamlNode instanceNode in instances.Children)
                         {
                             if (instanceNode is not LooseYamlMapping instance) continue;
                             Dictionary<string, string> variables = Variables(instance);
+                            string generatedRecord = Substitute(target, variables);
                             foreach ((LooseYamlNode propertyKeyNode, LooseYamlNode propertyValue) in RecordProperties(record))
                             {
                                 if (propertyKeyNode is not LooseYamlScalar propertyKey || string.IsNullOrWhiteSpace(propertyKey.Value) || propertyKey.Value == "$instances") continue;
                                 List<TweakOperation> expanded = [];
-                                AddLooseOperations(source, Substitute(target + "." + propertyKey.Value, variables), propertyKey.Value, propertyValue, expanded, failures, propertyKey.Line, record.IsAlias ? record.Line : null);
+                                AddLooseOperations(source, Substitute(target + "." + propertyKey.Value, variables), propertyKey.Value, propertyValue, expanded, failures, propertyKey.Line, record.IsAlias ? record.Line : null, generatedRecord, key.Line, recordEndLine);
                                 operations.AddRange(expanded.Select(value => value with { Target = Substitute(value.Target, variables), Value = Substitute(value.Value, variables), IsCompleteSourceBlock = false, IsGeneratedSource = true }));
                             }
                         }
@@ -211,7 +222,7 @@ public static class TweakInteractionAnalyzer
                     }
                     foreach ((LooseYamlNode propertyKeyNode, LooseYamlNode propertyValue) in RecordProperties(record))
                     {
-                        if (propertyKeyNode is LooseYamlScalar propertyKey && !string.IsNullOrWhiteSpace(propertyKey.Value)) AddLooseOperations(source, target + "." + propertyKey.Value, propertyKey.Value, propertyValue, operations, failures, propertyKey.Line, record.IsAlias ? record.Line : null);
+                        if (propertyKeyNode is LooseYamlScalar propertyKey && !string.IsNullOrWhiteSpace(propertyKey.Value)) AddLooseOperations(source, target + "." + propertyKey.Value, propertyKey.Value, propertyValue, operations, failures, propertyKey.Line, record.IsAlias ? record.Line : null, target, key.Line, record.IsAlias ? key.Line : recordEndLine);
                     }
                 }
                 else AddLooseOperations(source, target, target.Split('.').Last(), valueNode, operations, failures, key.Line);
@@ -219,7 +230,7 @@ public static class TweakInteractionAnalyzer
         }
     }
 
-    private static void AddLooseOperations(TweakSource source, string target, string property, LooseYamlNode value, List<TweakOperation> operations, List<SourceAnalysisFailure> failures, int propertyLine, int? parentAliasLine = null)
+    private static void AddLooseOperations(TweakSource source, string target, string property, LooseYamlNode value, List<TweakOperation> operations, List<SourceAnalysisFailure> failures, int propertyLine, int? parentAliasLine = null, string? recordTarget = null, int recordStartLine = 0, int recordEndLine = 0)
     {
         if (property.StartsWith('$') && property is not ("$type" or "$base")) return;
         int? aliasLine = parentAliasLine ?? (value.IsAlias ? value.Line : null);
@@ -228,26 +239,35 @@ public static class TweakInteractionAnalyzer
             LooseYamlNode[] mutations = sequence.Children.Where(item => LooseMutationKind(item) is not null).ToArray();
             if (mutations.Length > 0)
             {
-                foreach (LooseYamlNode item in mutations) operations.Add(CreateLoose(source, target, item, true, LooseMutationKind(item)!.Value, aliasLine, aliasLine is not null));
+                foreach (LooseYamlNode item in mutations) operations.Add(WithRecord(CreateLoose(source, target, item, true, LooseMutationKind(item)!.Value, aliasLine, aliasLine is not null), recordTarget, recordStartLine, recordEndLine));
                 if (sequence.Children.Any(item => string.IsNullOrEmpty(item.Tag))) AddMixedDefinitionFailure(source, target, failures);
             }
             else
             {
-                operations.Add(CreateLoose(source, target, sequence, false, TweakOperationKind.ArrayReplacement, aliasLine ?? propertyLine, aliasLine is not null));
+                operations.Add(WithRecord(CreateLoose(source, target, sequence, false, TweakOperationKind.ArrayReplacement, aliasLine ?? propertyLine, aliasLine is not null), recordTarget, recordStartLine, recordEndLine));
             }
             return;
         }
         if (value is LooseYamlMapping nested && (TryGetLoose(nested, "$type", out _) || TryGetLoose(nested, "$base", out _)))
         {
+            int nestedEndLine = aliasLine ?? LooseEndLine(nested);
             foreach ((LooseYamlNode childKeyNode, LooseYamlNode childValue) in RecordProperties(nested))
             {
-                if (childKeyNode is LooseYamlScalar childKey && !string.IsNullOrWhiteSpace(childKey.Value)) AddLooseOperations(source, target + "." + childKey.Value, childKey.Value, childValue, operations, failures, childKey.Line, aliasLine);
+                if (childKeyNode is LooseYamlScalar childKey && !string.IsNullOrWhiteSpace(childKey.Value)) AddLooseOperations(source, target + "." + childKey.Value, childKey.Value, childValue, operations, failures, childKey.Line, aliasLine, target, propertyLine, nestedEndLine);
             }
             return;
         }
         TweakOperationKind kind = property switch { "$type" => TweakOperationKind.TypeDeclaration, "$base" => TweakOperationKind.BaseDeclaration, _ when value is LooseYamlMapping => TweakOperationKind.InlineRecord, _ => TweakOperationKind.ScalarAssignment };
-        operations.Add(CreateLoose(source, DefinitionTarget(target, kind), value, false, kind, aliasLine ?? propertyLine, aliasLine is not null));
+        operations.Add(WithRecord(CreateLoose(source, DefinitionTarget(target, kind), value, false, kind, aliasLine ?? propertyLine, aliasLine is not null), recordTarget, recordStartLine, recordEndLine));
     }
+
+    private static int LooseEndLine(LooseYamlNode node)
+        => node switch
+        {
+            LooseYamlSequence sequence => sequence.Children.Select(LooseEndLine).Append(sequence.Line).Max(),
+            LooseYamlMapping mapping => mapping.Children.SelectMany(value => new[] { LooseEndLine(value.Key), LooseEndLine(value.Value) }).Append(mapping.Line).Max(),
+            _ => node.Line
+        };
 
     private static TweakOperation CreateLoose(TweakSource source, string target, LooseYamlNode value, bool mutation, TweakOperationKind kind, int? sourceStartLine = null, bool parentAlias = false)
         => new(source.Provider, source.FilePath, target, NormalizeLoose(value), mutation, kind, value.Line)
@@ -328,17 +348,19 @@ public static class TweakInteractionAnalyzer
             string target = key.Value;
             if (valueNode is YamlMappingNode record)
             {
+                int recordEndLine = NodeEndLine(record);
                 if (TryGet(record, "$instances", out YamlNode? instancesNode) && instancesNode is YamlSequenceNode instances)
                 {
                     foreach (YamlNode instanceNode in instances.Children)
                     {
                         if (instanceNode is not YamlMappingNode instance) continue;
                         Dictionary<string, string> variables = Variables(instance);
+                        string generatedRecord = Substitute(target, variables);
                         foreach ((YamlNode propertyKeyNode, YamlNode propertyValue) in RecordProperties(record))
                         {
                             if (propertyKeyNode is not YamlScalarNode propertyKey || string.IsNullOrWhiteSpace(propertyKey.Value) || propertyKey.Value == "$instances") continue;
                             List<TweakOperation> expanded = [];
-                            AddOperations(source, Substitute(target + "." + propertyKey.Value, variables), propertyKey.Value, propertyValue, expanded, failures, checked((int)propertyKey.Start.Line));
+                            AddOperations(source, Substitute(target + "." + propertyKey.Value, variables), propertyKey.Value, propertyValue, expanded, failures, checked((int)propertyKey.Start.Line), generatedRecord, checked((int)key.Start.Line), recordEndLine);
                             operations.AddRange(expanded.Select(value => value with { Target = Substitute(value.Target, variables), Value = Substitute(value.Value, variables), IsCompleteSourceBlock = false, IsGeneratedSource = true }));
                         }
                     }
@@ -348,7 +370,7 @@ public static class TweakInteractionAnalyzer
                 {
                     if (propertyKeyNode is YamlScalarNode propertyKey && !string.IsNullOrWhiteSpace(propertyKey.Value))
                     {
-                        AddOperations(source, target + "." + propertyKey.Value, propertyKey.Value, propertyValue, operations, failures, checked((int)propertyKey.Start.Line));
+                        AddOperations(source, target + "." + propertyKey.Value, propertyKey.Value, propertyValue, operations, failures, checked((int)propertyKey.Start.Line), target, checked((int)key.Start.Line), recordEndLine);
                     }
                 }
             }
@@ -400,7 +422,7 @@ public static class TweakInteractionAnalyzer
         return result;
     }
 
-    private static void AddOperations(TweakSource source, string target, string property, YamlNode value, List<TweakOperation> operations, List<SourceAnalysisFailure> failures, int propertyLine)
+    private static void AddOperations(TweakSource source, string target, string property, YamlNode value, List<TweakOperation> operations, List<SourceAnalysisFailure> failures, int propertyLine, string? recordTarget = null, int recordStartLine = 0, int recordEndLine = 0)
     {
         if (property.StartsWith('$') && property is not ("$type" or "$base")) return;
         if (value is YamlSequenceNode sequence)
@@ -410,13 +432,13 @@ public static class TweakInteractionAnalyzer
             {
                 foreach (YamlNode item in mutations)
                 {
-                    operations.Add(Create(source, target, item, MutationKind(item)!.Value, true));
+                    operations.Add(WithRecord(Create(source, target, item, MutationKind(item)!.Value, true), recordTarget, recordStartLine, recordEndLine));
                 }
                 if (sequence.Children.Any(item => item.Tag.ToString() is "" or "?")) AddMixedDefinitionFailure(source, target, failures);
             }
             else
             {
-                operations.Add(Create(source, target, value, TweakOperationKind.ArrayReplacement, false, propertyLine));
+                operations.Add(WithRecord(Create(source, target, value, TweakOperationKind.ArrayReplacement, false, propertyLine), recordTarget, recordStartLine, recordEndLine));
             }
 
             return;
@@ -424,9 +446,10 @@ public static class TweakInteractionAnalyzer
 
         if (value is YamlMappingNode nested && (TryGet(nested, "$type", out _) || TryGet(nested, "$base", out _)))
         {
+            int nestedEndLine = NodeEndLine(nested);
             foreach ((YamlNode childKeyNode, YamlNode childValue) in RecordProperties(nested))
             {
-                if (childKeyNode is YamlScalarNode childKey && !string.IsNullOrWhiteSpace(childKey.Value)) AddOperations(source, target + "." + childKey.Value, childKey.Value, childValue, operations, failures, checked((int)childKey.Start.Line));
+                if (childKeyNode is YamlScalarNode childKey && !string.IsNullOrWhiteSpace(childKey.Value)) AddOperations(source, target + "." + childKey.Value, childKey.Value, childValue, operations, failures, checked((int)childKey.Start.Line), target, propertyLine, nestedEndLine);
             }
             return;
         }
@@ -438,8 +461,11 @@ public static class TweakInteractionAnalyzer
             _ when value is YamlMappingNode => TweakOperationKind.InlineRecord,
             _ => TweakOperationKind.ScalarAssignment
         };
-        operations.Add(Create(source, DefinitionTarget(target, kind), value, kind, false, propertyLine));
+        operations.Add(WithRecord(Create(source, DefinitionTarget(target, kind), value, kind, false, propertyLine), recordTarget, recordStartLine, recordEndLine));
     }
+
+    private static TweakOperation WithRecord(TweakOperation operation, string? recordTarget, int startLine, int endLine)
+        => operation with { RecordTarget = recordTarget, RecordStartLine = startLine, RecordEndLine = endLine };
 
     private static void AddMixedDefinitionFailure(TweakSource source, string target, List<SourceAnalysisFailure> failures)
         => failures.Add(new SourceAnalysisFailure(source.Provider, source.FilePath, "TweakXL interpretation", $"{target}: Mixed definition of array replacement and mutations. Only mutations will take effect."));

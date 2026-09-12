@@ -21,6 +21,7 @@ public sealed class ProfileViewStateStoreTests
                 CodeView = "Reviewed",
                 CodeSurface = "ArchiveXl",
                 CodeProvider = "Apogee",
+                CodeOtherProvider = "Time Control",
                 ArchiveModFilter = "sandevistan",
                 ArchiveFileFilter = "mesh",
                 ShowNonConflictingFiles = true,
@@ -36,6 +37,7 @@ public sealed class ProfileViewStateStoreTests
             Assert.IsTrue(store.TrySave(expected));
 
             ProfileViewState actual = store.Load(ModManagerKind.Mo2, "instance", "Standard");
+            Assert.AreEqual("Time Control", actual.CodeOtherProvider);
             Assert.AreEqual(expected.ManagerKind, actual.ManagerKind);
             Assert.AreEqual(expected.InstallationId, actual.InstallationId);
             Assert.AreEqual(expected.ProfileName, actual.ProfileName);
