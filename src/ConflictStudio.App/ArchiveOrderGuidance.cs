@@ -13,6 +13,7 @@ public static class ArchiveOrderGuidance
             return evidence.IgnoredEntries.Length > 0 ? "Clean inactive entry" : "View load order";
         }
         if (evidence.IsRepairableLegacyOrder) return "Review repair draft";
+        if (evidence.IncompleteArchiveLane != ArchiveOrderProblemLane.None) return "Show scan details";
         return evidence.ProblemLane switch
         {
             ArchiveOrderProblemLane.Redmod => "Show REDmod deployment steps",
@@ -31,6 +32,7 @@ public static class ArchiveOrderGuidance
     internal static string BlockedTitle(ArchiveOrderEvidence evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);
+        if (evidence.IncompleteArchiveLane != ArchiveOrderProblemLane.None) return "Archive scan input is incomplete";
         return evidence.ProblemLane switch
         {
             ArchiveOrderProblemLane.Legacy => "Legacy archive winners are blocked by one order problem",
@@ -52,6 +54,7 @@ public static class ArchiveOrderGuidance
     {
         ArgumentNullException.ThrowIfNull(evidence);
         if (evidence.IsRepairableLegacyOrder) return "Review the complete repair draft, adjust it if needed, then apply and verify it.";
+        if (evidence.IncompleteArchiveLane != ArchiveOrderProblemLane.None) return "Fix the named unreadable or missing archive input, then re-check conflicts.";
         if (managerKind == ModManagerKind.Vortex && evidence.ProblemLane is ArchiveOrderProblemLane.Redmod or ArchiveOrderProblemLane.Combined) return evidence.ProblemLane == ArchiveOrderProblemLane.Combined ? "Repair the named legacy archive-order entries, deploy the active Vortex profile, then re-check conflicts." : "Deploy the active Vortex profile, then re-check conflicts.";
         if (managerKind == ModManagerKind.Manual && evidence.ProblemLane is ArchiveOrderProblemLane.Redmod or ArchiveOrderProblemLane.Combined) return evidence.ProblemLane == ArchiveOrderProblemLane.Combined ? "Repair the named legacy archive-order entries, deploy REDmods with REDlauncher or REDmod, then re-check conflicts." : "Deploy REDmods with REDlauncher or REDmod, then re-check conflicts.";
         return evidence.ProblemLane switch

@@ -333,7 +333,7 @@ public sealed class ArchiveOrderWorkspaceViewModelTests
                 VortexManagerContext changed = context with { CapturedAtUtc = now, ArchiveOrder = writtenOrder, ArchiveOrderSha256 = writtenHash };
                 VortexManagerContext refreshed = changed with { ContextId = VortexManagerContextStore.ComputeContextId(changed) };
                 File.WriteAllText(contextPath, System.Text.Json.JsonSerializer.Serialize(refreshed));
-                return new VortexOrderResponse(1, request.RequestId, true, "Applied", backupPath, writtenHash, now, refreshed.ContextId);
+                return new VortexOrderResponse(2, request.RequestId, true, "Applied", backupPath, writtenHash, now, refreshed.ContextId);
             }, () => now, () => []), (_, _) => profile);
             string installationId = ProfileInstallationIdentity.Create("Vortex", game + "|profile");
             viewModel.LoadProfile(profile, target, staging, () => VortexArchiveProfileScanner.Scan(VortexManagerContextStore.Read(contextPath)), installationId);
@@ -386,7 +386,7 @@ public sealed class ArchiveOrderWorkspaceViewModelTests
                 VortexManagerContext changed = context with { ArchiveOrder = [], ArchiveOrderSha256 = writtenHash };
                 VortexManagerContext refreshed = changed with { ContextId = VortexManagerContextStore.ComputeContextId(changed) };
                 File.WriteAllText(contextPath, System.Text.Json.JsonSerializer.Serialize(refreshed));
-                return new VortexOrderResponse(1, request.RequestId, true, "Applied", backupPath, writtenHash, now, refreshed.ContextId);
+                return new VortexOrderResponse(2, request.RequestId, true, "Applied", backupPath, writtenHash, now, refreshed.ContextId);
             }, () => now, () => []), (_, _) => profile);
             string installationId = ProfileInstallationIdentity.Create("Vortex", game + "|profile");
             viewModel.LoadProfile(profile, target, staging, () => VortexArchiveProfileScanner.Scan(VortexManagerContextStore.Read(contextPath)), installationId);

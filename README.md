@@ -45,7 +45,7 @@ See [GitHub releases](https://github.com/qcargile/Cyberpunk-Conflict-Studio/rele
 
 ## Install
 
-The release ZIP is `Cyberpunk-Conflict-Studio-1.0.0.zip`. The same package supports MO2, Vortex and manual installations.
+The release ZIP is `Cyberpunk-Conflict-Studio-1.0.1.zip`. The same package supports MO2, Vortex and manual installations.
 
 ### Vortex
 
@@ -53,6 +53,8 @@ The release ZIP is `Cyberpunk-Conflict-Studio-1.0.0.zip`. The same package suppo
 2. Drop the ZIP onto the extension installer.
 3. Restart Vortex, activate your Cyberpunk profile, and deploy it.
 4. Launch Conflict Studio from Cyberpunk 2077 > Tools.
+
+For 1.0.1, update the Vortex extension with the full ZIP and restart Vortex. Replacing only the executable leaves the old archive-order connection in place.
 
 ### Mod Organizer 2
 
@@ -75,10 +77,10 @@ Run `ConflictStudio.exe` from the extracted folder, choose Manual, and select th
 The public package is a self-contained Windows x64 executable:
 
 ```powershell
-.\scripts\publish-win-x64.ps1 -Version 1.0.0
+.\scripts\publish-win-x64.ps1 -Version 1.0.1
 ```
 
-The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/1.0.0.json`.
+The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/1.0.1.json`.
 
 ## Credits
 

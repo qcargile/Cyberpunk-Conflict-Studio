@@ -9,7 +9,6 @@ public sealed class CodeFindingWitnessTests
     private const string KvdPath = @"r6\tweaks\KV Inhibitor\KVD_Techtronika.yaml";
     private const string ArmorPath = @"r6\tweaks\^global_armor_penetration.yaml";
     private const string ArmorMember = "Items.kvsilentstats_armor";
-    private static readonly int[] ArmorLines = [24, 120];
     private static readonly string[] OpposingMembers = ["Items.A", "Items.B"];
     private static readonly int[] RepeatedOccurrences = [1, 2];
 
@@ -30,7 +29,13 @@ public sealed class CodeFindingWitnessTests
             Assert.AreEqual(CodeFindingWitnessKind.OpposingArrayMutation, witness.Kind);
             Assert.AreEqual(ArmorMember, witness.Member);
             Assert.HasCount(2, witness.Participants);
-            CollectionAssert.AreEquivalent(ArmorLines, witness.Participants.Select(value => value.Line).ToArray());
+            foreach (CodeFindingParticipant participant in witness.Participants)
+            {
+                string[] lines = File.ReadAllLines(Path.Combine(root, participant.FilePath));
+                Assert.IsTrue(participant.Line > 0 && participant.Line <= lines.Length);
+                string operation = participant.Kind == CodeEvidenceOperationKind.TweakArrayAppendOnce ? "!append-once" : "!remove";
+                Assert.AreEqual($"- {operation} {ArmorMember}", lines[participant.Line - 1].Trim());
+            }
             CollectionAssert.AreEquivalent(new[] { CodeEvidenceOperationKind.TweakArrayAppendOnce, CodeEvidenceOperationKind.TweakArrayRemove }, witness.Participants.Select(value => value.Kind).ToArray());
             Assert.IsTrue(witness.CanCompare(witness.Participants[0], witness.Participants[1]));
             Assert.IsTrue(witness.Participants.All(value => value.Sources.Length == 1 && value.Sources[0].Member == ArmorMember));

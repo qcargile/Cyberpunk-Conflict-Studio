@@ -621,6 +621,38 @@ public sealed class ConflictWorkQueueBuilderTests
     }
 
     [TestMethod]
+    public void BuildKeepsCompleteCombinedVortexOrderOnTheRepairPath()
+    {
+        ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.Unresolved, "Vortex", null, "A legacy order entry is missing.") { ProblemLane = ArchiveOrderProblemLane.Combined };
+        ProfileScanReceipt receipt = Receipt() with { ArchiveFailures = [], ArchiveOrderEvidence = evidence, ManagerKind = ModManagerKind.Vortex };
+
+        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == "Archive load order");
+
+        Assert.AreEqual("Repair the named legacy archive order entries, deploy the active Vortex profile, then rescan.", item.NextAction);
+        Assert.IsTrue(item.Summary.Contains("one order problem", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    [DataRow(ArchiveOrderProblemLane.Legacy)]
+    [DataRow(ArchiveOrderProblemLane.Redmod)]
+    [DataRow(ArchiveOrderProblemLane.Combined)]
+    public void BuildRoutesIncompleteVortexArchivesToScanInputRepair(ArchiveOrderProblemLane lane)
+    {
+        ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.Unresolved, "Vortex", null, "An active archive could not be read.")
+        {
+            ProblemLane = lane,
+            IncompleteArchiveLane = lane
+        };
+        ProfileScanReceipt receipt = Receipt() with { ArchiveFailures = [], ArchiveOrderEvidence = evidence, ManagerKind = ModManagerKind.Vortex };
+
+        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == "Archive load order");
+
+        Assert.AreEqual("Fix the named unreadable or missing archive input, then rescan.", item.NextAction);
+        Assert.IsTrue(item.Summary.Contains("incomplete archive scan input", StringComparison.Ordinal));
+        Assert.IsFalse(item.NextAction.Contains("order", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
     public void WorkItemsExposeReadableLabelsForTheDesktop()
     {
         ConflictWorkItem item = ConflictWorkQueueBuilder.Build(Receipt(), []).Single(value => value.Target == "base\\shared.mesh");

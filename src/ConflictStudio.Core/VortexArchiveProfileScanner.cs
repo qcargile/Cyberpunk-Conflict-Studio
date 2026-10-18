@@ -11,9 +11,20 @@ public static class VortexArchiveProfileScanner
         => Scan(context, null, cancellationToken);
 
     public static Mo2ArchiveProfile Scan(VortexManagerContext context, IProgress<ScanProgress>? progress, CancellationToken cancellationToken = default)
-        => Scan(context, progress, ArchiveFingerprintParallelism, FileSha256.Fingerprint, cancellationToken);
+    {
+        VortexMovedFiles movedFiles = VortexMovedFiles.Capture(context, cancellationToken);
+        Mo2ArchiveProfile result = Scan(context, progress, movedFiles, cancellationToken);
+        foreach (ProfileInputSnapshot input in movedFiles.Inputs) ProfileInputGuard.RequireUnchanged(input);
+        return result;
+    }
+
+    internal static Mo2ArchiveProfile Scan(VortexManagerContext context, IProgress<ScanProgress>? progress, VortexMovedFiles? movedFiles, CancellationToken cancellationToken)
+        => Scan(context, progress, ArchiveFingerprintParallelism, FileSha256.Fingerprint, movedFiles, cancellationToken);
 
     internal static Mo2ArchiveProfile Scan(VortexManagerContext context, IProgress<ScanProgress>? progress, int maximumParallelism, Func<string, Action<long>?, CancellationToken, FileSha256Result> fingerprintFile, CancellationToken cancellationToken)
+        => Scan(context, progress, maximumParallelism, fingerprintFile, null, cancellationToken);
+
+    private static Mo2ArchiveProfile Scan(VortexManagerContext context, IProgress<ScanProgress>? progress, int maximumParallelism, Func<string, Action<long>?, CancellationToken, FileSha256Result> fingerprintFile, VortexMovedFiles? movedFiles, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(fingerprintFile);
@@ -23,6 +34,13 @@ public static class VortexArchiveProfileScanner
         List<ArchiveCandidate> candidates = [];
         foreach (VortexProviderContext provider in context.Providers.OrderBy(value => value.Order)) DiscoverProvider(candidates, provider.Name, provider.Id, provider.RootPath, context.DeployedWinners, failures);
         DiscoverProvider(candidates, "Game directory", "game-directory", context.GameRoot, context.DeployedWinners, failures);
+        if (movedFiles is not null)
+        {
+            foreach (VortexMovedFile moved in movedFiles.Files.Where(value => IsLegacyArchivePath(value.RelativePath)))
+            {
+                candidates.Add(new ArchiveCandidate(moved.Provider.Name, Path.GetFileName(moved.RelativePath), moved.PhysicalPath));
+            }
+        }
         Mo2Archive?[] results = new Mo2Archive?[candidates.Count];
         SourceAnalysisFailure?[] fingerprintFailures = new SourceAnalysisFailure?[candidates.Count];
         ArchiveFingerprintProgress fingerprintProgress = new(progress, candidates.Select(value => value.Path).ToArray());

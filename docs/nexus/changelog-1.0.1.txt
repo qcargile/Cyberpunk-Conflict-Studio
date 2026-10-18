@@ -1,0 +1,4 @@
+Version 1.0.1
+Fixed empty scans when using Vortex Move deployment
+Fixed archive-order changes and Undo timing out while Vortex was still checking large archive sets
+Incomplete archive scans now point to missing or unreadable files instead of asking for unrelated load-order repairs

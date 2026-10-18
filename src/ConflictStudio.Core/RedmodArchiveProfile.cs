@@ -11,15 +11,21 @@ public static class RedmodArchiveProfileScanner
     private const string OrderRelativePath = "r6\\cache\\modded\\MO_REDmod_load_order.txt";
 
     public static RedmodArchiveProfile Scan(IReadOnlyList<DeploymentProvider> providers, CancellationToken cancellationToken = default)
-        => Scan(providers, null, null, cancellationToken);
+        => Scan(providers, null, null, null, cancellationToken);
 
     public static RedmodArchiveProfile Scan(IReadOnlyList<DeploymentProvider> providers, IReadOnlyDictionary<string, string>? deployedWinners, CancellationToken cancellationToken = default)
-        => Scan(providers, deployedWinners, null, cancellationToken);
+        => Scan(providers, deployedWinners, null, null, cancellationToken);
 
     public static RedmodArchiveProfile Scan(IReadOnlyList<DeploymentProvider> providers, IReadOnlyDictionary<string, string>? deployedWinners, IProgress<ScanProgress>? progress, CancellationToken cancellationToken = default)
-        => Scan(providers, deployedWinners, progress, ArchiveFingerprintParallelism, FileSha256.Fingerprint, CandidateDirectories, cancellationToken);
+        => Scan(providers, deployedWinners, progress, null, cancellationToken);
+
+    public static RedmodArchiveProfile Scan(IReadOnlyList<DeploymentProvider> providers, IReadOnlyDictionary<string, string>? deployedWinners, IProgress<ScanProgress>? progress, VortexMovedFiles? movedFiles, CancellationToken cancellationToken = default)
+        => Scan(providers, deployedWinners, progress, ArchiveFingerprintParallelism, FileSha256.Fingerprint, CandidateDirectories, movedFiles, cancellationToken);
 
     internal static RedmodArchiveProfile Scan(IReadOnlyList<DeploymentProvider> providers, IReadOnlyDictionary<string, string>? deployedWinners, IProgress<ScanProgress>? progress, int maximumParallelism, Func<string, Action<long>?, CancellationToken, FileSha256Result> fingerprintFile, Func<DeploymentProvider, CancellationToken, string[]> candidateDirectories, CancellationToken cancellationToken)
+        => Scan(providers, deployedWinners, progress, maximumParallelism, fingerprintFile, candidateDirectories, null, cancellationToken);
+
+    internal static RedmodArchiveProfile Scan(IReadOnlyList<DeploymentProvider> providers, IReadOnlyDictionary<string, string>? deployedWinners, IProgress<ScanProgress>? progress, int maximumParallelism, Func<string, Action<long>?, CancellationToken, FileSha256Result> fingerprintFile, Func<DeploymentProvider, CancellationToken, string[]> candidateDirectories, VortexMovedFiles? movedFiles, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(providers);
         ArgumentNullException.ThrowIfNull(fingerprintFile);
@@ -79,7 +85,7 @@ public static class RedmodArchiveProfileScanner
                 cancellationToken.ThrowIfCancellationRequested();
                 string relativeInfo = Path.Combine("mods", folder, "info.json");
                 if (!IsVisible(directory.Provider, relativeInfo, deployedWinners)) continue;
-                string infoPath = Path.Combine(directory.Path, "info.json");
+                string infoPath = movedFiles?.Resolve(Path.Combine(directory.Path, "info.json")) ?? Path.Combine(directory.Path, "info.json");
                 try
                 {
                     RequireValidInfo(infoPath);
@@ -122,20 +128,25 @@ public static class RedmodArchiveProfileScanner
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 string archivesRoot = Path.Combine(directory.Path, "archives");
-                if (!Directory.Exists(archivesRoot)) continue;
                 try
                 {
-                    List<string> archivePaths = [];
-                    foreach (string path in Directory.EnumerateFiles(archivesRoot, "*.archive", SearchOption.TopDirectoryOnly))
+                    List<(string Name, string Path)> archivePaths = [];
+                    if (Directory.Exists(archivesRoot)) foreach (string path in Directory.EnumerateFiles(archivesRoot, "*.archive", SearchOption.TopDirectoryOnly))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        archivePaths.Add(path);
+                        archivePaths.Add((Path.GetFileName(path), path));
                     }
-                    archivePaths.Sort((left, right) => StringComparer.Ordinal.Compare(Path.GetFileName(left), Path.GetFileName(right)));
-                    foreach (string path in archivePaths)
+                    if (movedFiles is not null) foreach (VortexMovedFile moved in movedFiles.InDirectory(archivesRoot))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        string name = Path.GetFileName(path);
+                        if (string.Equals(directory.Provider.ManagerId, moved.Provider.Id, StringComparison.OrdinalIgnoreCase)
+                            && string.Equals(Path.GetExtension(moved.SourcePath), ".archive", StringComparison.OrdinalIgnoreCase))
+                            archivePaths.Add((Path.GetFileName(moved.SourcePath), moved.PhysicalPath));
+                    }
+                    archivePaths.Sort((left, right) => StringComparer.Ordinal.Compare(left.Name, right.Name));
+                    foreach ((string name, string path) in archivePaths)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
                         string relative = Path.Combine("mods", folder, "archives", name);
                         if (IsVisible(directory.Provider, relative, deployedWinners)) archiveFiles.TryAdd(name, new RedmodArchiveFile(directory.Provider.Name, path));
                     }
@@ -166,7 +177,7 @@ public static class RedmodArchiveProfileScanner
         }
         progress?.Report(new ScanProgress("deployment · reading REDmod descriptors", folderContributions.Count, folderContributions.Count));
 
-        (string[] orderedFolders, ArchiveOrderEvidence evidence) = ResolveOrder(providers, candidates.Keys.ToArray(), deployedWinners, failures, cancellationToken);
+        (string[] orderedFolders, ArchiveOrderEvidence evidence) = ResolveOrder(providers, candidates.Keys.ToArray(), deployedWinners, failures, movedFiles, cancellationToken);
         List<(string Folder, RedmodArchiveFile Archive)> fingerprintWork = [];
         foreach (string folder in orderedFolders)
         {
@@ -246,7 +257,7 @@ public static class RedmodArchiveProfileScanner
             || !document.RootElement.TryGetProperty("version", out JsonElement version) || version.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(version.GetString())) throw new InvalidDataException("The REDmod info.json descriptor must contain non-empty string name and version fields.");
     }
 
-    private static (string[] Folders, ArchiveOrderEvidence Evidence) ResolveOrder(IReadOnlyList<DeploymentProvider> providers, string[] folders, IReadOnlyDictionary<string, string>? deployedWinners, List<SourceAnalysisFailure> failures, CancellationToken cancellationToken)
+    private static (string[] Folders, ArchiveOrderEvidence Evidence) ResolveOrder(IReadOnlyList<DeploymentProvider> providers, string[] folders, IReadOnlyDictionary<string, string>? deployedWinners, List<SourceAnalysisFailure> failures, VortexMovedFiles? movedFiles, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         string[] alphabetical = folders.ToArray();
@@ -255,7 +266,7 @@ public static class RedmodArchiveProfileScanner
         foreach (DeploymentProvider provider in providers)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            string path = Path.Combine(provider.RootPath, OrderRelativePath);
+            string path = movedFiles?.Resolve(Path.Combine(provider.RootPath, OrderRelativePath)) ?? Path.Combine(provider.RootPath, OrderRelativePath);
             if (!VortexDeploymentFiles.IsEffective(provider.ManagerId, OrderRelativePath, deployedWinners)) continue;
             if (!File.Exists(path))
             {

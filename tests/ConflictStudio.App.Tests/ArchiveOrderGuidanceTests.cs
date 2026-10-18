@@ -28,6 +28,16 @@ public sealed class ArchiveOrderGuidanceTests
     }
 
     [TestMethod]
+    public void CompleteCombinedVortexOrderStillUsesOrderRepairGuidance()
+    {
+        ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.Unresolved, "Vortex", null, "A legacy order entry is missing.") { ProblemLane = ArchiveOrderProblemLane.Combined };
+
+        Assert.AreEqual("Show repair steps", ArchiveOrderGuidance.ActionLabel(evidence));
+        Assert.AreEqual("Archive winners are blocked by two order problems", ArchiveOrderGuidance.BlockedTitle(evidence));
+        Assert.AreEqual("Repair the named legacy archive-order entries, deploy the active Vortex profile, then re-check conflicts.", ArchiveOrderGuidance.Instruction(evidence, ModManagerKind.Vortex));
+    }
+
+    [TestMethod]
     public void ManualGuidanceUsesRedmodDeploymentLanguage()
     {
         ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.Unresolved, "Game directory", "MO_REDmod_load_order.txt", "blocked") { ProblemLane = ArchiveOrderProblemLane.Redmod };
@@ -71,6 +81,23 @@ public sealed class ArchiveOrderGuidanceTests
 
         Assert.IsFalse(ArchiveOrderGuidance.OpensPreparedOrder(evidence));
         Assert.AreEqual("Show repair steps", ArchiveOrderGuidance.ActionLabel(evidence));
+    }
+
+    [TestMethod]
+    [DataRow(ArchiveOrderProblemLane.Legacy)]
+    [DataRow(ArchiveOrderProblemLane.Redmod)]
+    [DataRow(ArchiveOrderProblemLane.Combined)]
+    public void IncompleteVortexArchivesShowScanInputGuidance(ArchiveOrderProblemLane lane)
+    {
+        ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.Unresolved, "Vortex", null, "An archive could not be read.")
+        {
+            ProblemLane = lane,
+            IncompleteArchiveLane = lane
+        };
+
+        Assert.AreEqual("Show scan details", ArchiveOrderGuidance.ActionLabel(evidence));
+        Assert.AreEqual("Archive scan input is incomplete", ArchiveOrderGuidance.BlockedTitle(evidence));
+        Assert.AreEqual("Fix the named unreadable or missing archive input, then re-check conflicts.", ArchiveOrderGuidance.Instruction(evidence, ModManagerKind.Vortex));
     }
 
     [TestMethod]

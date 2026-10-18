@@ -20,12 +20,13 @@ public sealed class VortexArchiveOrderWriterTests
         VortexArchiveOrderWriter writer = new(context, request =>
         {
             captured = request;
-            return new VortexOrderResponse(1, request.RequestId, true, "Applied by Vortex", "modlist.txt.20260829.bak", new string('d', 64), DateTimeOffset.UtcNow);
+            return new VortexOrderResponse(request.SchemaVersion, request.RequestId, true, "Applied by Vortex", "modlist.txt.20260829.bak", new string('d', 64), DateTimeOffset.UtcNow);
         }, () => DateTimeOffset.UtcNow);
 
         ArchiveOrderApplyResult result = writer.Apply(preview, Inventory);
 
         Assert.IsNotNull(captured);
+        Assert.AreEqual(2, captured.SchemaVersion);
         Assert.AreEqual(context.ContextId, captured.ContextId);
         Assert.AreEqual(context.ProfileId, captured.ProfileId);
         Assert.AreEqual(TimeSpan.FromSeconds(60), captured.ExpiresAtUtc - captured.RequestedAtUtc);
@@ -45,7 +46,7 @@ public sealed class VortexArchiveOrderWriterTests
         VortexArchiveOrderWriter writer = new(Context(false), request =>
         {
             exchanged = true;
-            return new VortexOrderResponse(1, request.RequestId, true, "unexpected", null, new string('d', 64), DateTimeOffset.UtcNow);
+            return new VortexOrderResponse(request.SchemaVersion, request.RequestId, true, "unexpected", null, new string('d', 64), DateTimeOffset.UtcNow);
         }, () => DateTimeOffset.UtcNow);
 
         ArchiveOrderException exception = Assert.ThrowsExactly<ArchiveOrderException>(() => writer.Apply(preview, Inventory));
@@ -63,7 +64,7 @@ public sealed class VortexArchiveOrderWriterTests
 
         Assert.ThrowsExactly<ArchiveOrderException>(() => blocked.Apply(preview, Inventory));
 
-        VortexArchiveOrderWriter allowed = new(Context(true), request => new VortexOrderResponse(1, request.RequestId, true, "Applied", null, new string('d', 64), DateTimeOffset.UtcNow), () => DateTimeOffset.UtcNow, () => ["Vortex"]);
+        VortexArchiveOrderWriter allowed = new(Context(true), request => new VortexOrderResponse(request.SchemaVersion, request.RequestId, true, "Applied", null, new string('d', 64), DateTimeOffset.UtcNow), () => DateTimeOffset.UtcNow, () => ["Vortex"]);
         Assert.IsTrue(allowed.Apply(preview, Inventory).Verified);
     }
 
@@ -75,7 +76,7 @@ public sealed class VortexArchiveOrderWriterTests
         VortexManagerContext stale = Context(true) with { CapturedAtUtc = new DateTimeOffset(2026, 8, 29, 17, 0, 0, TimeSpan.Zero) };
         VortexArchiveOrderWriter writer = new(stale, request =>
         {
-            return new VortexOrderResponse(1, request.RequestId, true, "Applied", null, new string('d', 64), DateTimeOffset.UtcNow);
+            return new VortexOrderResponse(request.SchemaVersion, request.RequestId, true, "Applied", null, new string('d', 64), DateTimeOffset.UtcNow);
         }, () => new DateTimeOffset(2026, 8, 29, 18, 0, 0, TimeSpan.Zero), () => ["Vortex"]);
 
         ArchiveOrderApplyResult result = writer.Apply(preview, Inventory);
@@ -118,13 +119,14 @@ public sealed class VortexArchiveOrderWriterTests
         {
             VortexOrderBridgeStore store = new(root);
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            VortexOrderRequest request = new(1, new string('e', 32), new string('a', 64), "profile", now, now.AddSeconds(15), null, Inventory, ProposedOrder);
+            VortexOrderRequest request = new(2, new string('e', 32), new string('a', 64), "profile", now, now.AddSeconds(15), null, Inventory, ProposedOrder);
             using CancellationTokenSource cancellation = new();
             cancellation.Cancel();
 
             Assert.ThrowsExactly<OperationCanceledException>(() => store.Exchange(request, TimeSpan.FromSeconds(15), cancellation.Token));
 
             Assert.IsNull(store.ReadRequest());
+            Assert.IsFalse(File.Exists(Path.Combine(root, "order-lease.json")));
         }
         finally
         {
@@ -141,7 +143,7 @@ public sealed class VortexArchiveOrderWriterTests
             VortexOrderBridgeStore first = new(root);
             VortexOrderBridgeStore second = new(root);
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            VortexOrderRequest firstRequest = new(1, new string('e', 32), new string('a', 64), "profile", now, now.AddSeconds(15), null, Inventory, ProposedOrder);
+            VortexOrderRequest firstRequest = new(2, new string('e', 32), new string('a', 64), "profile", now, now.AddSeconds(15), null, Inventory, ProposedOrder);
             VortexOrderRequest secondRequest = firstRequest with { RequestId = new string('f', 32) };
             using CancellationTokenSource cancellation = new();
             Task firstExchange = Task.Run(() => Assert.ThrowsExactly<OperationCanceledException>(() => first.Exchange(firstRequest, TimeSpan.FromSeconds(15), cancellation.Token)));
@@ -169,7 +171,7 @@ public sealed class VortexArchiveOrderWriterTests
         VortexArchiveOrderWriter writer = new(Context(true), request =>
         {
             requests.Add(request);
-            return new VortexOrderResponse(1, request.RequestId, true, "Applied", requests.Count == 1 ? "C:\\Game\\archive\\pc\\mod\\modlist.txt.backup.bak" : null, new string(requests.Count == 1 ? 'd' : 'e', 64), DateTimeOffset.UtcNow, requests.Count == 1 ? new string('f', 64) : null);
+            return new VortexOrderResponse(request.SchemaVersion, request.RequestId, true, "Applied", requests.Count == 1 ? "C:\\Game\\archive\\pc\\mod\\modlist.txt.backup.bak" : null, new string(requests.Count == 1 ? 'd' : 'e', 64), DateTimeOffset.UtcNow, requests.Count == 1 ? new string('f', 64) : null);
         }, () => DateTimeOffset.UtcNow);
         ArchiveOrderApplyResult result = writer.Apply(preview, Inventory);
 
@@ -192,7 +194,7 @@ public sealed class VortexArchiveOrderWriterTests
         VortexArchiveOrderWriter writer = new(Context(true), request =>
         {
             requests.Add(request);
-            return new VortexOrderResponse(1, request.RequestId, true, "Applied", "C:\\Game\\archive\\pc\\mod\\modlist.txt.backup.bak", new string(requests.Count == 1 ? 'd' : 'e', 64), DateTimeOffset.UtcNow, requests.Count == 1 ? new string('f', 64) : null);
+            return new VortexOrderResponse(request.SchemaVersion, request.RequestId, true, "Applied", "C:\\Game\\archive\\pc\\mod\\modlist.txt.backup.bak", new string(requests.Count == 1 ? 'd' : 'e', 64), DateTimeOffset.UtcNow, requests.Count == 1 ? new string('f', 64) : null);
         }, () => DateTimeOffset.UtcNow);
         ArchiveOrderApplyResult result = writer.Apply(preview, Inventory);
 
@@ -212,13 +214,25 @@ public sealed class VortexArchiveOrderWriterTests
         VortexArchiveOrderWriter writer = new(Context(true), request =>
         {
             requests++;
-            return new VortexOrderResponse(1, request.RequestId, true, "Applied", null, new string('d', 64), DateTimeOffset.UtcNow);
+            return new VortexOrderResponse(request.SchemaVersion, request.RequestId, true, "Applied", null, new string('d', 64), DateTimeOffset.UtcNow);
         }, () => DateTimeOffset.UtcNow, () => gameRunning ? ["Cyberpunk2077"] : []);
         ArchiveOrderApplyResult result = writer.Apply(preview, Inventory);
         gameRunning = true;
 
         Assert.ThrowsExactly<ArchiveOrderException>(() => writer.RestorePrevious(result, "C:\\Game\\archive\\pc\\mod\\modlist.txt"));
         Assert.AreEqual(1, requests);
+    }
+
+    [TestMethod]
+    public void ApplyIdentifiesAnOlderExtensionWithoutAcceptingItsResponse()
+    {
+        ArchiveOrderObservation observation = new("Standard", "C:\\Vortex", null, Inventory, CurrentOrder);
+        ArchiveOrderPreview preview = ArchiveOrderPlanner.CreatePreview(observation, ProposedOrder);
+        VortexArchiveOrderWriter writer = new(Context(true), request => new VortexOrderResponse(1, request.RequestId, false, "The archive order request is invalid.", null, null, DateTimeOffset.UtcNow), () => DateTimeOffset.UtcNow, () => []);
+
+        ArchiveOrderException exception = Assert.ThrowsExactly<ArchiveOrderException>(() => writer.Apply(preview, Inventory));
+
+        StringAssert.Contains(exception.Message, "Update the Conflict Studio Vortex extension");
     }
 
     private static VortexManagerContext Context(bool fresh)

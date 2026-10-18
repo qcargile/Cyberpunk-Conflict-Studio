@@ -1,4 +1,7 @@
 using ConflictStudio.App;
+using ConflictStudio.Core;
+using System.IO;
+using System.Reflection;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -62,6 +65,51 @@ public sealed class MainWindowArchiveInteractionTests
         string[] archives = ArchiveDragSelection.Resolve("B.archive", true, ["A.archive", "B.archive"], ["B.archive"], false);
 
         CollectionAssert.AreEqual(SelectedPair, archives);
+    }
+
+    [TestMethod]
+    [DataRow(ArchiveOrderProblemLane.Legacy)]
+    [DataRow(ArchiveOrderProblemLane.Redmod)]
+    [DataRow(ArchiveOrderProblemLane.Combined)]
+    public void IncompleteArchiveActionOpensTheSupportReportWithoutReplacingEvidence(ArchiveOrderProblemLane lane)
+    {
+        Run(() =>
+        {
+            string applicationData = Path.Combine(Path.GetTempPath(), "conflict-studio-archive-guidance-" + Guid.NewGuid().ToString("N"));
+            MainWindow window = new(applicationData);
+            try
+            {
+                window.Show();
+                const string message = "Broken.archive could not be read.";
+                ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.Unresolved, "Vortex", null, message)
+                {
+                    ProblemLane = lane,
+                    IncompleteArchiveLane = lane
+                };
+                ProfileScanReceipt receipt = new(2, "Profile", DateTimeOffset.UtcNow, [], [], [new("Provider", "Broken.archive", message)], [], [], [], [], [], [], [], [], [], ArchiveOrderEvidence: evidence, ManagerKind: ModManagerKind.Vortex);
+                typeof(MainWindow).GetMethod("SetScanLocked", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [false]);
+                typeof(MainWindow).GetField("_receipt", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, receipt);
+                typeof(MainWindow).GetMethod("PresentArchiveOrderEvidence", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [evidence]);
+
+                TextBlock evidenceText = (TextBlock)window.FindName("ArchiveOrderEvidenceTextBlock");
+                TabControl tabs = (TabControl)window.FindName("MainTabControl");
+                TabItem support = (TabItem)window.FindName("SupportTab");
+                TextBox report = (TextBox)window.FindName("DiagnosticsTextBox");
+                Assert.AreEqual(lane, ((ProfileScanReceipt)typeof(MainWindow).GetField("_receipt", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!).ArchiveOrderEvidence!.IncompleteArchiveLane);
+                typeof(MainWindow).GetMethod("FocusArchiveLoadOrderClicked", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [window.FindName("ArchiveOrderActionButton"), new RoutedEventArgs(Button.ClickEvent)]);
+                window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+                Assert.AreSame(support, tabs.SelectedItem);
+                Assert.AreEqual(message, evidenceText.Text);
+                StringAssert.Contains(report.Text, "Broken.archive");
+                Assert.IsTrue(report.IsKeyboardFocusWithin);
+            }
+            finally
+            {
+                window.Close();
+                if (Directory.Exists(applicationData)) Directory.Delete(applicationData, true);
+            }
+        });
     }
 
     [TestMethod]
@@ -131,6 +179,20 @@ public sealed class MainWindowArchiveInteractionTests
         thread.Start();
         thread.Join();
 
+        if (failure is not null) throw failure;
+    }
+
+    private static void Run(Action action)
+    {
+        Exception? failure = null;
+        Thread thread = new(() =>
+        {
+            try { action(); }
+            catch (Exception exception) { failure = exception; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
         if (failure is not null) throw failure;
     }
 }

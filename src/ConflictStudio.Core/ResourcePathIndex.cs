@@ -45,6 +45,9 @@ public static class ResourcePathIndex
         => Resolve(paths, providers, neededHashes, deployedWinners, null, cancellationToken);
 
     public static ResourcePathIndexResult Resolve(Mo2InstancePaths paths, IReadOnlyList<DeploymentProvider> providers, IReadOnlySet<ulong> neededHashes, IReadOnlyDictionary<string, string>? deployedWinners, IReadOnlySet<string>? excludedPhysicalPaths, CancellationToken cancellationToken = default)
+        => Resolve(paths, providers, neededHashes, deployedWinners, excludedPhysicalPaths, null, cancellationToken);
+
+    internal static ResourcePathIndexResult Resolve(Mo2InstancePaths paths, IReadOnlyList<DeploymentProvider> providers, IReadOnlySet<ulong> neededHashes, IReadOnlyDictionary<string, string>? deployedWinners, IReadOnlySet<string>? excludedPhysicalPaths, DeploymentFileManifest? manifest, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(providers);
@@ -56,6 +59,8 @@ public static class ResourcePathIndex
         {
             DeploymentProvider? winner = providers.FirstOrDefault(value => string.Equals(value.ManagerId, winnerId, StringComparison.OrdinalIgnoreCase));
             source = winner is null ? default : (winner.Name, Path.Combine(winner.RootPath, RelativePath));
+            DeploymentFileEntry? captured = manifest?.Files.FirstOrDefault(value => string.Equals(value.RelativePath, RelativePath, StringComparison.OrdinalIgnoreCase) && string.Equals(value.Provider.ManagerId, winnerId, StringComparison.OrdinalIgnoreCase));
+            if (captured is not null) source = (captured.Provider.Name, captured.PhysicalPath);
         }
         else
         {

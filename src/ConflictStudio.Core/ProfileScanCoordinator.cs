@@ -190,13 +190,15 @@ public static class ProfileScanCoordinator
         DeploymentProvider[] providers = [.. active, new DeploymentProvider("Game directory", context.GameRoot, -1, "game-directory")];
         progress?.Report(new ScanProgress("deployment · indexing archives", 1, 4));
         VortexManagerContext scanContext = managerEvidenceReliable ? context : context with { DeploymentFresh = false, Providers = [], DeployedWinners = [] };
-        Mo2ArchiveProfile legacyArchives = VortexArchiveProfileScanner.Scan(scanContext, progress, cancellationToken);
-        RedmodArchiveProfile redmods = RedmodArchiveProfileScanner.Scan(providers, managerEvidenceReliable ? context.DeployedWinners : null, progress, cancellationToken);
+        VortexMovedFiles movedFiles = VortexMovedFiles.Capture(scanContext, cancellationToken);
+        Mo2ArchiveProfile legacyArchives = VortexArchiveProfileScanner.Scan(scanContext, progress, movedFiles, cancellationToken);
+        RedmodArchiveProfile redmods = RedmodArchiveProfileScanner.Scan(providers, managerEvidenceReliable ? context.DeployedWinners : null, progress, movedFiles, cancellationToken);
         Mo2ArchiveProfile archives = PackedArchiveTopology.Compose(legacyArchives, redmods);
         progress?.Report(new ScanProgress("deployment · resolving active files", 2, 4));
-        DeploymentFileManifest manifest = DeploymentFileManifest.Build(providers, progress, cancellationToken);
+        DeploymentFileManifest manifest = DeploymentFileManifest.Build(providers, progress, cancellationToken).WithMovedFiles(movedFiles);
         Mo2InstancePaths paths = new(context.StagingRoot, context.StagingRoot, string.Empty, string.Empty, context.GameRoot, context.ProfileName);
         ProfileInputSnapshot[] inputs = heartbeatSnapshot is null ? EvidenceSnapshots(archives.OrderEvidence) : [.. EvidenceSnapshots(archives.OrderEvidence), heartbeatSnapshot];
+        inputs = [.. inputs, .. movedFiles.Inputs];
         bool deploymentFresh = context.DeploymentFresh && context.DeploymentInventoryComplete && bridgeLive && missingProviders.Length == 0 && context.UnmappedRelevantFileCount == 0;
         List<SourceAnalysisFailure> failures = [];
         if (!deploymentFresh || context.UnmappedRelevantFileCount > 0) failures.Add(new SourceAnalysisFailure("Vortex", Path.GetFileName(fullContextPath), "Deployment", !bridgeLive ? "The Vortex bridge is offline or stale. Only deployed game files were scanned; open Vortex and refresh before relying on provider losers or applying an order." : missingProviders.Length > 0 ? "At least one active Vortex staging folder is missing. Only deployed game files were scanned; reinstall or remove the named provider, deploy, and refresh." : !context.DeploymentInventoryComplete ? "Vortex returned an incomplete deployment inventory. Only deployed game files were scanned; refresh the active profile before relying on provider losers or applying an order." : context.TargetRelocatedFileCount > 0 ? $"Vortex uses target relocation for {context.TargetRelocatedFileCount:N0} relevant deployed file{(context.TargetRelocatedFileCount == 1 ? string.Empty : "s")}. Conflict Studio cannot map those deployed paths back to their staging sources, so only deployed game files were scanned. Redeploying will not change this bridge limitation." : context.UnmappedRelevantFileCount > 0 ? $"Vortex reported {context.UnmappedRelevantFileCount:N0} relevant deployed file{(context.UnmappedRelevantFileCount == 1 ? string.Empty : "s")} without an active provider mapping. Only deployed game files were scanned; deploy the profile again before relying on provider losers or applying an order." : "Vortex has pending deployment changes. Deploy the active profile before relying on winners or applying an order."));
@@ -251,7 +253,7 @@ public static class ProfileScanCoordinator
         {
             RdarResourceScanResult resources = RdarResourceScanner.ScanResilient(archiveInputs, null, oodlePath, progress, cancellationToken);
             RdarArchiveFailure[] failures = resources.Failures.Concat(excludedArchiveFailures).ToArray();
-            ResourcePathIndexResult pathIndex = ResourcePathIndex.Resolve(prepared.Paths, prepared.DeploymentProviders, resources.Resources.Select(value => value.ResourceHash).ToHashSet(), prepared.DeployedWinners, excludedPhysicalPaths, cancellationToken);
+            ResourcePathIndexResult pathIndex = ResourcePathIndex.Resolve(prepared.Paths, prepared.DeploymentProviders, resources.Resources.Select(value => value.ResourceHash).ToHashSet(), prepared.DeployedWinners, excludedPhysicalPaths, prepared.FileManifest, cancellationToken);
             ResourceProvider[] resolved = ResourcePathIndex.Apply(resources.Resources, pathIndex.Paths);
             resolved = RdarPayloadFingerprint.Apply(resolved, resources.PayloadIndexes ?? [], oodlePath, cancellationToken);
             packed = new PackedProfileAnalysis(PackedAnalysisSchema, resolved, failures, resources.Warnings ?? [], pathIndex.Evidence, resources.Resources.Length);

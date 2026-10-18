@@ -583,6 +583,13 @@ public partial class MainWindow : Window, IDisposable
                 }
                 return;
             }
+            if (evidence.IncompleteArchiveLane != ArchiveOrderProblemLane.None)
+            {
+                SupportTab.IsSelected = true;
+                UpdateSupportSurface();
+                Dispatcher.BeginInvoke(DiagnosticsTextBox.Focus, DispatcherPriority.Input);
+                return;
+            }
             string instruction = ArchiveOrderGuidance.Instruction(evidence, receipt.ManagerKind);
             ArchiveOrderEvidenceTextBlock.Text = instruction;
             ArchiveOrderEvidenceTextBlock.Visibility = Visibility.Visible;

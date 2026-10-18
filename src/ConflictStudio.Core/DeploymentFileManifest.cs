@@ -25,6 +25,23 @@ public sealed class DeploymentFileManifest
     public DeploymentFileEntry[] Files { get; }
     public DeploymentFileEnumerationFailure[] Failures { get; }
 
+    public DeploymentFileManifest WithMovedFiles(VortexMovedFiles movedFiles)
+    {
+        ArgumentNullException.ThrowIfNull(movedFiles);
+        Dictionary<string, (DeploymentProvider Provider, int Position)> providers = Providers.Select((value, position) => (value, position)).Where(value => value.value.ManagerId is not null).ToDictionary(value => value.value.ManagerId!, value => (value.value, value.position), StringComparer.OrdinalIgnoreCase);
+        HashSet<string> deployed = movedFiles.Files.Select(value => value.PhysicalPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        List<DeploymentFileEntry> files = Files.Where(value => !value.PhysicalPath.EndsWith(".vortex_lnk", StringComparison.OrdinalIgnoreCase) && !deployed.Contains(value.PhysicalPath)).ToList();
+        foreach (VortexMovedFile moved in movedFiles.Files)
+        {
+            if (!providers.TryGetValue(moved.Provider.Id, out var provider) || string.Equals(Path.GetExtension(moved.RelativePath), ".archive", StringComparison.OrdinalIgnoreCase)) continue;
+            string? lane = Lanes.FirstOrDefault(value => moved.RelativePath.StartsWith(value + "\\", StringComparison.OrdinalIgnoreCase));
+            bool archiveXlFallbackRoot = !Directory.Exists(Path.Combine(provider.Provider.RootPath, "archive", "pc", "mod"));
+            if (lane is null && !(archiveXlFallbackRoot && string.Equals(Path.GetExtension(moved.RelativePath), ".xl", StringComparison.OrdinalIgnoreCase))) continue;
+            files.Add(new DeploymentFileEntry(provider.Provider, provider.Position, moved.RelativePath, moved.PhysicalPath, lane ?? string.Empty, archiveXlFallbackRoot));
+        }
+        return new DeploymentFileManifest(Providers, files.ToArray(), Failures);
+    }
+
     public static DeploymentFileManifest Build(IReadOnlyList<DeploymentProvider> providers, CancellationToken cancellationToken = default)
         => Build(providers, (IProgress<ScanProgress>?)null, cancellationToken);
 

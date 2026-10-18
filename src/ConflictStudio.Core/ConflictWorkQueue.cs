@@ -214,10 +214,14 @@ public static class ConflictWorkQueueBuilder
         if (receipt.ArchiveOrderEvidence is { Kind: ArchiveOrderEvidenceKind.Unresolved } unresolvedOrder)
         {
             int affected = receipt.ResourceConflicts.Count(value => value.Kind == ResourceConflictKind.Unresolved);
-            string action = receipt.ManagerKind == ModManagerKind.Vortex
-                ? unresolvedOrder.ProblemLane switch { ArchiveOrderProblemLane.Redmod => "Deploy the active Vortex profile so the enabled REDmod set and order match, then rescan.", ArchiveOrderProblemLane.Combined => "Repair the named legacy archive order entries, deploy the active Vortex profile, then rescan.", _ => "In Archives, add every named active archive once to the legacy load order, then rescan." }
-                : unresolvedOrder.ProblemLane switch { ArchiveOrderProblemLane.Redmod => "Re-deploy REDmods from the active MO2 profile so the enabled REDmod set and order match, then rescan.", ArchiveOrderProblemLane.Combined => "Repair the named legacy archive order entries and re-deploy REDmods from the active MO2 profile, then rescan.", _ => "In Archives, add every named active archive once to the legacy load order, then rescan." };
-            Add(items, receipt, decisions, ConflictSurface.Diagnostic, "Archive load order", EvidenceClassification.Unresolved, $"{unresolvedOrder.Message} {affected} packed resource{(affected == 1 ? string.Empty : "s")} are waiting on this one order problem.", action, null, unresolvedOrder.Provider is null ? ["Archive order"] : [unresolvedOrder.Provider], [unresolvedOrder.Message, .. unresolvedOrder.MissingEntries, .. unresolvedOrder.DuplicateEntries]);
+            bool incompleteArchives = unresolvedOrder.IncompleteArchiveLane != ArchiveOrderProblemLane.None;
+            string action = incompleteArchives
+                ? "Fix the named unreadable or missing archive input, then rescan."
+                : receipt.ManagerKind == ModManagerKind.Vortex
+                    ? unresolvedOrder.ProblemLane switch { ArchiveOrderProblemLane.Redmod => "Deploy the active Vortex profile so the enabled REDmod set and order match, then rescan.", ArchiveOrderProblemLane.Combined => "Repair the named legacy archive order entries, deploy the active Vortex profile, then rescan.", _ => "In Archives, add every named active archive once to the legacy load order, then rescan." }
+                    : unresolvedOrder.ProblemLane switch { ArchiveOrderProblemLane.Redmod => "Re-deploy REDmods from the active MO2 profile so the enabled REDmod set and order match, then rescan.", ArchiveOrderProblemLane.Combined => "Repair the named legacy archive order entries and re-deploy REDmods from the active MO2 profile, then rescan.", _ => "In Archives, add every named active archive once to the legacy load order, then rescan." };
+            string problem = incompleteArchives ? "incomplete archive scan input" : "one order problem";
+            Add(items, receipt, decisions, ConflictSurface.Diagnostic, "Archive load order", EvidenceClassification.Unresolved, $"{unresolvedOrder.Message} {affected} packed resource{(affected == 1 ? string.Empty : "s")} are waiting on {problem}.", action, null, unresolvedOrder.Provider is null ? ["Archive order"] : [unresolvedOrder.Provider], [unresolvedOrder.Message, .. unresolvedOrder.MissingEntries, .. unresolvedOrder.DuplicateEntries]);
         }
         else if (receipt.ArchiveOrderEvidence is { IgnoredEntries.Length: > 0 } maintainedOrder)
         {

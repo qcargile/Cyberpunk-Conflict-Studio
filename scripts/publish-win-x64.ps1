@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.0.0',
+    [string]$Version = '1.0.1',
     [string]$OutputRoot = (Join-Path $env:LOCALAPPDATA 'Cyberpunk Conflict Studio\releases'),
     [switch]$Force,
     [string]$RepositoryRoot,

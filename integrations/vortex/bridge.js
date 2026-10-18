@@ -30,7 +30,7 @@ function createContext(input) {
 }
 
 async function applyOrderRequest(request, context, now = new Date(), guards = {}) {
-  requireRequest(request, context, now);
+  requireRequest(request, context, now, guards);
   const gameRunning = guards.gameRunning || (() => false);
   const currentTime = guards.now || (() => new Date());
   if (gameRunning()) throw new Error("Archive order cannot be written while Cyberpunk2077 is running.");
@@ -79,7 +79,7 @@ async function applyOrderRequest(request, context, now = new Date(), guards = {}
     const verified = fs.existsSync(orderPath) ? fs.readFileSync(orderPath) : null;
     if (output === null ? verified !== null : verified === null || !verified.equals(output)) throw new Error("The Vortex archive order did not verify after writing.");
     return {
-      schemaVersion: 1,
+      schemaVersion: request.schemaVersion,
       requestId: request.requestId,
       applied: true,
       message: request.restorePrevious === true ? "Vortex restored and verified the previous archive order." : "Vortex applied and verified the archive order.",
@@ -153,18 +153,44 @@ async function completeOrder(response, context, refresh, publish) {
   }
 }
 
-function requireRequest(request, context, now) {
-  if (request.schemaVersion !== 1 || !/^[0-9a-f]{32}$/.test(request.requestId) || request.contextId !== context.contextId || request.profileId !== context.profileId) throw new Error("The archive order request is invalid or does not match the current Vortex profile information.");
+function createOrderSession(request, readRequest, readLease, publishProgress, now = () => new Date()) {
+  const expiresAt = new Date(request.expiresAtUtc);
+  if (!Number.isFinite(expiresAt.getTime()) || now() > expiresAt) throw new Error("The archive order request expired. Preview the order again.");
+  let sequence = 0;
+  let lastProgress = -Infinity;
+  function authorize() {
+    const pending = readRequest();
+    const lease = readLease();
+    const remaining = new Date(lease && lease.expiresAtUtc).getTime() - now().getTime();
+    if (!pending || pending.requestId !== request.requestId || !lease || lease.schemaVersion !== 2 || lease.requestId !== request.requestId || !Number.isFinite(remaining) || remaining <= 0 || remaining > 60000) throw new Error("Conflict Studio is no longer waiting for this archive order. Scan again before retrying.");
+  }
+  function progress(force = false) {
+    const timestamp = now().getTime();
+    if (!force && timestamp - lastProgress < 1000) return;
+    authorize();
+    publishProgress({ schemaVersion: 2, requestId: request.requestId, sequence: ++sequence });
+    lastProgress = timestamp;
+  }
+  return { authorize, progress };
+}
+
+function requireRequest(request, context, now, guards) {
+  if (![1, 2].includes(request.schemaVersion) || !/^[0-9a-f]{32}$/.test(request.requestId) || request.contextId !== context.contextId || request.profileId !== context.profileId) throw new Error("The archive order request is invalid or does not match the current Vortex profile information.");
   if (!context.deploymentFresh) throw new Error("Deploy the active Vortex profile before applying an archive order.");
   if (!Array.isArray(request.inventory) || !Array.isArray(request.proposedOrder)) throw new Error("The archive order request is incomplete.");
   const requestedAt = new Date(request.requestedAtUtc);
   const expiresAt = new Date(request.expiresAtUtc);
   const age = now.getTime() - requestedAt.getTime();
-  if (!Number.isFinite(requestedAt.getTime()) || !Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() - requestedAt.getTime() > 60000 || age < -5000) throw new Error("The archive order request expired. Preview the order again.");
-  requireRequestTime(request, now);
+  if (!Number.isFinite(requestedAt.getTime()) || !Number.isFinite(expiresAt.getTime()) || expiresAt <= requestedAt || expiresAt.getTime() - requestedAt.getTime() > 60000 || age < -5000) throw new Error("The archive order request expired. Preview the order again.");
+  requireRequestTime(request, now, guards);
 }
 
-function requireRequestTime(request, now) {
+function requireRequestTime(request, now, guards) {
+  if (request.schemaVersion === 2) {
+    if (!guards.authorize) throw new Error("Archive verification requires permission from Conflict Studio.");
+    guards.authorize();
+    return;
+  }
   if (now.getTime() > new Date(request.expiresAtUtc).getTime()) throw new Error("The archive order request expired. Preview the order again.");
 }
 
@@ -173,11 +199,11 @@ async function requireWriteAuthorized(request, context, archiveRoot, orderPath, 
   if (currentRevision && currentRevision() !== guards.expectedRevision) throw new Error("The active Vortex profile changed during archive-order preparation. Scan again before applying.");
   const currentContext = guards.currentContext ? guards.currentContext() : context;
   if (!currentContext) throw new Error("The active Vortex profile context disappeared during archive-order preparation.");
-  requireRequest(request, currentContext, currentTime());
+  requireRequest(request, currentContext, currentTime(), guards);
   const commitInventory = await archiveInventoryAsync(archiveRoot, guards);
   if (!sameInventory(commitInventory, inventory) || !sameInventory(commitInventory, request.inventory)) throw new Error("The deployed archive inventory changed after Conflict Studio previewed it.");
   if (gameRunning()) throw new Error("Archive order cannot be written while Cyberpunk2077 is running.");
-  requireRequestTime(request, currentTime());
+  requireRequestTime(request, currentTime(), guards);
   if (currentRevision && currentRevision() !== guards.expectedRevision) throw new Error("The active Vortex profile changed during archive-order preparation. Scan again before applying.");
   const current = fs.existsSync(orderPath) ? fs.readFileSync(orderPath) : null;
   const currentOrderSha = current === null ? null : sha(current);
@@ -284,6 +310,7 @@ async function fingerprintFileAsync(filePath, options = {}) {
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
       if (bytesRead === 0) break;
       hash.update(buffer.subarray(0, bytesRead));
+      options.progress?.();
       bytesSinceYield += bytesRead;
       if (bytesSinceYield >= yieldEveryBytes) {
         bytesSinceYield = 0;
@@ -291,6 +318,7 @@ async function fingerprintFileAsync(filePath, options = {}) {
       }
     }
     const after = await handle.stat();
+    options.progress?.();
     if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) throw new Error(`Archive changed while it was being fingerprinted: ${path.basename(filePath)}`);
     return { size: after.size, sha256: hash.digest("hex") };
   } finally {
@@ -335,4 +363,4 @@ function sha(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
-module.exports = { applyOrderRequest, archiveInventory, archiveInventoryAsync, archiveNames, completeOrder, createContext, isRelevantDeploymentPath, rollbackOrder, selectDeploymentWinners, sha, shaFile };
+module.exports = { applyOrderRequest, archiveInventory, archiveInventoryAsync, archiveNames, completeOrder, createContext, createOrderSession, isRelevantDeploymentPath, rollbackOrder, selectDeploymentWinners, sha, shaFile };

@@ -15,6 +15,8 @@ function init(context) {
   const contextResponsePath = path.join(bridgeRoot, "context-response.json");
   const orderRequestPath = path.join(bridgeRoot, "order-request.json");
   const orderResponsePath = path.join(bridgeRoot, "order-response.json");
+  const orderProgressPath = path.join(bridgeRoot, "order-progress.json");
+  const orderLeasePath = path.join(bridgeRoot, "order-lease.json");
   const applicationRoot = __dirname;
   const applicationPath = path.join(applicationRoot, "ConflictStudio.exe");
   const bridgeLog = typeof vortexApi.log === "function" ? vortexApi.log : () => undefined;
@@ -149,13 +151,19 @@ function init(context) {
     lastOrderRequestId = request.requestId;
     let response;
     try {
+      const session = request.schemaVersion === 2 ? bridge.createOrderSession(request, () => readJson(orderRequestPath), () => readJson(orderLeasePath), (value) => writeJson(orderProgressPath, value)) : null;
+      session?.progress(true);
       const current = await refresh("order request");
+      session?.progress(true);
       const expectedRevision = stateRevision;
-      response = await bridge.applyOrderRequest(request, current, new Date(), { gameRunning: cyberpunkRunning, currentContext: () => readJson(contextPath), stateRevision: () => stateRevision, expectedRevision });
-      response = await bridge.completeOrder(response, current, () => refresh("order completion"), (value) => writeJson(orderResponsePath, value));
+      response = await bridge.applyOrderRequest(request, current, new Date(), { gameRunning: cyberpunkRunning, currentContext: () => readJson(contextPath), stateRevision: () => stateRevision, expectedRevision, authorize: session?.authorize, progress: session?.progress });
+      response = await bridge.completeOrder(response, current, () => refresh("order completion"), (value) => {
+        session?.authorize();
+        writeJson(orderResponsePath, value);
+      });
     } catch (error) {
       response = {
-        schemaVersion: 1,
+        schemaVersion: request.schemaVersion,
         requestId: request.requestId,
         applied: false,
         message: error instanceof Error ? error.message : String(error),
