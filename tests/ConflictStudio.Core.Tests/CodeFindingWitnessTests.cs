@@ -21,6 +21,7 @@ public sealed class CodeFindingWitnessTests
             Directory.CreateDirectory(Path.Combine(root, "archive", "pc", "content"));
             Copy(ChromeBallisticsRoot, root, KvdPath);
             Copy(ChromeBallisticsRoot, root, ArmorPath);
+            Write(root, "r6\\tweaks\\unrelated-stat.yaml", "Items.KVD_Techtronika:\n  statModifiers:\n    - !append-once Items.UnrelatedWitnessStat");
 
             ProfileScanReceipt receipt = ProfileScanCoordinator.ScanManual(root, DateTimeOffset.UtcNow, null, CancellationToken.None);
             ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == "Items.KVD_Techtronika.statModifiers");
@@ -39,7 +40,8 @@ public sealed class CodeFindingWitnessTests
             CollectionAssert.AreEquivalent(new[] { CodeEvidenceOperationKind.TweakArrayAppendOnce, CodeEvidenceOperationKind.TweakArrayRemove }, witness.Participants.Select(value => value.Kind).ToArray());
             Assert.IsTrue(witness.CanCompare(witness.Participants[0], witness.Participants[1]));
             Assert.IsTrue(witness.Participants.All(value => value.Sources.Length == 1 && value.Sources[0].Member == ArmorMember));
-            Assert.HasCount(24, receipt.CodeEvidence.Where(value => value.Target == item.Target).ToArray());
+            CodeSourceEvidence unrelated = receipt.CodeEvidence.Single(value => value.Target == item.Target && value.Member == "Items.UnrelatedWitnessStat");
+            Assert.IsFalse(witness.Participants.Any(value => value.OperationId == unrelated.OperationId));
         }
         finally { Directory.Delete(root, true); }
     }

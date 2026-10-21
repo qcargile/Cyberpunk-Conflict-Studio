@@ -20,7 +20,13 @@ public sealed class WorkspacePreferenceStore
     public WorkspacePreference? Load()
     {
         if (!File.Exists(_path)) return null;
-        try { return JsonSerializer.Deserialize<WorkspacePreference>(File.ReadAllText(_path), Options); }
+        try
+        {
+            WorkspacePreference? preference = JsonSerializer.Deserialize<WorkspacePreference>(File.ReadAllText(_path), Options);
+            return preference is not null && !string.IsNullOrWhiteSpace(preference.Mo2Root)
+                && !string.IsNullOrWhiteSpace(preference.ProfileName) && Enum.IsDefined(preference.ManagerKind)
+                ? preference : null;
+        }
         catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException) { return null; }
     }
 

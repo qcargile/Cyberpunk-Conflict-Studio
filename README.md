@@ -54,6 +54,8 @@ The release ZIP is `Cyberpunk-Conflict-Studio-1.0.1.zip`. The same package suppo
 3. Restart Vortex, activate your Cyberpunk profile, and deploy it.
 4. Launch Conflict Studio from Cyberpunk 2077 > Tools.
 
+If you open Conflict Studio directly, choose Vortex in the manager menu. It requests the active profile from the running Vortex extension and scans it automatically. Use Connect to retry after opening Vortex or enabling the extension. You do not need to find a `context.json` file.
+
 For 1.0.1, update the Vortex extension with the full ZIP and restart Vortex. Replacing only the executable leaves the old archive-order connection in place.
 
 ### Mod Organizer 2

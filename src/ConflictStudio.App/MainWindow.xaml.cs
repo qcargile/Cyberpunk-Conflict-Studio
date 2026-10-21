@@ -20,6 +20,7 @@ public partial class MainWindow : Window, IDisposable
     private readonly Mo2ProfileWorkspaceViewModel _profiles = new();
     private readonly DiagnosticLog _diagnostics;
     private readonly WorkspacePreferenceStore _preferences;
+    private readonly string _defaultVortexContextPath;
     private readonly string _decisionDirectory;
     private readonly ArchiveConflictTreeViewModel _archiveTree = new();
     private readonly List<DiagnosticAction> _sessionActions = [];
@@ -61,13 +62,14 @@ public partial class MainWindow : Window, IDisposable
     private bool _archivePreviewUnavailable;
     private bool _allowClose;
     private bool _applyingPendingOrderForClose;
-    private static string DefaultVortexContextPath => VortexDeploymentGuard.DefaultContextPath;
+    private string DefaultVortexContextPath => _defaultVortexContextPath;
 
     public MainWindow() : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cyberpunk Conflict Studio")) { }
 
     internal MainWindow(string applicationData)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationData);
+        _defaultVortexContextPath = Path.Combine(applicationData, "vortex", "context.json");
         _preferences = new WorkspacePreferenceStore(applicationData);
         _diagnostics = new DiagnosticLog(applicationData);
         _decisionDirectory = Path.Combine(applicationData, "decisions");
@@ -114,22 +116,14 @@ public partial class MainWindow : Window, IDisposable
         finally { SetArchiveOperationLocked(false); }
     }
 
-    private void DiscoverProfilesClicked(object sender, RoutedEventArgs e)
+    private async void DiscoverProfilesClicked(object sender, RoutedEventArgs e)
     {
         try
         {
             ErrorTextBlock.Visibility = Visibility.Collapsed;
             if (_managerKind == ModManagerKind.Vortex)
             {
-                RecordAction("profile-discovery", "started", "Opening the Vortex bridge context picker");
-                OpenFileDialog contextPicker = new() { Title = "Choose the Conflict Studio Vortex bridge context", Filter = "Vortex bridge context|context.json|JSON files|*.json" };
-                if (File.Exists(Mo2RootTextBox.Text)) contextPicker.InitialDirectory = Path.GetDirectoryName(Mo2RootTextBox.Text);
-                if (contextPicker.ShowDialog(this) != true)
-                {
-                    RecordAction("profile-discovery", "cancelled", "Context selection cancelled");
-                    return;
-                }
-                LoadVortexContext(contextPicker.FileName, true);
+                await ScanSelectedProfileAsync();
                 return;
             }
             if (_managerKind == ModManagerKind.Manual)
@@ -179,8 +173,6 @@ public partial class MainWindow : Window, IDisposable
             _vortexContextPath = vortex.ContextPath;
             ProfileBadgeTextBlock.Text = vortex.Name.ToUpperInvariant();
             WorkspaceStatusTextBlock.Text = "Vortex profile selected. Preparing the conflict scan…";
-            VortexManagerContext context = VortexManagerContextStore.Read(vortex.ContextPath);
-            _preferences.TrySave(new WorkspacePreference(context.GameRoot, context.ProfileName, ModManagerKind.Vortex, vortex.ContextPath));
             if (!_restoringWorkspace) await ScanSelectedProfileAsync();
             return;
         }
@@ -207,7 +199,7 @@ public partial class MainWindow : Window, IDisposable
         if (!_scanLocked) InvalidateReceipt();
     }
 
-    private void ManagerModeChanged(object sender, SelectionChangedEventArgs e)
+    private async void ManagerModeChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_syncingManagerMode) return;
         if (ManagerModeComboBox?.SelectedItem is not ComboBoxItem item || item.Tag is not string value || !Enum.TryParse(value, true, out ModManagerKind kind)) return;
@@ -216,53 +208,66 @@ public partial class MainWindow : Window, IDisposable
         ManagerLocationLabel.Text = kind switch { ModManagerKind.Vortex => "VORTEX PROFILE INFORMATION", ModManagerKind.Manual => "CYBERPUNK INSTALLATION", _ => "MO2 INSTALLATION" };
         InvalidateReceipt();
         ProfileComboBox.ItemsSource = null;
-        if (kind == ModManagerKind.Vortex && File.Exists(DefaultVortexContextPath))
+        if (kind == ModManagerKind.Vortex)
         {
-            try { LoadVortexContext(DefaultVortexContextPath, false); }
-            catch (Exception exception) { ShowError("vortex-context", exception); }
+            WorkspacePreference? preference = _preferences.Load();
+            _vortexContextPath = preference?.ManagerKind == ModManagerKind.Vortex && !string.IsNullOrWhiteSpace(preference.ContextPath)
+                ? preference.ContextPath : _vortexContextPath ?? DefaultVortexContextPath;
+            Mo2RootTextBox.Text = _vortexContextPath;
+            FindProfilesButton.Content = "Connect";
+            await ScanSelectedProfileAsync();
         }
         else if (kind == ModManagerKind.Manual && !string.IsNullOrWhiteSpace(Mo2RootTextBox.Text) && (Directory.Exists(Path.Combine(Mo2RootTextBox.Text, "archive", "pc", "content")) || File.Exists(Path.Combine(Mo2RootTextBox.Text, "bin", "x64", "Cyberpunk2077.exe"))))
         {
+            FindProfilesButton.Content = "Browse";
             ManualProfileOption option = new("Deployed game", Path.GetFullPath(Mo2RootTextBox.Text));
             ProfileComboBox.ItemsSource = new[] { option };
             ProfileComboBox.SelectedItem = option;
         }
-        else WorkspaceStatusTextBlock.Text = kind == ModManagerKind.Manual ? "Choose the Cyberpunk installation folder." : kind == ModManagerKind.Vortex ? "Open Vortex with the Conflict Studio extension enabled, or select its context.json profile information file." : "Choose or launch from an MO2 installation.";
+        else
+        {
+            FindProfilesButton.Content = "Browse";
+            WorkspaceStatusTextBlock.Text = kind == ModManagerKind.Manual ? "Choose the Cyberpunk installation folder." : "Choose or launch from an MO2 installation.";
+        }
     }
 
     private async void RestoreWorkspacePreference(object sender, RoutedEventArgs e)
+        => await RestoreWorkspaceAsync();
+
+    private async Task RestoreWorkspaceAsync(ApplicationLaunchOptions? launchOptions = null)
     {
         try
         {
             ErrorTextBlock.Visibility = Visibility.Collapsed;
             WorkspacePreference? preference = _preferences.Load();
-            ApplicationLaunchOptions options = ApplicationLaunchOptions.Parse(Environment.GetCommandLineArgs());
-            bool vortexContextCurrent = false;
-            if (string.Equals(options.Manager, "vortex", StringComparison.OrdinalIgnoreCase)) SelectManagerMode(ModManagerKind.Vortex);
-            if (string.Equals(options.Manager, "vortex", StringComparison.OrdinalIgnoreCase))
+            ApplicationLaunchOptions options = launchOptions ?? ApplicationLaunchOptions.Parse(Environment.GetCommandLineArgs());
+            if (string.Equals(options.Manager, "vortex", StringComparison.OrdinalIgnoreCase)
+                || options.Manager is null && options.VortexContext is not null
+                || options.Manager is null && options.Root is null && options.Profile is null && preference?.ManagerKind == ModManagerKind.Vortex)
             {
-                string launchContextPath = Path.GetFullPath(options.VortexContext ?? DefaultVortexContextPath);
-                WorkspaceStatusTextBlock.Text = "Requesting the active Vortex profile…";
-                await RefreshVortexContextAsync(launchContextPath, CancellationToken.None);
-                vortexContextCurrent = true;
-            }
-            ManagerStartupSelection? selection = string.Equals(options.Manager, "vortex", StringComparison.OrdinalIgnoreCase)
-                ? ManagerStartupResolver.ResolveVortex(options, DefaultVortexContextPath)
-                : string.Equals(options.Manager, "manual", StringComparison.OrdinalIgnoreCase)
-                    ? ManagerStartupResolver.ResolveManual(options, preference)
-                    : ManagerStartupResolver.ResolveMo2(options, Environment.CurrentDirectory, Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "ConflictStudio.exe"), preference)
-                        ?? ManagerStartupResolver.ResolveVortex(options, preference?.ContextPath ?? DefaultVortexContextPath)
-                        ?? ManagerStartupResolver.ResolveManual(options, preference);
-            if (selection is null) return;
-            _restoringWorkspace = true;
-            if (selection.ManagerKind == ModManagerKind.Vortex)
-            {
+                _restoringWorkspace = true;
                 SelectManagerMode(ModManagerKind.Vortex);
-                LoadVortexContext(selection.ContextPath!, false);
+                _vortexContextPath = options.VortexContext ?? preference?.ContextPath ?? DefaultVortexContextPath;
+                Mo2RootTextBox.Text = _vortexContextPath;
+                FindProfilesButton.Content = "Connect";
                 _restoringWorkspace = false;
-                if (ProfileComboBox.SelectedItem is VortexProfileOption) await ScanSelectedProfileAsync(vortexContextCurrent: vortexContextCurrent);
+                await ScanSelectedProfileAsync();
                 return;
             }
+            ManagerStartupSelection? selection = string.Equals(options.Manager, "manual", StringComparison.OrdinalIgnoreCase)
+                    ? ManagerStartupResolver.ResolveManual(options, preference)
+                    : ManagerStartupResolver.ResolveMo2(options, Environment.CurrentDirectory, Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "ConflictStudio.exe"), preference)
+                        ?? ManagerStartupResolver.ResolveManual(options, preference);
+            if (selection is null && options.Manager is null && File.Exists(DefaultVortexContextPath))
+            {
+                SelectManagerMode(ModManagerKind.Vortex);
+                Mo2RootTextBox.Text = DefaultVortexContextPath;
+                FindProfilesButton.Content = "Connect";
+                await ScanSelectedProfileAsync();
+                return;
+            }
+            if (selection is null) return;
+            _restoringWorkspace = true;
             if (selection.ManagerKind == ModManagerKind.Manual)
             {
                 SelectManagerMode(ModManagerKind.Manual);
@@ -288,45 +293,51 @@ public partial class MainWindow : Window, IDisposable
 
     private async void UnifiedScanClicked(object sender, RoutedEventArgs e) => await ScanSelectedProfileAsync();
 
-    private async Task ScanSelectedProfileAsync(bool preserveArchiveUndo = false, bool throwOnFailure = false, bool vortexContextCurrent = false)
+    private async Task ScanSelectedProfileAsync(bool preserveArchiveUndo = false, bool throwOnFailure = false)
     {
+        if (_scanLocked || _archiveOperationLocked && !throwOnFailure)
+        {
+            RecordAction("profile-scan", "blocked", "Another workspace operation is running");
+            WorkspaceStatusTextBlock.Text = "Wait for the current operation to finish.";
+            return;
+        }
+        CancellationTokenSource cancellation = new();
+        _scanCancellation = cancellation;
+        SetScanLocked(true);
         try
         {
             ErrorTextBlock.Visibility = Visibility.Collapsed;
-            string profileName = SelectedProfileName();
+            string profileName = _managerKind == ModManagerKind.Vortex ? "Active Vortex profile" : SelectedProfileName();
             RecordAction("profile-scan", "started", profileName);
-            _scanCancellation?.Dispose();
-            _scanCancellation = new CancellationTokenSource();
-            SetScanLocked(true);
             ExportButton.IsEnabled = false;
             WorkspaceStatusTextBlock.Text = "Scanning the current profile…";
             Progress<ScanProgress> progress = new(UpdateProgress);
             ProfileScanReceipt receipt;
             if (_managerKind == ModManagerKind.Vortex)
             {
-                string contextPath = Path.GetFullPath(_vortexContextPath ?? Mo2RootTextBox.Text);
+                string contextPath = Path.GetFullPath(string.IsNullOrWhiteSpace(Mo2RootTextBox.Text) ? _vortexContextPath ?? DefaultVortexContextPath : Mo2RootTextBox.Text);
                 WorkspaceStatusTextBlock.Text = "Requesting the active Vortex profile…";
-                await EnsureVortexContextAsync(contextPath, vortexContextCurrent, _scanCancellation.Token);
+                await RefreshVortexContextAsync(contextPath, cancellation.Token);
                 _vortexContextPath = contextPath;
                 bool wasRestoring = _restoringWorkspace;
                 _restoringWorkspace = true;
-                try { LoadVortexContext(contextPath, false); }
+                try { LoadVortexContext(contextPath); }
                 finally { _restoringWorkspace = wasRestoring; }
                 WorkspaceStatusTextBlock.Text = "Scanning the current profile…";
-                receipt = await Task.Run(() => ProfileScanCoordinator.ScanVortex(contextPath, DateTimeOffset.UtcNow, progress, _scanCancellation.Token));
+                receipt = await Task.Run(() => ProfileScanCoordinator.ScanVortex(contextPath, DateTimeOffset.UtcNow, progress, cancellation.Token));
                 LoadReceipt(receipt, contextPath, ProfileComboBox.SelectedItem ?? throw new InvalidOperationException("Select a Vortex profile first."), preserveArchiveUndo);
             }
             else if (_managerKind == ModManagerKind.Manual)
             {
                 ManualProfileOption manual = ProfileComboBox.SelectedItem as ManualProfileOption ?? throw new InvalidOperationException("Choose the Cyberpunk installation folder first.");
-                receipt = await Task.Run(() => ProfileScanCoordinator.ScanManual(manual.GameRoot, DateTimeOffset.UtcNow, progress, _scanCancellation.Token));
+                receipt = await Task.Run(() => ProfileScanCoordinator.ScanManual(manual.GameRoot, DateTimeOffset.UtcNow, progress, cancellation.Token));
                 LoadReceipt(receipt, manual.GameRoot, manual, preserveArchiveUndo);
             }
             else
             {
                 Mo2Profile profile = SelectedProfile();
                 string mo2Root = Mo2RootTextBox.Text;
-                receipt = await Task.Run(() => ProfileScanCoordinator.Scan(mo2Root, profile, DateTimeOffset.UtcNow, progress, _scanCancellation.Token));
+                receipt = await Task.Run(() => ProfileScanCoordinator.Scan(mo2Root, profile, DateTimeOffset.UtcNow, progress, cancellation.Token));
                 LoadReceipt(receipt, mo2Root, profile, preserveArchiveUndo);
             }
             RecordAction("profile-scan", "completed", $"{receipt.ResourceConflicts.Length:N0} archive conflicts; {CodeCaseWorkspace.Counts(CodeWorkItems()).NeedsDecision:N0} code decisions");
@@ -345,6 +356,8 @@ public partial class MainWindow : Window, IDisposable
         }
         finally
         {
+            if (ReferenceEquals(_scanCancellation, cancellation)) _scanCancellation = null;
+            cancellation.Dispose();
             SetScanLocked(false);
             ExportButton.IsEnabled = _receipt is not null && !_historyBusy && _noteSaveTask.IsCompleted;
         }
@@ -1279,7 +1292,7 @@ public partial class MainWindow : Window, IDisposable
 
     private string SelectedProfileName() => ProfileComboBox.SelectedItem switch { Mo2Profile mo2 => mo2.Name, VortexProfileOption vortex => vortex.Name, ManualProfileOption manual => manual.Name, _ => throw new InvalidOperationException("Select a manager profile first.") };
 
-    private void LoadVortexContext(string path, bool announce)
+    private void LoadVortexContext(string path)
     {
         string fullPath = Path.GetFullPath(path);
         VortexManagerContext context = VortexManagerContextStore.Read(fullPath);
@@ -1291,8 +1304,9 @@ public partial class MainWindow : Window, IDisposable
         VortexProfileOption option = new(context.ProfileName, fullPath);
         ProfileComboBox.ItemsSource = new[] { option };
         ProfileComboBox.SelectedItem = option;
+        _preferences.TrySave(new WorkspacePreference(context.GameRoot, context.ProfileName, ModManagerKind.Vortex, fullPath));
+        FindProfilesButton.Content = "Connect";
         WorkspaceStatusTextBlock.Text = context.DeploymentFresh ? "Vortex profile information loaded." : "Vortex has pending deployment changes. The scan will use deployed game files only.";
-        if (announce) RecordAction("profile-discovery", "completed", $"Loaded Vortex profile {context.ProfileName}");
     }
 
     private static async Task<VortexManagerContext> RefreshVortexContextAsync(string path, CancellationToken cancellationToken)
@@ -1309,9 +1323,6 @@ public partial class MainWindow : Window, IDisposable
         if (!string.Equals(context.ContextId, response.ContextId, StringComparison.Ordinal)) throw new InvalidDataException("The Vortex profile refresh response does not match context.json.");
         return context;
     }
-
-    private static Task<VortexManagerContext> EnsureVortexContextAsync(string path, bool current, CancellationToken cancellationToken)
-        => current ? Task.FromResult(VortexManagerContextStore.Read(Path.GetFullPath(path))) : RefreshVortexContextAsync(path, cancellationToken);
 
     private void SelectManagerMode(ModManagerKind kind)
     {
@@ -1797,7 +1808,6 @@ public partial class MainWindow : Window, IDisposable
         _archiveDragWheelRemainder = 0;
         _archiveDragScrollTimer.Stop();
         _scanCancellation?.Cancel();
-        _scanCancellation?.Dispose();
         GC.SuppressFinalize(this);
     }
 
