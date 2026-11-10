@@ -27,7 +27,9 @@ Conflict Studio does not decide that two mods are compatible or incompatible. A 
 - **Needs review** identifies competing changes and the specific outcome that remains unresolved. It is not a compatibility verdict.
 - **Identical overlaps** contains loose files with identical bytes or equivalent parsed JSON.
 - File ownership proves which deployed file is selected. It does not prove that the selected file is the version you intended.
-- Competing values prove that active sources assign different values. They do not prove the final in-game value without a runtime observation.
+- Competing scalar assignments can show a predicted TweakXL winner and the declarations it overrides. Competing RedScript replacements can show a predicted surviving body and the replacements it overrides.
+- Predictions use standard Windows ASCII directory order, with TweakXL filename priority groups and registered plugin scripts after the main RedScript tree. The scan does not observe filesystem traversal or compiler registration order. Ambiguous paths, competing plugin registrations, and incomplete source analysis leave the winner unresolved.
+- A predicted winner describes the scanned assignment or replacement only. Later runtime writes, additional imports, wrappers, and gameplay conditions can still affect the result in game.
 
 Conflict Studio can read literal CET callbacks and deployed DLL ownership. It does not resolve dynamically constructed CET callbacks or inspect native DLL hooks and internal behavior.
 

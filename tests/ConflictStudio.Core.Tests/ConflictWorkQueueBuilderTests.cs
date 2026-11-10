@@ -6,6 +6,84 @@ namespace ConflictStudio.Core.Tests;
 public sealed class ConflictWorkQueueBuilderTests
 {
     [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void PredictedPrecedenceIgnoresLineShiftsButExpiresChangedWinners(bool tweak)
+    {
+        ProfileScanReceipt BuildReceipt(string prefix, int value)
+        {
+            ModSourceInventory inventory = tweak
+                ? new([], [], [new("Alpha", "r6\\tweaks\\a.yaml", prefix + "Items.Test.value: 1"), new("Beta", "r6\\tweaks\\z.yaml", "Items.Test.value: " + value)], [])
+                : new([new("Alpha", "r6\\scripts\\a.reds", prefix + "@replaceMethod(Test)\nfunc Run() -> Int32 { return 1; }"), new("Beta", "r6\\scripts\\z.reds", "@replaceMethod(Test)\nfunc Run() -> Int32 { return " + value + "; }")], [], [], []);
+            InteractionFinding[] findings = InteractionReportBuilder.Build(inventory);
+            Assert.IsTrue(tweak ? findings.Single().TweakPrecedence!.Status == PrecedenceStatus.Predicted : findings.Single().RedScriptPrecedence!.Status == PrecedenceStatus.Predicted);
+            return Receipt() with { InteractionFindings = findings, RedScriptFlows = RedScriptFlowEvidenceAnalyzer.Analyze(inventory.RedScripts), TweakOverlaps = TweakInteractionAnalyzer.Analyze(inventory.TweakSources) };
+        }
+        ConflictWorkItem Item(ProfileScanReceipt receipt) => ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Surface == ConflictSurface.ScriptAndTweak);
+        ProfileScanReceipt original = BuildReceipt("", 2);
+        ConflictWorkItem first = Item(original);
+        EvidenceDecision decision = Decision(original, first, first.EvidenceSha256, "Chosen override.");
+        ProfileScanReceipt shifted = BuildReceipt("\n\n", 2);
+
+        Assert.AreEqual(first.EvidenceSha256, Item(shifted).EvidenceSha256);
+        Assert.AreEqual(ConflictWorkState.Reviewed, ConflictWorkQueueBuilder.Build(shifted, [decision]).Single(value => value.Surface == ConflictSurface.ScriptAndTweak).State);
+        Assert.AreNotEqual(first.EvidenceSha256, Item(BuildReceipt("", 3)).EvidenceSha256);
+    }
+
+    [TestMethod]
+    public void SourcePredictionsReachCardsComparisonsAndSerializedReports()
+    {
+        ModSourceInventory inventory = new([
+            new("Alpha", "r6\\scripts\\a.reds", "@replaceMethod(PlayerPuppet)\npublic func Example() -> Void { let a: Int32 = 1; }"),
+            new("Beta", "r6\\scripts\\z.reds", "@replaceMethod(PlayerPuppet)\npublic func Example() -> Void { let a: Int32 = 2; }")
+        ], [], [new("Alpha", "r6\\tweaks\\z.yaml", "Items.Example.value: 1"), new("Beta", "r6\\tweaks\\^last.yaml", "Items.Example.value: 2")], []);
+        InteractionFinding[] findings = InteractionReportBuilder.Build(inventory);
+        ProfileScanReceipt receipt = Receipt() with
+        {
+            InteractionFindings = findings,
+            RedScriptFlows = RedScriptFlowEvidenceAnalyzer.Analyze(inventory.RedScripts),
+            TweakOverlaps = TweakInteractionAnalyzer.Analyze(inventory.TweakSources)
+        };
+        ConflictWorkItem[] items = ConflictWorkQueueBuilder.Build(receipt, []).Where(value => value.Surface == ConflictSurface.ScriptAndTweak).ToArray();
+
+        Assert.HasCount(2, items);
+        foreach (ConflictWorkItem item in items)
+        {
+            StringAssert.Contains(item.Summary, "Predicted winning");
+            StringAssert.Contains(item.Summary, "Beta:");
+            StringAssert.Contains(item.Summary, "Alpha:");
+            StringAssert.Contains(item.Comparisons.Single().Description, "Predicted winning");
+        }
+        ProfileScanReceipt restored = System.Text.Json.JsonSerializer.Deserialize<ProfileScanReceipt>(System.Text.Json.JsonSerializer.Serialize(receipt))!;
+        Assert.AreEqual("Beta", restored.InteractionFindings.Single(value => value.TweakPrecedence is not null).TweakPrecedence!.Winner!.Provider);
+        Assert.AreEqual("Beta", restored.InteractionFindings.Single(value => value.RedScriptPrecedence is not null).RedScriptPrecedence!.Winner!.Provider);
+    }
+
+    [TestMethod]
+    [DataRow("TweakXL RED")]
+    [DataRow("RedScript registration")]
+    public void IncompleteSourcesSuppressPredictedWinners(string surface)
+    {
+        ModSourceInventory inventory = new([
+            new("Alpha", "r6\\scripts\\a.reds", "@replaceMethod(PlayerPuppet)\npublic func Example() -> Void { let a: Int32 = 1; }"),
+            new("Beta", "r6\\scripts\\z.reds", "@replaceMethod(PlayerPuppet)\npublic func Example() -> Void { let a: Int32 = 2; }")
+        ], [], [new("Alpha", "r6\\tweaks\\a.yaml", "Items.Example.value: 1"), new("Beta", "r6\\tweaks\\z.yaml", "Items.Example.value: 2")], [new("Unknown", "missing", surface, "Unavailable source")]);
+        InteractionFinding[] findings = InteractionReportBuilder.Build(inventory);
+        if (surface.StartsWith("TweakXL", StringComparison.Ordinal))
+        {
+            PrecedenceResult<TweakOperation> result = findings.Single(value => value.TweakPrecedence is not null).TweakPrecedence!;
+            Assert.AreEqual(PrecedenceStatus.Unresolved, result.Status);
+            Assert.IsNull(result.Winner);
+        }
+        else
+        {
+            PrecedenceResult<RedScriptHook> result = findings.Single(value => value.RedScriptPrecedence is not null).RedScriptPrecedence!;
+            Assert.AreEqual(PrecedenceStatus.Unresolved, result.Status);
+            Assert.IsNull(result.Winner);
+        }
+    }
+
+    [TestMethod]
     [DataRow("TweakXL RED")]
     [DataRow("RedScript registration")]
     [DataRow("CET Lua activation")]
