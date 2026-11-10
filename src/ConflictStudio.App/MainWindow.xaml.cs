@@ -1038,7 +1038,7 @@ public partial class MainWindow : Window, IDisposable
         ArchiveOrderEvidenceTextBlock.Text = evidence.Message;
         bool repairDraft = evidence.IsRepairableLegacyOrder;
         bool orderBlocked = evidence.Kind == ArchiveOrderEvidenceKind.Unresolved && !repairDraft;
-        bool maintenance = evidence.IgnoredEntries.Length > 0 || evidence.UnlistedArchives.Length > 0;
+        bool maintenance = evidence.IgnoredEntries.Length > 0 && !evidence.PreserveInactiveArchives || evidence.UnlistedArchives.Length > 0;
         _orderProblemLane = orderBlocked || repairDraft ? evidence.ProblemLane : ArchiveOrderProblemLane.None;
         ArchiveOrderEvidenceTitleTextBlock.Text = repairDraft ? "Archive-order repair draft ready" : orderBlocked ? ArchiveOrderGuidance.BlockedTitle(evidence) : maintenance ? ArchiveOrderGuidance.MaintenanceTitle(evidence) : $"Order verified · {evidence.Provider ?? "filename order"}";
         ArchiveOrderActionButton.Content = ArchiveOrderGuidance.ActionLabel(evidence);

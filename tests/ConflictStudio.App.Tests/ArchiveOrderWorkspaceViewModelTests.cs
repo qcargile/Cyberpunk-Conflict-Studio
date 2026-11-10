@@ -66,6 +66,65 @@ public sealed class ArchiveOrderWorkspaceViewModelTests
     }
 
     [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    public void ProfileInactiveEntriesDoNotOfferCleanupAndRemainWhenActiveOrderIsSaved(bool unlistedArchive, bool legacyOrder)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "conflict-studio-profile-inactive-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string profilePath = Path.Combine(root, "profiles", "Standard", "modlist.txt");
+            string orderPath = legacyOrder ? Path.Combine(Path.GetDirectoryName(profilePath)!, "archive-order", "modlist.txt") : Path.Combine(Path.GetDirectoryName(profilePath)!, "archive-order.txt");
+            string archiveRoot = Path.Combine(root, "mods", "Alpha", "archive", "pc", "mod");
+            string pluginPath = Path.Combine(root, "plugins", "chrome_blood_archives", "__init__.py");
+            Directory.CreateDirectory(Path.GetDirectoryName(orderPath)!);
+            Directory.CreateDirectory(archiveRoot);
+            Directory.CreateDirectory(Path.GetDirectoryName(pluginPath)!);
+            File.WriteAllText(pluginPath, string.Empty);
+            File.WriteAllText(Path.Combine(root, "ModOrganizer.ini"), "[Plugins]\nCyberpunk%202077%20Support%20Plugin\\enforce_archive_load_order=false\n");
+            File.WriteAllText(profilePath, "+Alpha\n");
+            File.WriteAllText(Path.Combine(archiveRoot, "Alpha.archive"), "alpha");
+            File.WriteAllText(Path.Combine(archiveRoot, "Beta.archive"), "beta");
+            File.WriteAllText(orderPath, unlistedArchive ? "Alpha.archive\nDisabled.archive\n" : "Alpha.archive\nDisabled.archive\nBeta.archive\n");
+            byte[] original = File.ReadAllBytes(orderPath);
+            Mo2ArchiveProfile profile = Mo2ArchiveProfileScanner.ScanInstance(root, profilePath);
+            Mo2ArchiveWriteTarget target = Mo2ArchiveWriteTargetResolver.Resolve(root, profile.OrderEvidence);
+            string installationId = ProfileInstallationIdentity.Create(root);
+            ArchiveOrderWorkspaceViewModel viewModel = new(() => new ArchiveOrderWriter(() => DateTimeOffset.UtcNow, () => []));
+            viewModel.LoadProfile(profile, target, root, () => Mo2ArchiveProfileScanner.ScanInstance(root, profilePath), installationId);
+            viewModel.SetResourceProviders(installationId, profile.ProfileName, []);
+
+            Assert.IsTrue(profile.OrderEvidence!.PreserveInactiveArchives);
+            Assert.HasCount(1, profile.OrderEvidence.IgnoredEntries);
+            Assert.AreEqual(unlistedArchive, ArchiveOrderGuidance.OpensPreparedOrder(profile.OrderEvidence));
+            Assert.AreEqual(unlistedArchive ? "Add unlisted archive" : "View load order", ArchiveOrderGuidance.ActionLabel(profile.OrderEvidence));
+            viewModel.SetProposedOrder(ProfileInitialOrder);
+            Assert.IsFalse(viewModel.PreviewStatus.Contains("clean", StringComparison.OrdinalIgnoreCase));
+            viewModel.PreviewOrder();
+            Assert.AreEqual(unlistedArchive, viewModel.CanApply);
+            Assert.IsFalse(viewModel.PreviewStatus.Contains("removes", StringComparison.OrdinalIgnoreCase));
+
+            viewModel.SetProposedOrder(ExistingManagedOrder);
+            viewModel.PreviewOrder();
+            Assert.IsTrue(viewModel.CanApply);
+            Assert.IsFalse(viewModel.PreviewStatus.Contains("removes", StringComparison.OrdinalIgnoreCase));
+            viewModel.ApplyOrder();
+            Assert.AreEqual(Path.Combine(Path.GetDirectoryName(profilePath)!, "archive-order.txt"), target.ModlistPath);
+            Assert.AreEqual("Beta.archive\r\nDisabled.archive\r\nAlpha.archive\r\n", File.ReadAllText(target.ModlistPath));
+            Assert.IsFalse(viewModel.CanApply);
+            viewModel.UndoLastApply();
+            CollectionAssert.AreEqual(original, File.ReadAllBytes(orderPath));
+            if (legacyOrder) Assert.IsFalse(File.Exists(target.ModlistPath));
+            CollectionAssert.AreEqual(ProfileInitialOrder, viewModel.ProposedOrder.ToArray());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
     public void PartialManagedListCanBeCompletedAsOptionalMaintenance()
     {
         string root = Path.Combine(Path.GetTempPath(), "conflict-studio-partial-maintenance-" + Guid.NewGuid().ToString("N"));

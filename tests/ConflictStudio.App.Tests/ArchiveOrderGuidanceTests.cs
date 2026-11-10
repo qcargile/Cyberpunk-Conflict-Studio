@@ -114,6 +114,22 @@ public sealed class ArchiveOrderGuidanceTests
     }
 
     [TestMethod]
+    [DataRow(false, "Clean inactive entry", "Order verified; inactive entries can be cleaned")]
+    [DataRow(true, "View load order", "Order verified; inactive archive positions are kept")]
+    public void InactiveArchiveGuidanceUsesTheWritePolicy(bool preserveInactiveArchives, string label, string title)
+    {
+        ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.ManagedModlist, "Settings", "modlist.txt", "managed")
+        {
+            IgnoredEntries = ["Inactive.archive"],
+            PreserveInactiveArchives = preserveInactiveArchives
+        };
+
+        Assert.AreEqual(!preserveInactiveArchives, ArchiveOrderGuidance.OpensPreparedOrder(evidence));
+        Assert.AreEqual(label, ArchiveOrderGuidance.ActionLabel(evidence));
+        Assert.AreEqual(title, ArchiveOrderGuidance.MaintenanceTitle(evidence));
+    }
+
+    [TestMethod]
     public void PartialManagedListOffersOptionalCleanup()
     {
         ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.ManagedModlist, "Overwrite", "modlist.txt", "managed")

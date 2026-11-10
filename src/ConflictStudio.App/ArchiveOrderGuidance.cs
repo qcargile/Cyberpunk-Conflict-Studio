@@ -10,7 +10,7 @@ public static class ArchiveOrderGuidance
         if (evidence.Kind != ArchiveOrderEvidenceKind.Unresolved)
         {
             if (evidence.UnlistedArchives.Length > 0) return evidence.UnlistedArchives.Length == 1 ? "Add unlisted archive" : "Add unlisted archives";
-            return evidence.IgnoredEntries.Length > 0 ? "Clean inactive entry" : "View load order";
+            return evidence.IgnoredEntries.Length > 0 && !evidence.PreserveInactiveArchives ? "Clean inactive entry" : "View load order";
         }
         if (evidence.IsRepairableLegacyOrder) return "Review repair draft";
         if (evidence.IncompleteArchiveLane != ArchiveOrderProblemLane.None) return "Show scan details";
@@ -26,7 +26,7 @@ public static class ArchiveOrderGuidance
     internal static bool OpensPreparedOrder(ArchiveOrderEvidence evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);
-        return evidence.IsRepairableLegacyOrder || evidence.Kind != ArchiveOrderEvidenceKind.Unresolved && (evidence.IgnoredEntries.Length > 0 || evidence.UnlistedArchives.Length > 0);
+        return evidence.IsRepairableLegacyOrder || evidence.Kind != ArchiveOrderEvidenceKind.Unresolved && (evidence.IgnoredEntries.Length > 0 && !evidence.PreserveInactiveArchives || evidence.UnlistedArchives.Length > 0);
     }
 
     internal static string BlockedTitle(ArchiveOrderEvidence evidence)
@@ -45,8 +45,9 @@ public static class ArchiveOrderGuidance
     internal static string MaintenanceTitle(ArchiveOrderEvidence evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);
-        if (evidence.UnlistedArchives.Length > 0 && evidence.IgnoredEntries.Length > 0) return "Order verified; optional cleanup is available";
+        if (evidence.UnlistedArchives.Length > 0 && evidence.IgnoredEntries.Length > 0 && !evidence.PreserveInactiveArchives) return "Order verified; optional cleanup is available";
         if (evidence.UnlistedArchives.Length > 0) return "Order verified; unlisted archives can be added";
+        if (evidence.PreserveInactiveArchives) return "Order verified; inactive archive positions are kept";
         return "Order verified; inactive entries can be cleaned";
     }
 

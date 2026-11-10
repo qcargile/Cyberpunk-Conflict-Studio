@@ -16,7 +16,7 @@ public static class Mo2ArchiveWriteTargetResolver
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(mo2Root);
         Mo2ArchiveWriteTarget fallback = Resolve(mo2Root);
-        if (evidence?.SourcePath is not null && Mo2ProfileArchiveOrder.IsProfileOverride(mo2Root, evidence.SourcePath)) return fallback with { ModlistPath = Path.GetFullPath(evidence.SourcePath), Provider = "Profile archive order", WriteBlockedReason = Mo2ProfileArchiveOrder.MappingBlockedReason(mo2Root) };
+        if (evidence?.SourcePath is not null && Mo2ProfileArchiveOrder.ResolveOverride(mo2Root, evidence.SourcePath) is string profileOrderPath) return fallback with { ModlistPath = profileOrderPath, Provider = "Profile archive order", WriteBlockedReason = Mo2ProfileArchiveOrder.MappingBlockedReason(mo2Root) };
         if (evidence is { Kind: ArchiveOrderEvidenceKind.ManagedModlist, SourcePath: not null } && File.Exists(evidence.SourcePath)) return new Mo2ArchiveWriteTarget(Path.GetFullPath(evidence.SourcePath), evidence.Provider ?? "Active provider", ModManagerKind.Mo2, null, fallback.WriteBlockedReason, GameRoot: fallback.GameRoot, CrossManagerContextPath: fallback.CrossManagerContextPath);
         return fallback;
     }

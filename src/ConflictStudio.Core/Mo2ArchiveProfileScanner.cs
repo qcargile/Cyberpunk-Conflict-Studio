@@ -16,6 +16,7 @@ public sealed record ArchiveOrderEvidence(ArchiveOrderEvidenceKind Kind, string?
 {
     public string[] SourcePaths { get; init; } = SourcePath is null ? [] : [SourcePath];
     public string[] IgnoredEntries { get; init; } = [];
+    public bool PreserveInactiveArchives { get; init; }
     public string[] MissingEntries { get; init; } = [];
     public string[] UnlistedArchives { get; init; } = [];
     public string[] DuplicateEntries { get; init; } = [];
@@ -135,11 +136,12 @@ public static class Mo2ArchiveProfileScanner
         foreach (ProviderArchives provider in providers) foreach (Mo2Archive archive in provider.Archives) effective.TryAdd(archive.ArchiveName, archive);
         Mo2Archive[] filenameOrdered = effective.Values.OrderBy(value => value.ArchiveName, StringComparer.Ordinal).ToArray();
         string? profileOrderPath = Mo2ProfileArchiveOrder.MappingEnabled(paths.Root) ? Mo2ProfileArchiveOrder.Find(paths.Root, profileModlistPath) : null;
-        List<ProviderArchives> orderProviders = profileOrderPath is null ? providers : [new ProviderArchives("Profile archive order", Path.GetDirectoryName(profileOrderPath)!, []), .. providers];
+        List<ProviderArchives> orderProviders = profileOrderPath is null ? providers : [new ProviderArchives("Profile archive order", Path.GetDirectoryName(profileOrderPath)!, [], profileOrderPath), new ProviderArchives("Profile archive order", Path.Combine(Path.GetDirectoryName(profileOrderPath)!, "archive-order"), []), .. providers];
         (string[] order, ArchiveOrderEvidence evidence) = ResolveOrder(orderProviders, filenameOrdered, failures);
         Dictionary<string, Mo2Archive> byName = filenameOrdered.ToDictionary(value => value.ArchiveName, StringComparer.OrdinalIgnoreCase);
         Mo2Archive[] ordered = order.Select(value => byName[value]).ToArray();
         if (failures.Any(value => value.Surface is "Archive enumeration" or "Archive fingerprint")) evidence = Unresolved(evidence, "At least one active legacy archive could not be fingerprinted, so the archive set is incomplete.");
+        evidence = evidence with { PreserveInactiveArchives = profileOrderPath is not null && evidence.SourcePath is not null && Mo2ProfileArchiveOrder.IsProfilePath(profileModlistPath, evidence.SourcePath) };
         if (cacheChanged && fingerprintCachePath is not null)
         {
             try
@@ -196,7 +198,7 @@ public static class Mo2ArchiveProfileScanner
         List<string> absentSources = [];
         foreach (ProviderArchives provider in providers)
         {
-            string path = Path.Combine(provider.Directory, "modlist.txt");
+            string path = provider.OrderPath ?? Path.Combine(provider.Directory, "modlist.txt");
             if (!File.Exists(path))
             {
                 absentSources.Add(Path.GetFullPath(path));
@@ -223,7 +225,7 @@ public static class Mo2ArchiveProfileScanner
             {
                 string maintenance = ignored.Length == 0 ? string.Empty : $" {ignored.Length} inactive entr{(ignored.Length == 1 ? "y was" : "ies were")} ignored without affecting current winners: {string.Join(", ", ignored)}.";
                 string partial = missing.Length == 0 ? string.Empty : $" {missing.Length} active archive{(missing.Length == 1 ? " is" : "s are")} unlisted and load{(missing.Length == 1 ? "s" : string.Empty)} after every listed archive: {string.Join(", ", missing)}.";
-                return (effectiveOrder, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, provider.Provider, path, $"Archive winners use the active {provider.Provider} modlist.txt.{partial}{maintenance}") { IgnoredEntries = ignored, MissingEntries = missing, UnlistedArchives = missing, SourceFingerprints = source, AbsentSources = absentSources.ToArray() });
+                return (effectiveOrder, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.ManagedModlist, provider.Provider, path, $"Archive winners use the active {provider.Provider} {Path.GetFileName(path)}.{partial}{maintenance}") { IgnoredEntries = ignored, MissingEntries = missing, UnlistedArchives = missing, SourceFingerprints = source, AbsentSources = absentSources.ToArray() });
             }
             else
             {
@@ -231,7 +233,7 @@ public static class Mo2ArchiveProfileScanner
                 if (missing.Length > 0) reasons.Add($"enabled archives missing from the load-order list: {string.Join(", ", missing)}");
                 if (duplicates.Length > 0) reasons.Add($"archives listed more than once: {string.Join(", ", duplicates)}");
                 if (ignored.Length > 0) reasons.Add($"inactive entries ignored: {string.Join(", ", ignored)}");
-                return (effectiveOrder, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, provider.Provider, path, $"Archive winners cannot be determined because the active modlist.txt has {string.Join("; ", reasons)}.") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, AbsentSources = absentSources.ToArray(), ProblemLane = ArchiveOrderProblemLane.Legacy });
+                return (effectiveOrder, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.Unresolved, provider.Provider, path, $"Archive winners cannot be determined because the active {Path.GetFileName(path)} has {string.Join("; ", reasons)}.") { IgnoredEntries = ignored, MissingEntries = missing, DuplicateEntries = duplicates, SourceFingerprints = source, AbsentSources = absentSources.ToArray(), ProblemLane = ArchiveOrderProblemLane.Legacy });
             }
         }
         return (discovered, new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.FilenameFallback, null, null, "No active archive modlist.txt exists. Cyberpunk filename order is used.") { AbsentSources = absentSources.ToArray() });
@@ -284,7 +286,7 @@ public static class Mo2ArchiveProfileScanner
 
     private static bool IsSha256(string? value) => value is { Length: 64 } && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 
-    private sealed record ProviderArchives(string Provider, string Directory, Mo2Archive[] Archives);
+    private sealed record ProviderArchives(string Provider, string Directory, Mo2Archive[] Archives, string? OrderPath = null);
     private sealed record ProviderArchivePaths(string Provider, string Directory, string[] Paths);
     private sealed record ArchiveFingerprintWork(int SourceIndex, string Provider, string Path);
     private sealed record FingerprintResult(Mo2Archive Archive, CachedFingerprint? FreshFingerprint = null);

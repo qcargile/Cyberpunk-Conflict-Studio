@@ -130,6 +130,78 @@ public sealed class ArchiveOrderTests
     }
 
     [TestMethod]
+    [DataRow("archive-order.txt", ModManagerKind.Mo2, true)]
+    [DataRow("archive-order/modlist.txt", ModManagerKind.Mo2, true)]
+    [DataRow("legacy-order/modlist.txt", ModManagerKind.Mo2, false)]
+    [DataRow("archive-order/modlist.txt", ModManagerKind.Vortex, false)]
+    public void ManagedApplyPreservesInactiveArchivesOnlyInTheMo2ProfilesOwnOrder(string targetRelativePath, ModManagerKind managerKind, bool preserveInactive)
+    {
+        using ArchiveWorkspaceFixture fixture = new();
+        string target = Path.Combine(Path.GetDirectoryName(fixture.Profile)!, targetRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllText(target, "Beta.archive\nDisabled.archive\nAlpha.archive\n");
+        Mo2ArchiveProfile profile = Mo2ArchiveProfileScanner.ScanInstance(fixture.Root, fixture.Profile);
+        ArchiveOrderObservation observation = ManagedArchiveOrderObserver.Observe(profile, new Mo2ArchiveWriteTarget(target, ManagerKind: managerKind));
+        ArchiveOrderPreview preview = ArchiveOrderPlanner.CreatePreview(observation, ["Alpha.archive", "Beta.archive"]);
+
+        new ArchiveOrderWriter(() => DateTimeOffset.UtcNow, NoProcesses).Apply(preview);
+
+        Assert.AreEqual(preserveInactive, observation.PreserveInactiveArchives);
+        Assert.AreEqual(preserveInactive ? "Alpha.archive\r\nDisabled.archive\r\nBeta.archive\r\n" : "Alpha.archive\r\nBeta.archive\r\n", File.ReadAllText(target));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void MigrationRejectsAnInheritedOrderChangedBeforeCommit(bool changeDuringCommit)
+    {
+        using ArchiveWorkspaceFixture fixture = new();
+        string legacyPath = Path.Combine(Path.GetDirectoryName(fixture.Profile)!, "archive-order", "modlist.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+        File.WriteAllText(legacyPath, "Beta.archive\nDisabled.archive\nAlpha.archive\n");
+        Mo2ArchiveProfile profile = Mo2ArchiveProfileScanner.ScanInstance(fixture.Root, fixture.Profile);
+        Mo2ArchiveWriteTarget target = Mo2ArchiveWriteTargetResolver.Resolve(fixture.Root, profile.OrderEvidence);
+        ArchiveOrderObservation observation = ManagedArchiveOrderObserver.Observe(profile, target);
+        ArchiveOrderPreview preview = ArchiveOrderPlanner.CreatePreview(observation, ["Alpha.archive", "Beta.archive"]);
+        ArchiveOrderWriter writer = new(() => DateTimeOffset.UtcNow, NoProcesses);
+        if (!changeDuringCommit) File.AppendAllText(legacyPath, "# concurrent edit\n");
+
+        Assert.Throws<ProfileInputChangedException>(() => writer.Apply(preview, observation.Archives, () =>
+        {
+            if (changeDuringCommit) File.AppendAllText(legacyPath, "# concurrent edit\n");
+            return observation.Archives;
+        }));
+
+        Assert.IsNull(observation.OrderFileSha256);
+        Assert.AreEqual("archive-order.txt", observation.OrderFileName);
+        Assert.IsFalse(File.Exists(target.ModlistPath));
+        Assert.IsFalse(Directory.Exists(fixture.BackupDirectory));
+        StringAssert.Contains(File.ReadAllText(legacyPath), "concurrent edit");
+    }
+
+    [TestMethod]
+    public void CanonicalProfileBackupUsesItsOwnDirectoryAndNeverOverwritesAnExistingBackup()
+    {
+        using ArchiveWorkspaceFixture fixture = new();
+        string targetPath = Mo2ProfileArchiveOrder.Resolve(fixture.Root, fixture.Profile);
+        byte[] original = System.Text.Encoding.UTF8.GetBytes("Beta.archive\nAlpha.archive\n");
+        File.WriteAllBytes(targetPath, original);
+        DateTimeOffset timestamp = new(2026, 10, 28, 12, 0, 0, TimeSpan.Zero);
+        string backupPath = Path.Combine(fixture.BackupDirectory, "archive-order.txt.20261028120000000.bak");
+        Directory.CreateDirectory(fixture.BackupDirectory);
+        File.WriteAllText(backupPath, "existing backup");
+        Mo2ArchiveProfile profile = Mo2ArchiveProfileScanner.ScanInstance(fixture.Root, fixture.Profile);
+        ArchiveOrderObservation observation = ManagedArchiveOrderObserver.Observe(profile, Mo2ArchiveWriteTargetResolver.ResolveProfile(fixture.Root, fixture.Profile));
+        ArchiveOrderPreview preview = ArchiveOrderPlanner.CreatePreview(observation, ["Alpha.archive", "Beta.archive"]);
+
+        Assert.Throws<ArchiveOrderException>(() => new ArchiveOrderWriter(() => timestamp, NoProcesses).Apply(preview));
+
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(targetPath));
+        Assert.AreEqual("existing backup", File.ReadAllText(backupPath));
+        Assert.AreEqual(0, Directory.GetFiles(Path.GetDirectoryName(targetPath)!, "*.bak").Length);
+    }
+
+    [TestMethod]
     public void ApplyCreatesAMissingManagedTargetDirectory()
     {
         using ArchiveDirectory directory = new();

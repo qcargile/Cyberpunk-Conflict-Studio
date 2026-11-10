@@ -165,7 +165,7 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         CanReset = _baselineOrder.Length > 0 && !_proposedOrder.SequenceEqual(_baselineOrder, StringComparer.OrdinalIgnoreCase);
         PreviewStatus = CanReset ? "Order changed. Preview it before applying."
             : _profile?.OrderEvidence?.IsRepairableLegacyOrder == true ? "A complete repair draft is ready to preview and apply."
-            : _profile?.OrderEvidence?.IgnoredEntries.Length > 0 ? "Inactive archive-order lines are ready to clean."
+            : _profile?.OrderEvidence?.IgnoredEntries.Length > 0 && _observation?.PreserveInactiveArchives != true ? "Inactive archive-order lines are ready to clean."
             : "The proposed order matches the scanned order.";
         OnPropertyChanged(nameof(ProposedOrder));
         OnPropertyChanged(nameof(WinnerDeltas));
@@ -258,7 +258,7 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         }
         _preview = ArchiveOrderPlanner.CreatePreview(_observation, _proposedOrder);
         bool repairRequired = _profile?.OrderEvidence?.IsRepairableLegacyOrder == true;
-        int inactiveEntries = _profile?.OrderEvidence?.IgnoredEntries.Length ?? 0;
+        int inactiveEntries = _observation.PreserveInactiveArchives ? 0 : _profile?.OrderEvidence?.IgnoredEntries.Length ?? 0;
         int unlistedArchives = _profile?.OrderEvidence?.UnlistedArchives.Length ?? 0;
         _winnerDeltas = unlistedArchives > 0 ? [] : ArchiveOrderImpactAnalyzer.Analyze(_resourceProviders, _observation.EffectiveOrder, _proposedOrder);
         OnPropertyChanged(nameof(WinnerDeltas));
@@ -347,7 +347,7 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
             : writer.Apply(_preview, currentArchives);
         _lastWriter = writer;
         _lastApply = result;
-        _lastTargetPath = Path.Combine(_observation.DirectoryPath, "modlist.txt");
+        _lastTargetPath = Path.Combine(_observation.DirectoryPath, _observation.OrderFileName);
         CanUndo = true;
         if (_profile is not null && _profileTarget is not null)
         {
@@ -411,11 +411,11 @@ public sealed class ArchiveOrderWorkspaceViewModel : INotifyPropertyChanged
         _lastWriter.RestorePrevious(_lastApply, _lastTargetPath);
         if (_profile is not null && _profileTarget is not null)
         {
-            if (_profileTarget.ManagerKind == ModManagerKind.Vortex)
+            if (_profileTarget.ManagerKind is ModManagerKind.Vortex or ModManagerKind.Mo2)
             {
                 if (_profileRefresh is null) throw new ArchiveOrderException("The manager profile refresh is unavailable after undo.");
                 _profile = _profileRefresh();
-                _profileTarget = RefreshVortexWriteTarget(_profileTarget);
+                if (_profileTarget.ManagerKind == ModManagerKind.Vortex) _profileTarget = RefreshVortexWriteTarget(_profileTarget);
             }
             _observation = Observe(_profile, _profileTarget);
             _proposedOrder = _observation.EffectiveOrder.ToArray();

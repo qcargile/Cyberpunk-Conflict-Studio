@@ -17,13 +17,82 @@ public sealed class Mo2ArchiveWorkspaceTests
 
         CollectionAssert.AreEqual(SeedOrder, state.EditableOrder);
         Assert.AreEqual(fixture.Seed, state.OrderSource);
-        Assert.IsFalse(Directory.Exists(Path.GetDirectoryName(state.WriteTarget)));
+        Assert.AreEqual(Path.Combine(Path.GetDirectoryName(fixture.Profile)!, "archive-order.txt"), state.WriteTarget);
+        Assert.IsFalse(File.Exists(state.WriteTarget));
         Assert.IsNull(state.WriteBlockedReason);
         Assert.AreEqual(2, state.ArchiveRows.Length);
         Assert.AreEqual(1, state.ArchiveRows.Single(value => value.Name == "Beta.archive").Winning);
         Mo2ArchiveSelection selection = workspace.Select(state.Token, ["Beta.archive"]);
         Assert.AreEqual(1, selection.TotalSharedResources);
         Assert.AreEqual("Beta.archive", selection.SharedResources.Single().WinnerArchive);
+    }
+
+    [TestMethod]
+    public void LegacyProfileOrderMigratesToTheCanonicalFileWithoutChangingItsSource()
+    {
+        using ArchiveWorkspaceFixture fixture = new();
+        string legacyPath = Path.Combine(Path.GetDirectoryName(fixture.Profile)!, "archive-order", "modlist.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+        byte[] original = Encoding.UTF8.GetBytes("Beta.archive\nDisabled.archive\nAlpha.archive\n");
+        File.WriteAllBytes(legacyPath, original);
+        Mo2ArchiveWorkspace workspace = fixture.Workspace();
+        Mo2ArchiveWorkspaceState state = workspace.Scan(fixture.Root, fixture.Profile);
+        Assert.AreEqual(legacyPath, state.OrderSource);
+        Assert.AreEqual(Path.Combine(Path.GetDirectoryName(fixture.Profile)!, "archive-order.txt"), state.WriteTarget);
+        string[] proposed = ["Alpha.archive", "Beta.archive"];
+
+        workspace.Preview(state.Token, proposed);
+        Mo2ArchiveWorkspaceState saved = workspace.Apply(state.Token, proposed);
+
+        Assert.AreEqual("Alpha.archive\r\nDisabled.archive\r\nBeta.archive\r\n", File.ReadAllText(saved.WriteTarget));
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(legacyPath));
+        Assert.AreEqual(saved.WriteTarget, saved.OrderSource);
+        Assert.IsFalse(Directory.Exists(fixture.BackupDirectory));
+        Mo2ArchiveWorkspaceState restored = workspace.Undo(saved.Token);
+        Assert.IsFalse(File.Exists(saved.WriteTarget));
+        Assert.AreEqual(legacyPath, restored.OrderSource);
+        CollectionAssert.AreEqual(SeedOrder, restored.EditableOrder);
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(legacyPath));
+    }
+
+    [TestMethod]
+    public void CanonicalProfileOrderTakesPriorityOverTheLegacyFile()
+    {
+        using ArchiveWorkspaceFixture fixture = new();
+        string legacyPath = Path.Combine(Path.GetDirectoryName(fixture.Profile)!, "archive-order", "modlist.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+        File.WriteAllText(legacyPath, "Beta.archive\nAlpha.archive\n");
+        string target = Mo2ProfileArchiveOrder.Resolve(fixture.Root, fixture.Profile);
+        File.WriteAllText(target, "Alpha.archive\nBeta.archive\n");
+
+        Mo2ArchiveProfile profile = Mo2ArchiveProfileScanner.ScanInstance(fixture.Root, fixture.Profile);
+
+        Assert.AreEqual(target, profile.OrderEvidence!.SourcePath);
+        Assert.IsTrue(profile.OrderEvidence.PreserveInactiveArchives);
+        string[] expected = ["Alpha.archive", "Beta.archive"];
+        CollectionAssert.AreEqual(expected, profile.EffectiveOrder);
+        Assert.AreEqual(target, Mo2ArchiveWriteTargetResolver.Resolve(fixture.Root, profile.OrderEvidence).ModlistPath);
+    }
+
+    [TestMethod]
+    public void UndoMigrationRefusesAChangedLegacySource()
+    {
+        using ArchiveWorkspaceFixture fixture = new();
+        string legacyPath = Path.Combine(Path.GetDirectoryName(fixture.Profile)!, "archive-order", "modlist.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+        File.WriteAllText(legacyPath, "Beta.archive\nAlpha.archive\n");
+        Mo2ArchiveWorkspace workspace = fixture.Workspace();
+        Mo2ArchiveWorkspaceState state = workspace.Scan(fixture.Root, fixture.Profile);
+        string[] proposed = ["Alpha.archive", "Beta.archive"];
+        workspace.Preview(state.Token, proposed);
+        Mo2ArchiveWorkspaceState saved = workspace.Apply(state.Token, proposed);
+        File.AppendAllText(legacyPath, "# concurrent edit\n");
+        byte[] written = File.ReadAllBytes(saved.WriteTarget);
+
+        Assert.Throws<ProfileInputChangedException>(() => workspace.Undo(saved.Token));
+
+        CollectionAssert.AreEqual(written, File.ReadAllBytes(saved.WriteTarget));
+        StringAssert.Contains(File.ReadAllText(legacyPath), "concurrent edit");
     }
 
     [TestMethod]
@@ -52,6 +121,38 @@ public sealed class Mo2ArchiveWorkspaceTests
         Assert.IsFalse(restored.CanUndo);
         Assert.AreEqual(fixture.Seed, restored.OrderSource);
         CollectionAssert.AreEqual(SeedOrder, restored.EditableOrder);
+    }
+
+    [TestMethod]
+    public void SavingWithADisabledModPreservesItsArchivePositionWhenReenabled()
+    {
+        using ArchiveWorkspaceFixture fixture = new();
+        string target = Mo2ProfileArchiveOrder.Resolve(fixture.Root, fixture.Profile);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        byte[] original = Encoding.UTF8.GetBytes("# profile order\nAlpha.archive\nBeta.archive\nGamma.archive\nbeta.archive\nhelper.archive.xl\n");
+        File.WriteAllBytes(target, original);
+        ArchiveWorkspaceFixture.WriteArchive(Path.Combine(Path.GetDirectoryName(fixture.Alpha)!, "Gamma.archive"), 'c');
+        ArchiveWorkspaceFixture.WriteArchive(Path.Combine(Path.GetDirectoryName(fixture.Alpha)!, "Delta.archive"), 'd');
+        File.WriteAllText(fixture.Profile, "+Settings\n-Beta\n+Alpha\n");
+        Mo2ArchiveProfile profile = Mo2ArchiveProfileScanner.ScanInstance(fixture.Root, fixture.Profile);
+        ArchiveOrderEvidence evidence = PackedArchiveTopology.Compose(profile, new RedmodArchiveProfile([], [], new ArchiveOrderEvidence(ArchiveOrderEvidenceKind.FilenameFallback, null, null, "No REDmods"), [])).OrderEvidence!;
+        Assert.IsTrue(evidence.PreserveInactiveArchives);
+        Assert.AreEqual("Beta.archive", evidence.IgnoredEntries.Single());
+        Mo2ArchiveWorkspace workspace = fixture.Workspace();
+        Mo2ArchiveWorkspaceState state = workspace.Scan(fixture.Root, fixture.Profile);
+        string[] proposed = ["Gamma.archive", "Alpha.archive", "Delta.archive"];
+
+        workspace.Preview(state.Token, proposed);
+        Mo2ArchiveWorkspaceState saved = workspace.Apply(state.Token, proposed);
+
+        Assert.AreEqual("# profile order\r\nGamma.archive\r\nBeta.archive\r\nAlpha.archive\r\nhelper.archive.xl\r\nDelta.archive\r\n", File.ReadAllText(target));
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(Directory.GetFiles(fixture.BackupDirectory, "*.bak").Single()));
+        CollectionAssert.AreEqual(proposed, saved.EditableOrder);
+        File.WriteAllText(fixture.Profile, "+Settings\n+Beta\n+Alpha\n");
+        Mo2ArchiveWorkspaceState reenabled = workspace.Scan(fixture.Root, fixture.Profile);
+        string[] reenabledOrder = ["Gamma.archive", "Beta.archive", "Alpha.archive", "Delta.archive"];
+        CollectionAssert.AreEqual(reenabledOrder, reenabled.EditableOrder);
+        Assert.IsNull(reenabled.WriteBlockedReason);
     }
 
     [TestMethod]
@@ -89,7 +190,7 @@ public sealed class Mo2ArchiveWorkspaceTests
 
         CollectionAssert.AreEqual(original, File.ReadAllBytes(target));
         Assert.AreEqual(target, restored.OrderSource);
-        Assert.AreEqual(1, Directory.GetFiles(Path.GetDirectoryName(target)!, "*.bak").Length);
+        Assert.AreEqual(1, Directory.GetFiles(fixture.BackupDirectory, "*.bak").Length);
     }
 
     [TestMethod]
@@ -287,7 +388,7 @@ public sealed class Mo2ArchiveWorkspaceTests
         workspace.Preview(state.Token, ["Alpha.archive", "Beta.archive"]);
         Mo2ArchiveWorkspaceState saved = workspace.Apply(state.Token, ["Alpha.archive", "Beta.archive"]);
         byte[] written = File.ReadAllBytes(target);
-        File.AppendAllText(Directory.GetFiles(Path.GetDirectoryName(target)!, "*.bak").Single(), "# backup edited\n");
+        File.AppendAllText(Directory.GetFiles(fixture.BackupDirectory, "*.bak").Single(), "# backup edited\n");
 
         Assert.Throws<ArchiveOrderException>(() => workspace.Undo(saved.Token));
 
@@ -538,6 +639,7 @@ internal sealed class ArchiveWorkspaceFixture : IDisposable
     public string OtherProfile => Path.Combine(Root, "profiles", "Other", "modlist.txt");
     public string Seed => Path.Combine(Root, "mods", "Settings", "archive", "pc", "mod", "modlist.txt");
     public string Alpha => Path.Combine(Root, "mods", "Alpha", "archive", "pc", "mod", "Alpha.archive");
+    public string BackupDirectory => Path.Combine(Path.GetDirectoryName(Profile)!, "archive-order", "backups");
 
     public ArchiveWorkspaceFixture()
     {

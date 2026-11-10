@@ -5,7 +5,12 @@ namespace ConflictStudio.Core;
 
 public sealed record ArchiveFingerprint(string Name, long Size, string Sha256);
 
-public sealed record ArchiveOrderObservation(string ProfileId, string DirectoryPath, string? OrderFileSha256, ArchiveFingerprint[] Archives, string[] EffectiveOrder);
+public sealed record ArchiveOrderObservation(string ProfileId, string DirectoryPath, string? OrderFileSha256, ArchiveFingerprint[] Archives, string[] EffectiveOrder, bool PreserveInactiveArchives = false)
+{
+    public string OrderFileName { get; internal init; } = "modlist.txt";
+    internal string? BackupDirectoryPath { get; init; }
+    internal ProfileInputSnapshot? InheritedOrder { get; init; }
+}
 
 public sealed record ArchiveOrderPreview(ArchiveOrderObservation Observation, string[] ProposedOrder, string[] ChangedArchives);
 
@@ -89,18 +94,24 @@ public static class ArchiveOrderText
         return lines.Select(value => value.Trim().TrimStart('\uFEFF')).Where(value => value.EndsWith(".archive", StringComparison.OrdinalIgnoreCase)).ToArray();
     }
 
-    public static byte[] Merge(byte[]? existing, IReadOnlyList<string> proposedOrder)
+    public static byte[] Merge(byte[]? existing, IReadOnlyList<string> proposedOrder, bool preserveInactiveArchives = false)
     {
         ArgumentNullException.ThrowIfNull(proposedOrder);
         if (existing is null) return System.Text.Encoding.UTF8.GetBytes(string.Join("\r\n", proposedOrder) + "\r\n");
         string[] lines = System.Text.Encoding.UTF8.GetString(existing).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(value => value.Trim().TrimStart('\uFEFF')).Where(value => value.Length > 0).ToArray();
         Queue<string> archives = new(proposedOrder);
+        HashSet<string>? active = preserveInactiveArchives ? proposedOrder.ToHashSet(StringComparer.OrdinalIgnoreCase) : null;
+        HashSet<string>? inactive = preserveInactiveArchives ? new(StringComparer.OrdinalIgnoreCase) : null;
         List<string> merged = [];
         foreach (string line in lines)
         {
             if (line.EndsWith(".archive", StringComparison.OrdinalIgnoreCase))
             {
-                if (archives.Count > 0) merged.Add(archives.Dequeue());
+                if (active is not null && !active.Contains(line))
+                {
+                    if (inactive!.Add(line)) merged.Add(line);
+                }
+                else if (archives.Count > 0) merged.Add(archives.Dequeue());
             }
             else
             {
@@ -137,7 +148,21 @@ public static class ManagedArchiveOrderObserver
                 order = profile.EffectiveOrder;
             }
         }
-        return new ArchiveOrderObservation(profile.ProfileName, Path.GetDirectoryName(target.ModlistPath)!, hash, archives, order);
+        bool preserveInactiveArchives = target.ManagerKind == ModManagerKind.Mo2 && Mo2ProfileArchiveOrder.IsProfilePath(profile.ProfileModlistPath, target.ModlistPath);
+        bool canonicalProfileOrder = preserveInactiveArchives && string.Equals(Path.GetFileName(target.ModlistPath), "archive-order.txt", StringComparison.OrdinalIgnoreCase);
+        ProfileInputSnapshot? inheritedOrder = null;
+        if (canonicalProfileOrder && hash is null && profile.OrderEvidence?.SourcePath is string sourcePath && string.Equals(Path.GetFileName(sourcePath), "modlist.txt", StringComparison.OrdinalIgnoreCase) && Mo2ProfileArchiveOrder.IsProfilePath(profile.ProfileModlistPath, sourcePath))
+        {
+            Mo2ProfileArchiveOrder.RequireNoRedirect(sourcePath);
+            inheritedOrder = ProfileInputGuard.Capture(sourcePath);
+            if (!profile.OrderEvidence.SourceFingerprints.TryGetValue(inheritedOrder.Path, out string? expectedHash) || !string.Equals(inheritedOrder.Sha256, expectedHash, StringComparison.Ordinal)) throw new ArchiveOrderException("The inherited profile archive order changed after the scan.");
+        }
+        return new ArchiveOrderObservation(profile.ProfileName, Path.GetDirectoryName(target.ModlistPath)!, hash, archives, order, preserveInactiveArchives)
+        {
+            OrderFileName = Path.GetFileName(target.ModlistPath),
+            BackupDirectoryPath = canonicalProfileOrder ? Path.Combine(Path.GetDirectoryName(target.ModlistPath)!, "archive-order", "backups") : null,
+            InheritedOrder = inheritedOrder
+        };
     }
 }
 
@@ -170,7 +195,8 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
         ArgumentNullException.ThrowIfNull(currentArchivesAtCommit);
         if (!SameInventory(preview.Observation.Archives, currentArchives)) throw new ArchiveOrderException("The archive inventory changed after the preview. Scan again before applying.");
         EnsureGameNotRunning();
-        string orderPath = Path.Combine(preview.Observation.DirectoryPath, "modlist.txt");
+        string orderPath = Path.Combine(preview.Observation.DirectoryPath, preview.Observation.OrderFileName);
+        if (preview.Observation.PreserveInactiveArchives) Mo2ProfileArchiveOrder.RequireNoRedirect(orderPath);
         Directory.CreateDirectory(preview.Observation.DirectoryPath);
         string operationLockPath = orderPath + ".conflictstudio.lock";
         using FileStream operationLock = AcquireOperationLock(operationLockPath);
@@ -179,8 +205,10 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
         string? currentHash = existing is null ? null : Hash(existing);
         if (!string.Equals(currentHash, preview.Observation.OrderFileSha256, StringComparison.Ordinal)) throw new ArchiveOrderException("The archive order file changed after the scan.");
 
-        string? backupPath = existing is null ? null : Backup(orderPath, existing);
-        byte[] expected = ArchiveOrderText.Merge(existing, preview.ProposedOrder);
+        ProfileInputSnapshot? inheritedOrder = preview.Observation.InheritedOrder;
+        if (inheritedOrder is not null) ProfileInputGuard.RequireUnchanged(inheritedOrder);
+        string? backupPath = existing is null ? null : Backup(orderPath, existing, preview.Observation.BackupDirectoryPath);
+        byte[] expected = ArchiveOrderText.Merge(existing ?? inheritedOrder?.Content, preview.ProposedOrder, preview.Observation.PreserveInactiveArchives);
         string temporary = orderPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         bool replaced = false;
         try
@@ -196,11 +224,17 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
             byte[]? commitOrder = File.Exists(orderPath) ? _readAllBytes(orderPath) : null;
             string? commitOrderHash = commitOrder is null ? null : Hash(commitOrder);
             if (!string.Equals(commitOrderHash, currentHash, StringComparison.Ordinal)) throw new ArchiveOrderException("The archive order file changed during archive-order preparation. The concurrent edit was preserved.");
+            if (preview.Observation.PreserveInactiveArchives) Mo2ProfileArchiveOrder.RequireNoRedirect(orderPath);
+            if (inheritedOrder is not null)
+            {
+                Mo2ProfileArchiveOrder.RequireNoRedirect(inheritedOrder.Path);
+                ProfileInputGuard.RequireUnchanged(inheritedOrder);
+            }
             File.Move(temporary, orderPath, true);
             replaced = true;
             bool verified = _readAllBytes(orderPath).AsSpan().SequenceEqual(expected);
             if (!verified) throw new ArchiveOrderException("The archive order file did not verify after writing.");
-            return new ArchiveOrderApplyResult(backupPath, true, existing is not null, Hash(expected));
+            return new ArchiveOrderApplyResult(backupPath, true, existing is not null, Hash(expected)) { InheritedOrder = inheritedOrder };
         }
         catch (Exception exception) when (replaced)
         {
@@ -233,6 +267,12 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
     {
         EnsureGameNotRunning();
         string fullTargetPath = Path.GetFullPath(targetPath);
+        bool canonicalProfileOrder = string.Equals(Path.GetFileName(fullTargetPath), "archive-order.txt", StringComparison.OrdinalIgnoreCase);
+        if (canonicalProfileOrder)
+        {
+            Mo2ProfileArchiveOrder.RequireNoRedirect(fullTargetPath);
+            if (result.BackupPath is not null) Mo2ProfileArchiveOrder.RequireNoRedirect(result.BackupPath);
+        }
         Directory.CreateDirectory(Path.GetDirectoryName(fullTargetPath)!);
         using FileStream operationLock = AcquireOperationLock(fullTargetPath + ".conflictstudio.lock");
         EnsureGameNotRunning();
@@ -240,6 +280,12 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
         {
             authorizeCommit?.Invoke();
             EnsureGameNotRunning();
+            if (canonicalProfileOrder) Mo2ProfileArchiveOrder.RequireNoRedirect(fullTargetPath);
+            if (result.InheritedOrder is not null)
+            {
+                Mo2ProfileArchiveOrder.RequireNoRedirect(result.InheritedOrder.Path);
+                ProfileInputGuard.RequireUnchanged(result.InheritedOrder);
+            }
         });
     }
 
@@ -255,11 +301,21 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
         catch (IOException) { throw new ArchiveOrderException("Another archive order operation is already in progress."); }
     }
 
-    private string Backup(string orderPath, byte[] bytes)
+    private string Backup(string orderPath, byte[] bytes, string? directoryPath)
     {
-        string path = orderPath + "." + _clock().ToUniversalTime().ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture) + ".bak";
+        string backupBase = directoryPath is null ? orderPath : Path.Combine(directoryPath, Path.GetFileName(orderPath));
+        string path = backupBase + "." + _clock().ToUniversalTime().ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture) + ".bak";
+        if (directoryPath is not null)
+        {
+            Mo2ProfileArchiveOrder.RequireNoRedirect(path);
+            Directory.CreateDirectory(directoryPath);
+        }
         if (File.Exists(path)) throw new ArchiveOrderException("The archive order backup path already exists.");
-        File.WriteAllBytes(path, bytes);
+        using (FileStream stream = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+        {
+            stream.Write(bytes);
+            stream.Flush(true);
+        }
         if (!_readAllBytes(path).AsSpan().SequenceEqual(bytes))
         {
             File.Delete(path);
@@ -280,6 +336,9 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
     private static IReadOnlyList<string> RunningProcesses() => Process.GetProcesses().Select(process => process.ProcessName).ToArray();
 }
 
-public sealed record ArchiveOrderApplyResult(string? BackupPath, bool Verified, bool TargetPreviouslyExisted, string WrittenSha256);
+public sealed record ArchiveOrderApplyResult(string? BackupPath, bool Verified, bool TargetPreviouslyExisted, string WrittenSha256)
+{
+    internal ProfileInputSnapshot? InheritedOrder { get; init; }
+}
 
 public sealed class ArchiveOrderException(string message) : Exception(message);

@@ -537,15 +537,22 @@ public sealed class ConflictWorkQueueBuilderTests
     }
 
     [TestMethod]
-    public void BuildTreatsIgnoredInactiveArchiveLinesAsOneMaintenanceItem()
+    [DataRow(false)]
+    [DataRow(true)]
+    public void BuildOffersInactiveArchiveMaintenanceOnlyWhenTheEntriesWillBeRemoved(bool preserveInactiveArchives)
     {
-        ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.ManagedModlist, "Settings", "modlist.txt", "One inactive archive entry was ignored.") { IgnoredEntries = ["Inactive.archive"] };
+        ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.ManagedModlist, "Settings", "modlist.txt", "One inactive archive entry was ignored.") { IgnoredEntries = ["Inactive.archive"], PreserveInactiveArchives = preserveInactiveArchives };
         ProfileScanReceipt receipt = Receipt() with { ArchiveFailures = [], ArchiveOrderEvidence = evidence };
 
-        ConflictWorkItem item = ConflictWorkQueueBuilder.Build(receipt, []).Single(value => value.Target == "Archive order maintenance");
+        ConflictWorkItem[] items = ConflictWorkQueueBuilder.Build(receipt, []).Where(value => value.Target == "Archive order maintenance").ToArray();
 
-        Assert.AreEqual(ConflictWorkState.ReviewWhenRelevant, item.State);
-        Assert.IsTrue(item.NextAction.Contains("Load order", StringComparison.OrdinalIgnoreCase));
+        Assert.HasCount(preserveInactiveArchives ? 0 : 1, items);
+        if (!preserveInactiveArchives)
+        {
+            Assert.AreEqual(ConflictWorkState.ReviewWhenRelevant, items[0].State);
+            Assert.IsTrue(items[0].NextAction.Contains("Load order", StringComparison.OrdinalIgnoreCase));
+        }
+        Assert.HasCount(1, receipt.ArchiveOrderEvidence!.IgnoredEntries);
     }
 
     [TestMethod]

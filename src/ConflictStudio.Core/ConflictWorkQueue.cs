@@ -223,7 +223,7 @@ public static class ConflictWorkQueueBuilder
             string problem = incompleteArchives ? "incomplete archive scan input" : "one order problem";
             Add(items, receipt, decisions, ConflictSurface.Diagnostic, "Archive load order", EvidenceClassification.Unresolved, $"{unresolvedOrder.Message} {affected} packed resource{(affected == 1 ? string.Empty : "s")} are waiting on {problem}.", action, null, unresolvedOrder.Provider is null ? ["Archive order"] : [unresolvedOrder.Provider], [unresolvedOrder.Message, .. unresolvedOrder.MissingEntries, .. unresolvedOrder.DuplicateEntries]);
         }
-        else if (receipt.ArchiveOrderEvidence is { IgnoredEntries.Length: > 0 } maintainedOrder)
+        else if (receipt.ArchiveOrderEvidence is { IgnoredEntries.Length: > 0, PreserveInactiveArchives: false } maintainedOrder)
         {
             Add(items, receipt, decisions, ConflictSurface.Diagnostic, "Archive order maintenance", EvidenceClassification.Review, maintainedOrder.Message, "Open Archives → Load order and apply the current order when you want to remove the inactive lines from modlist.txt.", null, maintainedOrder.Provider is null ? ["Archive order"] : [maintainedOrder.Provider], [maintainedOrder.Message, .. maintainedOrder.IgnoredEntries]);
         }

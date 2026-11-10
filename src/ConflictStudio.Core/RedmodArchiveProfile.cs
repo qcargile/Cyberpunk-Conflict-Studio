@@ -333,6 +333,7 @@ public static class PackedArchiveTopology
         {
             SourcePaths = sources,
             IgnoredEntries = legacyEvidence.IgnoredEntries,
+            PreserveInactiveArchives = legacyEvidence.PreserveInactiveArchives,
             MissingEntries = legacyEvidence.MissingEntries.Concat(redmods.OrderEvidence.MissingEntries).ToArray(),
             UnlistedArchives = legacyEvidence.UnlistedArchives,
             DuplicateEntries = legacyEvidence.DuplicateEntries.Concat(redmods.OrderEvidence.DuplicateEntries).ToArray(),

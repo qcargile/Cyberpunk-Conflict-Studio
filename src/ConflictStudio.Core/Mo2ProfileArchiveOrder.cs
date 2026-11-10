@@ -25,7 +25,7 @@ public static class Mo2ProfileArchiveOrder
             || directory is null
             || !string.Equals(Path.GetDirectoryName(directory), profilesRoot, StringComparison.OrdinalIgnoreCase)
             || !File.Exists(profile)) throw new ArchiveOrderException("Choose an existing profile inside this MO2 instance's configured profiles directory.");
-        string target = Path.Combine(directory, "archive-order", "modlist.txt");
+        string target = Path.Combine(directory, "archive-order.txt");
         RequireNoRedirect(target);
         return target;
     }
@@ -38,20 +38,31 @@ public static class Mo2ProfileArchiveOrder
         return string.Equals(Path.GetFileName(profile), "modlist.txt", StringComparison.OrdinalIgnoreCase)
             && directory is not null
             && string.Equals(Path.GetDirectoryName(directory), Path.TrimEndingDirectorySeparator(paths.ProfilesRoot), StringComparison.OrdinalIgnoreCase)
-            ? Path.Combine(directory, "archive-order", "modlist.txt") : null;
+            ? Path.Combine(directory, "archive-order.txt") : null;
     }
 
-    internal static bool IsProfileOverride(string instanceRoot, string path)
+    internal static string? ResolveOverride(string instanceRoot, string path)
     {
         string full = Path.GetFullPath(path);
         string? orderDirectory = Path.GetDirectoryName(full);
-        string? profileDirectory = Path.GetDirectoryName(orderDirectory);
-        if (profileDirectory is null || !string.Equals(Path.GetFileName(orderDirectory), "archive-order", StringComparison.OrdinalIgnoreCase)) return false;
+        string? profileDirectory = string.Equals(Path.GetFileName(full), "archive-order.txt", StringComparison.OrdinalIgnoreCase) ? orderDirectory
+            : string.Equals(Path.GetFileName(orderDirectory), "archive-order", StringComparison.OrdinalIgnoreCase) && string.Equals(Path.GetFileName(full), "modlist.txt", StringComparison.OrdinalIgnoreCase) ? Path.GetDirectoryName(orderDirectory) : null;
+        if (profileDirectory is null) return null;
         string? expected = Find(instanceRoot, Path.Combine(profileDirectory, "modlist.txt"));
-        return expected is not null && string.Equals(full, expected, StringComparison.OrdinalIgnoreCase);
+        return expected is null ? null : Resolve(instanceRoot, Path.Combine(profileDirectory, "modlist.txt"));
     }
 
-    private static void RequireNoRedirect(string path)
+    internal static bool IsProfilePath(string profileModlistPath, string orderPath)
+    {
+        string profile = Path.GetFullPath(profileModlistPath);
+        string directory = Path.GetDirectoryName(profile)!;
+        string full = Path.GetFullPath(orderPath);
+        return string.Equals(Path.GetFileName(profile), "modlist.txt", StringComparison.OrdinalIgnoreCase)
+            && (string.Equals(full, Path.Combine(directory, "archive-order.txt"), StringComparison.OrdinalIgnoreCase)
+                || string.Equals(full, Path.Combine(directory, "archive-order", "modlist.txt"), StringComparison.OrdinalIgnoreCase));
+    }
+
+    internal static void RequireNoRedirect(string path)
     {
         for (string? current = Path.GetFullPath(path); current is not null; current = Path.GetDirectoryName(current))
             if ((File.Exists(current) || Directory.Exists(current)) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
