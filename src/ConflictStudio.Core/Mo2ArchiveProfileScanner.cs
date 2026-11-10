@@ -134,7 +134,9 @@ public static class Mo2ArchiveProfileScanner
         Dictionary<string, Mo2Archive> effective = new(StringComparer.OrdinalIgnoreCase);
         foreach (ProviderArchives provider in providers) foreach (Mo2Archive archive in provider.Archives) effective.TryAdd(archive.ArchiveName, archive);
         Mo2Archive[] filenameOrdered = effective.Values.OrderBy(value => value.ArchiveName, StringComparer.Ordinal).ToArray();
-        (string[] order, ArchiveOrderEvidence evidence) = ResolveOrder(providers, filenameOrdered, failures);
+        string? profileOrderPath = Mo2ProfileArchiveOrder.MappingEnabled(paths.Root) ? Mo2ProfileArchiveOrder.Find(paths.Root, profileModlistPath) : null;
+        List<ProviderArchives> orderProviders = profileOrderPath is null ? providers : [new ProviderArchives("Profile archive order", Path.GetDirectoryName(profileOrderPath)!, []), .. providers];
+        (string[] order, ArchiveOrderEvidence evidence) = ResolveOrder(orderProviders, filenameOrdered, failures);
         Dictionary<string, Mo2Archive> byName = filenameOrdered.ToDictionary(value => value.ArchiveName, StringComparer.OrdinalIgnoreCase);
         Mo2Archive[] ordered = order.Select(value => byName[value]).ToArray();
         if (failures.Any(value => value.Surface is "Archive enumeration" or "Archive fingerprint")) evidence = Unresolved(evidence, "At least one active legacy archive could not be fingerprinted, so the archive set is incomplete.");

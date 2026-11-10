@@ -227,13 +227,20 @@ public sealed class ArchiveOrderWriter : IArchiveOrderWriter
     }
 
     public void RestorePrevious(ArchiveOrderApplyResult result, string targetPath)
+        => RestorePrevious(result, targetPath, null);
+
+    public void RestorePrevious(ArchiveOrderApplyResult result, string targetPath, Action? authorizeCommit)
     {
         EnsureGameNotRunning();
         string fullTargetPath = Path.GetFullPath(targetPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullTargetPath)!);
         using FileStream operationLock = AcquireOperationLock(fullTargetPath + ".conflictstudio.lock");
         EnsureGameNotRunning();
-        ArchiveOrderRollback.RestorePrevious(result, targetPath, EnsureGameNotRunning);
+        ArchiveOrderRollback.RestorePrevious(result, targetPath, () =>
+        {
+            authorizeCommit?.Invoke();
+            EnsureGameNotRunning();
+        });
     }
 
     private void EnsureGameNotRunning()

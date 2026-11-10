@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\ConflictStudio.Core\ConflictStudio.Core.csproj" />
+    <ProjectReference Include="..\..\src\ConflictStudio.Mo2Bridge\ConflictStudio.Mo2Bridge.csproj" />
   </ItemGroup>
 </Project>

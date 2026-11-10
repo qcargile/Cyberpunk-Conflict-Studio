@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using ConflictStudio.Core;
 
 namespace ConflictStudio.App;
 
@@ -76,10 +77,5 @@ public static class ArchiveRelationshipPresentation
     }
 
     public static ArchiveRelationshipTone Tone(ArchiveOverviewEntry entry)
-        => entry.HasUnknown ? ArchiveRelationshipTone.Unknown
-            : entry.SelectedWins && entry.SelectedLoses ? ArchiveRelationshipTone.Mixed
-            : entry.SelectedWins ? ArchiveRelationshipTone.Wins
-            : entry.SelectedLoses ? ArchiveRelationshipTone.Loses
-            : entry.HasSame ? ArchiveRelationshipTone.Same
-            : ArchiveRelationshipTone.None;
+        => (ArchiveRelationshipTone)ArchiveRelationship.Classify(entry.SelectedWins, entry.SelectedLoses, entry.HasSame, entry.HasUnknown);
 }

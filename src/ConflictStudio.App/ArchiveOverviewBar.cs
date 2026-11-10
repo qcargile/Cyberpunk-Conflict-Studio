@@ -11,10 +11,10 @@ public sealed record ArchiveOverviewEntry(string ArchiveName, bool SelectedWins,
 public sealed class ArchiveOverviewBar : FrameworkElement
 {
     private static readonly Brush BackgroundBrush = CreateBrush(9, 15, 20);
-    private static readonly Brush WinningBrush = CreateBrush(66, 229, 139);
-    private static readonly Brush LosingBrush = CreateBrush(255, 48, 79);
-    private static readonly Brush SameBrush = CreateBrush(0, 200, 255);
-    private static readonly Brush UnknownBrush = CreateBrush(180, 140, 255);
+    private static readonly Brush WinningBrush = ArchiveRelationshipBrushes.WinsBorder;
+    private static readonly Brush LosingBrush = ArchiveRelationshipBrushes.LosesBorder;
+    private static readonly Brush SameBrush = ArchiveRelationshipBrushes.SameBorder;
+    private static readonly Brush UnknownBrush = ArchiveRelationshipBrushes.UnknownBorder;
     private static readonly Brush SelectionBrush = Brushes.White;
     private IReadOnlyList<ArchiveOverviewEntry> _entries = [];
     private string[] _selectedArchives = [];

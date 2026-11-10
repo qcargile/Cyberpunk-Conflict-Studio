@@ -1,4 +1,4 @@
-﻿<Window x:Class="ConflictStudio.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ConflictStudio.App" Title="Cyberpunk Conflict Studio" Width="1660" Height="980" MinWidth="1180" MinHeight="760" Background="#070B0F" Foreground="#F2F6F7" FontFamily="Segoe UI">
+<Window x:Class="ConflictStudio.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ConflictStudio.App" Title="Cyberpunk Conflict Studio" Width="1660" Height="980" MinWidth="1180" MinHeight="760" Background="#070B0F" Foreground="#F2F6F7" FontFamily="Segoe UI">
     <Window.Resources>
         <SolidColorBrush x:Key="Panel" Color="#0D141A" />
         <SolidColorBrush x:Key="Border" Color="#28404D" />
@@ -207,24 +207,24 @@
             </Grid>
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding RelationshipTone}" Value="Wins">
-                    <Setter TargetName="RelationshipRow" Property="Background" Value="#08251B" />
-                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="#42E58B" />
+                    <Setter TargetName="RelationshipRow" Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.WinsBackground}" />
+                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.WinsBorder}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding RelationshipTone}" Value="Loses">
-                    <Setter TargetName="RelationshipRow" Property="Background" Value="#310913" />
-                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="#FF304F" />
+                    <Setter TargetName="RelationshipRow" Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.LosesBackground}" />
+                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.LosesBorder}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding RelationshipTone}" Value="Mixed">
-                    <Setter TargetName="RelationshipRow" Property="Background" Value="#282500" />
-                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="#FCEE0A" />
+                    <Setter TargetName="RelationshipRow" Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.MixedBackground}" />
+                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.MixedBorder}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding RelationshipTone}" Value="Same">
-                    <Setter TargetName="RelationshipRow" Property="Background" Value="#062431" />
-                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="#00C8FF" />
+                    <Setter TargetName="RelationshipRow" Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.SameBackground}" />
+                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.SameBorder}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding RelationshipTone}" Value="Unknown">
-                    <Setter TargetName="RelationshipRow" Property="Background" Value="#1D1230" />
-                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="#B48CFF" />
+                    <Setter TargetName="RelationshipRow" Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.UnknownBackground}" />
+                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.UnknownBorder}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding DropCue}" Value="Before"><Setter TargetName="DropBeforeLine" Property="Visibility" Value="Visible" /></DataTrigger>
                 <DataTrigger Binding="{Binding DropCue}" Value="After"><Setter TargetName="DropAfterLine" Property="Visibility" Value="Visible" /></DataTrigger>
@@ -257,24 +257,24 @@
             </Border>
             <HierarchicalDataTemplate.Triggers>
                 <DataTrigger Binding="{Binding RelationshipTone}" Value="Wins">
-                    <Setter TargetName="RelationshipRow" Property="Background" Value="#08251B" />
-                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="#42E58B" />
+                    <Setter TargetName="RelationshipRow" Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.WinsBackground}" />
+                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.WinsBorder}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding RelationshipTone}" Value="Loses">
-                    <Setter TargetName="RelationshipRow" Property="Background" Value="#310913" />
-                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="#FF304F" />
+                    <Setter TargetName="RelationshipRow" Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.LosesBackground}" />
+                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.LosesBorder}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding RelationshipTone}" Value="Mixed">
-                    <Setter TargetName="RelationshipRow" Property="Background" Value="#282500" />
-                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="#FCEE0A" />
+                    <Setter TargetName="RelationshipRow" Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.MixedBackground}" />
+                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.MixedBorder}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding RelationshipTone}" Value="Same">
-                    <Setter TargetName="RelationshipRow" Property="Background" Value="#062431" />
-                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="#00C8FF" />
+                    <Setter TargetName="RelationshipRow" Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.SameBackground}" />
+                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.SameBorder}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding RelationshipTone}" Value="Unknown">
-                    <Setter TargetName="RelationshipRow" Property="Background" Value="#1D1230" />
-                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="#B48CFF" />
+                    <Setter TargetName="RelationshipRow" Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.UnknownBackground}" />
+                    <Setter TargetName="RelationshipRow" Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.UnknownBorder}" />
                 </DataTrigger>
             </HierarchicalDataTemplate.Triggers>
         </HierarchicalDataTemplate>
@@ -285,16 +285,16 @@
                         <Setter Property="Foreground" Value="#AFC0BE" />
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding Tone}" Value="Winning">
-                                <Setter Property="Foreground" Value="#42E58B" />
+                                <Setter Property="Foreground" Value="{x:Static local:ArchiveRelationshipBrushes.WinsBorder}" />
                             </DataTrigger>
                             <DataTrigger Binding="{Binding Tone}" Value="Losing">
                                 <Setter Property="Foreground" Value="#FF4964" />
                             </DataTrigger>
                             <DataTrigger Binding="{Binding Tone}" Value="Same">
-                                <Setter Property="Foreground" Value="#00C8FF" />
+                                <Setter Property="Foreground" Value="{x:Static local:ArchiveRelationshipBrushes.SameBorder}" />
                             </DataTrigger>
                             <DataTrigger Binding="{Binding Tone}" Value="Unknown">
-                                <Setter Property="Foreground" Value="#B48CFF" />
+                                <Setter Property="Foreground" Value="{x:Static local:ArchiveRelationshipBrushes.UnknownBorder}" />
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
@@ -313,16 +313,16 @@
                             <Setter Property="Foreground" Value="#AFC0BE" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding Tone}" Value="Winning">
-                                    <Setter Property="Foreground" Value="#42E58B" />
+                                    <Setter Property="Foreground" Value="{x:Static local:ArchiveRelationshipBrushes.WinsBorder}" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Tone}" Value="Losing">
                                     <Setter Property="Foreground" Value="#FF4964" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Tone}" Value="Same">
-                                    <Setter Property="Foreground" Value="#00C8FF" />
+                                    <Setter Property="Foreground" Value="{x:Static local:ArchiveRelationshipBrushes.SameBorder}" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Tone}" Value="Unknown">
-                                    <Setter Property="Foreground" Value="#B48CFF" />
+                                    <Setter Property="Foreground" Value="{x:Static local:ArchiveRelationshipBrushes.UnknownBorder}" />
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -635,13 +635,13 @@
                                 <Setter Property="BorderThickness" Value="4,0,0,0" />
                                 <Setter Property="BorderBrush" Value="Transparent" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding CaseKind}" Value="ProvenConflict"><Setter Property="Background" Value="#310913" /><Setter Property="BorderBrush" Value="#FF304F" /></DataTrigger>
+                                    <DataTrigger Binding="{Binding CaseKind}" Value="ProvenConflict"><Setter Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.LosesBackground}" /><Setter Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.LosesBorder}" /></DataTrigger>
                                     <DataTrigger Binding="{Binding CaseKind}" Value="CompetingDeclaration"><Setter Property="Background" Value="#301A0A" /><Setter Property="BorderBrush" Value="#FF9A45" /></DataTrigger>
                                     <DataTrigger Binding="{Binding CaseKind}" Value="FileOverride"><Setter Property="Background" Value="#06242A" /><Setter Property="BorderBrush" Value="#00F0FF" /></DataTrigger>
                                     <DataTrigger Binding="{Binding CaseKind}" Value="OrderSensitive"><Setter Property="Background" Value="#321701" /><Setter Property="BorderBrush" Value="#FF7A00" /></DataTrigger>
-                                    <DataTrigger Binding="{Binding CaseKind}" Value="CompilerEvidence"><Setter Property="Background" Value="#241334" /><Setter Property="BorderBrush" Value="#B48CFF" /></DataTrigger>
-                                    <DataTrigger Binding="{Binding CaseKind}" Value="RuntimeCheck"><Setter Property="Background" Value="#292600" /><Setter Property="BorderBrush" Value="#FCEE0A" /></DataTrigger>
-                                    <DataTrigger Binding="{Binding CaseKind}" Value="Composes"><Setter Property="Background" Value="#08251B" /><Setter Property="BorderBrush" Value="#42E58B" /></DataTrigger>
+                                    <DataTrigger Binding="{Binding CaseKind}" Value="CompilerEvidence"><Setter Property="Background" Value="#241334" /><Setter Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.UnknownBorder}" /></DataTrigger>
+                                    <DataTrigger Binding="{Binding CaseKind}" Value="RuntimeCheck"><Setter Property="Background" Value="#292600" /><Setter Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.MixedBorder}" /></DataTrigger>
+                                    <DataTrigger Binding="{Binding CaseKind}" Value="Composes"><Setter Property="Background" Value="{x:Static local:ArchiveRelationshipBrushes.WinsBackground}" /><Setter Property="BorderBrush" Value="{x:Static local:ArchiveRelationshipBrushes.WinsBorder}" /></DataTrigger>
                                     <DataTrigger Binding="{Binding CaseKind}" Value="SharedTarget"><Setter Property="Background" Value="#111A22" /><Setter Property="BorderBrush" Value="#728A96" /></DataTrigger>
                                 </Style.Triggers>
                             </Style>
