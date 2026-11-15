@@ -15,6 +15,124 @@ public sealed class MainWindowArchiveInteractionTests
     private static readonly string[] SelectedPair = ["A.archive", "B.archive"];
 
     [TestMethod]
+    public void NewArchiveGuidanceLocatesAdditionsWithoutMovingOrSavingThem()
+    {
+        Run(() =>
+        {
+            string applicationData = Path.Combine(Path.GetTempPath(), "conflict-studio-new-archives-" + Guid.NewGuid().ToString("N"));
+            MainWindow window = new(applicationData);
+            try
+            {
+                window.Width = window.MinWidth;
+                window.Height = window.MinHeight;
+                window.Show();
+                string[] order = ["ZExisting.archive", "AExisting.archive", "PeachuNew.archive"];
+                string details = "PeachuNew.archive is unlisted. Old.archive is inactive. " + new string('x', 4000);
+                ArchiveOrderEvidence evidence = new(ArchiveOrderEvidenceKind.ManagedModlist, "Profile", "archive-order.txt", details)
+                {
+                    UnlistedArchives = ["PeachuNew.archive"], IgnoredEntries = ["Old.archive"], PreserveInactiveArchives = true
+                };
+                ProfileScanReceipt receipt = new(2, "Profile", DateTimeOffset.UtcNow, [], order, [], [], [], [], [], [], [], [], [], [], ArchiveOrderEvidence: evidence);
+                typeof(MainWindow).GetMethod("SetScanLocked", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [false]);
+                typeof(MainWindow).GetField("_receipt", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, receipt);
+                ArchiveOrderWorkspaceViewModel workspace = (ArchiveOrderWorkspaceViewModel)window.DataContext;
+                workspace.SetProposedOrder(order);
+                typeof(MainWindow).GetMethod("RefreshArchiveRail", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, []);
+                typeof(MainWindow).GetMethod("PresentArchiveOrderEvidence", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [evidence]);
+                Button find = (Button)window.FindName("FindUnlistedArchivesButton");
+                Assert.IsTrue(find.IsEnabled && find.IsVisible);
+                Assert.IsFalse(((Expander)window.FindName("ArchiveOrderDetailsExpander")).IsExpanded);
+                Assert.IsFalse(((TextBlock)window.FindName("ArchiveOrderEvidenceTextBlock")).Text.Contains("PeachuNew.archive", StringComparison.Ordinal));
+                Assert.AreEqual(evidence.Message, ((TextBlock)window.FindName("ArchiveOrderDetailsTextBlock")).Text);
+                window.UpdateLayout();
+                Assert.IsLessThan(180d, ((Border)window.FindName("ArchiveOrderEvidenceBorder")).ActualHeight);
+
+                find.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                ListBox rail = (ListBox)window.FindName("ArchiveOrderListBox");
+                Assert.AreEqual("PeachuNew.archive", ((ArchiveRailItem)rail.SelectedItems.Cast<object>().Single()).ArchiveName);
+                Assert.AreEqual("PeachuNew.archive", rail.Items.Cast<ArchiveRailItem>().Single(value => value.IsUnlisted).ArchiveName);
+                CollectionAssert.AreEqual(order, workspace.ProposedOrder.ToArray());
+                Assert.IsFalse(workspace.CanApply);
+                typeof(MainWindow).GetMethod("SetScanLocked", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [true]);
+                Assert.IsFalse(find.IsEnabled);
+                typeof(MainWindow).GetMethod("InvalidateReceipt", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, []);
+                Assert.AreEqual(Visibility.Collapsed, find.Visibility);
+            }
+            finally
+            {
+                window.Close();
+                if (Directory.Exists(applicationData)) Directory.Delete(applicationData, true);
+            }
+        });
+    }
+
+    [TestMethod]
+    public void MinimumEditorWindowKeepsStatusAndSaveVisible()
+    {
+        Run(() =>
+        {
+            string applicationData = Path.Combine(Path.GetTempPath(), "conflict-studio-editor-layout-" + Guid.NewGuid().ToString("N"));
+            MainWindow owner = new(applicationData);
+            SourceEditorSettingsWindow? editor = null;
+            try
+            {
+                owner.Show();
+                editor = new(owner, new SourceEditorPreferenceStore(applicationData));
+                editor.Width = editor.MinWidth;
+                editor.Height = editor.MinHeight;
+                editor.Show();
+                editor.UpdateLayout();
+                FrameworkElement root = (FrameworkElement)editor.Content;
+                TextBlock status = (TextBlock)editor.FindName("EditorSettingsStatusTextBlock");
+                Button save = (Button)editor.FindName("SaveEditorButton");
+                Rect statusBounds = status.TransformToAncestor(root).TransformBounds(new Rect(status.RenderSize));
+                Rect saveBounds = save.TransformToAncestor(root).TransformBounds(new Rect(save.RenderSize));
+                Assert.IsTrue(statusBounds.Height >= 28 && statusBounds.Bottom <= saveBounds.Top);
+                Assert.IsTrue(saveBounds.Bottom <= root.ActualHeight);
+            }
+            finally
+            {
+                editor?.Close();
+                owner.Close();
+                if (Directory.Exists(applicationData)) Directory.Delete(applicationData, true);
+            }
+        });
+    }
+
+    [TestMethod]
+    public void MinimumWindowKeepsSetupAndFindingFiltersVisible()
+    {
+        Run(() =>
+        {
+            string applicationData = Path.Combine(Path.GetTempPath(), "conflict-studio-layout-" + Guid.NewGuid().ToString("N"));
+            MainWindow window = new(applicationData);
+            try
+            {
+                window.Width = window.MinWidth;
+                window.Height = window.MinHeight;
+                window.Show();
+                ((TabControl)window.FindName("MainTabControl")).SelectedIndex = 1;
+                window.UpdateLayout();
+                FrameworkElement root = (FrameworkElement)window.Content;
+                string[] names = ["ManagerModeComboBox", "Mo2RootTextBox", "ProfileComboBox", "ScanProfileButton", "QueueSearchTextBox", "QueueViewComboBox", "QueueSurfaceComboBox", "QueueProviderComboBox", "QueueOtherProviderComboBox"];
+                foreach (string name in names)
+                {
+                    FrameworkElement control = (FrameworkElement)window.FindName(name);
+                    Rect bounds = control.TransformToAncestor(root).TransformBounds(new Rect(control.RenderSize));
+                    Assert.IsTrue(control.IsVisible && bounds.Width >= 90 && bounds.Height >= 30, name);
+                    Assert.IsTrue(bounds.Left >= 0 && bounds.Right <= root.ActualWidth && bounds.Top >= 0 && bounds.Bottom <= root.ActualHeight, name);
+                }
+            }
+            finally
+            {
+                window.Close();
+                if (Directory.Exists(applicationData)) Directory.Delete(applicationData, true);
+            }
+        });
+    }
+
+    [TestMethod]
     public void DragNearTheTopScrollsUp()
     {
         Assert.IsLessThan(0, ArchiveDragAutoScroll.LinesAt(1, 500));
@@ -100,7 +218,8 @@ public sealed class MainWindowArchiveInteractionTests
                 window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
 
                 Assert.AreSame(support, tabs.SelectedItem);
-                Assert.AreEqual(message, evidenceText.Text);
+                Assert.AreEqual(ArchiveOrderGuidance.Instruction(evidence), evidenceText.Text);
+                Assert.AreEqual(message, ((TextBlock)window.FindName("ArchiveOrderDetailsTextBlock")).Text);
                 StringAssert.Contains(report.Text, "Broken.archive");
                 Assert.IsTrue(report.IsKeyboardFocusWithin);
             }

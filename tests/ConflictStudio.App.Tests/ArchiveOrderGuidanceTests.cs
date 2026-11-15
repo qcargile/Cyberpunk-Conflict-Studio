@@ -114,7 +114,7 @@ public sealed class ArchiveOrderGuidanceTests
     }
 
     [TestMethod]
-    [DataRow(false, "Clean inactive entry", "Order verified; inactive entries can be cleaned")]
+    [DataRow(false, "Review cleanup", "Order verified; inactive entries can be cleaned")]
     [DataRow(true, "View load order", "Order verified; inactive archive positions are kept")]
     public void InactiveArchiveGuidanceUsesTheWritePolicy(bool preserveInactiveArchives, string label, string title)
     {
@@ -139,7 +139,7 @@ public sealed class ArchiveOrderGuidanceTests
         };
 
         Assert.IsTrue(ArchiveOrderGuidance.OpensPreparedOrder(evidence));
-        Assert.AreEqual("Add unlisted archive", ArchiveOrderGuidance.ActionLabel(evidence));
+        Assert.AreEqual("Review additions", ArchiveOrderGuidance.ActionLabel(evidence));
     }
 
     [TestMethod]

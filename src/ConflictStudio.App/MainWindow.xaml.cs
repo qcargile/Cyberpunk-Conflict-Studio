@@ -205,7 +205,7 @@ public partial class MainWindow : Window, IDisposable
         if (ManagerModeComboBox?.SelectedItem is not ComboBoxItem item || item.Tag is not string value || !Enum.TryParse(value, true, out ModManagerKind kind)) return;
         _managerKind = kind;
         if (ManagerLocationLabel is null || ProfileComboBox is null) return;
-        ManagerLocationLabel.Text = kind switch { ModManagerKind.Vortex => "VORTEX PROFILE INFORMATION", ModManagerKind.Manual => "CYBERPUNK INSTALLATION", _ => "MO2 INSTALLATION" };
+        ManagerLocationLabel.Text = kind switch { ModManagerKind.Vortex => "Vortex profile information", ModManagerKind.Manual => "Cyberpunk installation", _ => "MO2 installation" };
         InvalidateReceipt();
         ProfileComboBox.ItemsSource = null;
         if (kind == ModManagerKind.Vortex)
@@ -613,6 +613,17 @@ public partial class MainWindow : Window, IDisposable
                 if (ArchiveOrderListBox.Items.Count > 0 && ArchiveOrderListBox.SelectedIndex < 0) ArchiveOrderListBox.SelectedIndex = 0;
             }
         });
+    }
+
+    private void FindUnlistedArchivesClicked(object sender, RoutedEventArgs e)
+    {
+        if (RejectArchiveMutationWhileBusy("find-new-archives")) return;
+        string[] names = _receipt?.ArchiveOrderEvidence?.UnlistedArchives ?? [];
+        if (names.Length == 0) return;
+        SelectArchivesInLoadOrder(names);
+        SetOverviewSelection(names);
+        ArchiveOrderListBox.Focus();
+        WorkspaceStatusTextBlock.Text = $"Selected {names.Length} archive{(names.Length == 1 ? string.Empty : "s")} not in the saved order. Drag to choose positions, then review before applying. Nothing has been saved.";
     }
 
     private void ArchiveSearchTextChanged(object sender, TextChangedEventArgs e)
@@ -1035,7 +1046,10 @@ public partial class MainWindow : Window, IDisposable
 
     private void PresentArchiveOrderEvidence(ArchiveOrderEvidence evidence)
     {
-        ArchiveOrderEvidenceTextBlock.Text = evidence.Message;
+        ArchiveOrderEvidenceTextBlock.Text = ArchiveOrderGuidance.Summary(evidence, _managerKind);
+        ArchiveOrderDetailsTextBlock.Text = evidence.Message;
+        ArchiveOrderDetailsExpander.IsExpanded = false;
+        ArchiveOrderDetailsExpander.Visibility = string.IsNullOrWhiteSpace(evidence.Message) ? Visibility.Collapsed : Visibility.Visible;
         bool repairDraft = evidence.IsRepairableLegacyOrder;
         bool orderBlocked = evidence.Kind == ArchiveOrderEvidenceKind.Unresolved && !repairDraft;
         bool maintenance = evidence.IgnoredEntries.Length > 0 && !evidence.PreserveInactiveArchives || evidence.UnlistedArchives.Length > 0;
@@ -1044,10 +1058,11 @@ public partial class MainWindow : Window, IDisposable
         ArchiveOrderActionButton.Content = ArchiveOrderGuidance.ActionLabel(evidence);
         ArchiveOrderEvidenceTextBlock.Visibility = orderBlocked || repairDraft || maintenance ? Visibility.Visible : Visibility.Collapsed;
         ArchiveOrderActionButton.Visibility = orderBlocked || repairDraft || maintenance ? Visibility.Visible : Visibility.Collapsed;
-        ArchiveOrderEvidenceBorder.ToolTip = evidence.Message;
-        ArchiveOrderEvidenceTitleTextBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked || repairDraft ? "#FCEE0A" : maintenance ? "#FFB15A" : "#7EF0B2"));
-        ArchiveOrderEvidenceBorder.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked || repairDraft ? "#292600" : maintenance ? "#321701" : "#08251B"));
-        ArchiveOrderEvidenceBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked || repairDraft ? "#8C8500" : maintenance ? "#8A4200" : "#1F6E4C"));
+        FindUnlistedArchivesButton.Visibility = evidence.UnlistedArchives.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        FindUnlistedArchivesButton.IsEnabled = !_scanLocked && !_archiveOperationLocked && evidence.UnlistedArchives.Length > 0;
+        ArchiveOrderEvidenceTitleTextBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked || repairDraft ? "#FCEE0A" : maintenance ? "#8CDDE5" : "#7EF0B2"));
+        ArchiveOrderEvidenceBorder.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked || repairDraft ? "#292600" : maintenance ? "#10242C" : "#08251B"));
+        ArchiveOrderEvidenceBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(orderBlocked || repairDraft ? "#8C8500" : maintenance ? "#2E6974" : "#1F6E4C"));
     }
 
     private void ApplyQueueFilter()
@@ -1234,6 +1249,7 @@ public partial class MainWindow : Window, IDisposable
         ProfileComboBox.IsHitTestVisible = !locked;
         ProfileComboBox.Focusable = !locked;
         ArchiveOrderTabContent.IsHitTestVisible = !locked;
+        FindUnlistedArchivesButton.IsEnabled = !locked && _receipt?.ArchiveOrderEvidence?.UnlistedArchives.Length > 0;
         ScanProfileButton.IsHitTestVisible = !locked;
         ScanProfileButton.Focusable = !locked;
     }
@@ -1267,6 +1283,12 @@ public partial class MainWindow : Window, IDisposable
         ArchiveOrderListBox.ItemsSource = null;
         ArchiveOrderEvidenceTextBlock.Text = "Run a profile scan to check the files inside your archives.";
         ArchiveOrderEvidenceTitleTextBlock.Text = "Archive order not loaded";
+        ArchiveOrderDetailsTextBlock.Text = string.Empty;
+        ArchiveOrderDetailsExpander.IsExpanded = false;
+        ArchiveOrderDetailsExpander.Visibility = Visibility.Collapsed;
+        FindUnlistedArchivesButton.Visibility = Visibility.Collapsed;
+        FindUnlistedArchivesButton.IsEnabled = false;
+        ArchiveOrderActionButton.Visibility = Visibility.Collapsed;
         ArchiveConflictCountTextBlock.Text = "Run a scan to inspect conflicts.";
         ArchiveSelectedTitleTextBlock.Text = "Select an archive or file";
         ArchiveSelectedMeaningTextBlock.Text = "Expand an archive to inspect Winning, Losing, Same content, and No conflicts inline.";
@@ -1299,7 +1321,7 @@ public partial class MainWindow : Window, IDisposable
         _managerKind = ModManagerKind.Vortex;
         _vortexContextPath = fullPath;
         SelectManagerMode(ModManagerKind.Vortex);
-        ManagerLocationLabel.Text = "VORTEX PROFILE INFORMATION";
+        ManagerLocationLabel.Text = "Vortex profile information";
         Mo2RootTextBox.Text = fullPath;
         VortexProfileOption option = new(context.ProfileName, fullPath);
         ProfileComboBox.ItemsSource = new[] { option };
@@ -1331,7 +1353,7 @@ public partial class MainWindow : Window, IDisposable
         {
             ManagerModeComboBox.SelectedItem = ManagerModeComboBox.Items.Cast<ComboBoxItem>().First(value => string.Equals(value.Tag?.ToString(), kind.ToString(), StringComparison.OrdinalIgnoreCase));
             _managerKind = kind;
-            ManagerLocationLabel.Text = kind switch { ModManagerKind.Vortex => "VORTEX PROFILE INFORMATION", ModManagerKind.Manual => "CYBERPUNK INSTALLATION", _ => "MO2 INSTALLATION" };
+            ManagerLocationLabel.Text = kind switch { ModManagerKind.Vortex => "Vortex profile information", ModManagerKind.Manual => "Cyberpunk installation", _ => "MO2 installation" };
         }
         finally { _syncingManagerMode = false; }
     }
@@ -1672,7 +1694,8 @@ public partial class MainWindow : Window, IDisposable
     {
         if (_receipt is null) return;
         string[] order = ArchiveOverviewProjection.ComposeCombinedOrder(_workspace.ProposedOrder, _receipt.ArchiveOrder);
-        _archiveRailItems = order.Select(value => new ArchiveRailItem(value)).ToArray();
+        HashSet<string> unlisted = (_receipt.ArchiveOrderEvidence?.UnlistedArchives ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _archiveRailItems = order.Select(value => new ArchiveRailItem(value, unlisted.Contains(value))).ToArray();
         ArchiveOrderListBox.ItemsSource = _archiveRailItems;
     }
 

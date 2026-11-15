@@ -20,7 +20,7 @@ public sealed class ManagerModeSelectionTests
         {
             Get<TextBox>(window, "Mo2RootTextBox").Text = path;
             Select(window, "Manual");
-            Assert.AreEqual("CYBERPUNK INSTALLATION", Get<TextBlock>(window, "ManagerLocationLabel").Text);
+            Assert.AreEqual("Cyberpunk installation", Get<TextBlock>(window, "ManagerLocationLabel").Text);
             Assert.IsNull(Get<ComboBox>(window, "ProfileComboBox").SelectedItem);
             StringAssert.Contains(Get<TextBlock>(window, "WorkspaceStatusTextBlock").Text, "Choose the Cyberpunk installation folder");
             Select(window, "Mo2");

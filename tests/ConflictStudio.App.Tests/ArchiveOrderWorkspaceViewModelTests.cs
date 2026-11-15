@@ -98,7 +98,7 @@ public sealed class ArchiveOrderWorkspaceViewModelTests
             Assert.IsTrue(profile.OrderEvidence!.PreserveInactiveArchives);
             Assert.HasCount(1, profile.OrderEvidence.IgnoredEntries);
             Assert.AreEqual(unlistedArchive, ArchiveOrderGuidance.OpensPreparedOrder(profile.OrderEvidence));
-            Assert.AreEqual(unlistedArchive ? "Add unlisted archive" : "View load order", ArchiveOrderGuidance.ActionLabel(profile.OrderEvidence));
+            Assert.AreEqual(unlistedArchive ? "Review additions" : "View load order", ArchiveOrderGuidance.ActionLabel(profile.OrderEvidence));
             viewModel.SetProposedOrder(ProfileInitialOrder);
             Assert.IsFalse(viewModel.PreviewStatus.Contains("clean", StringComparison.OrdinalIgnoreCase));
             viewModel.PreviewOrder();
@@ -146,6 +146,9 @@ public sealed class ArchiveOrderWorkspaceViewModelTests
 
             Assert.IsTrue(viewModel.CanApply);
             StringAssert.Contains(viewModel.PreviewStatus, "adds 1 unlisted archive");
+            Assert.AreEqual("Beta.archive\n", File.ReadAllText(orderPath));
+            string[] expected = ["Beta.archive", "Alpha.archive"];
+            CollectionAssert.AreEqual(expected, viewModel.ProposedOrder.ToArray());
             viewModel.ApplyOrder();
             Assert.AreEqual("Beta.archive\r\nAlpha.archive\r\n", File.ReadAllText(orderPath));
             Assert.IsFalse(viewModel.CanApply);
