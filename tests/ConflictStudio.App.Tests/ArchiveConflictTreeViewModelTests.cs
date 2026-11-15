@@ -7,6 +7,46 @@ namespace ConflictStudio.App.Tests;
 public sealed class ArchiveConflictTreeViewModelTests
 {
     [TestMethod]
+    public void OlderMiddleArchiveOutcomeDoesNotClaimAnOverrideWithoutRecordedOrder()
+    {
+        ArchiveResourceNode node = new(Outcome(9, "base\\shared.mesh", ArchiveResourceDisposition.WinningAndLosing, ArchivePayloadRelation.Different, "1.archive", ["1.archive", "5.archive"]), ArchiveTreeTone.Winning, "2.archive");
+
+        Assert.AreEqual("Lower-priority archives not recorded", node.ProviderContext);
+        string[] expected = ["1.archive", "5.archive"];
+        CollectionAssert.AreEqual(expected, node.OtherArchives);
+    }
+
+    [TestMethod]
+    public void OverridesListContainsOnlyLowerPriorityArchivesAfterFilteringAndReordering()
+    {
+        ResourceProvider[] resources = [
+            new("1.archive", 9, "base\\shared.mesh", new string('a', 40)),
+            new("2.archive", 9, "base\\shared.mesh", new string('b', 40)),
+            new("5.archive", 9, "base\\shared.mesh", new string('c', 40))
+        ];
+        string[] names = ["1", "2", "3", "4", "5"];
+        Mo2Archive[] archives = names.Select(value => new Mo2Archive(value, value + ".archive", value, 1, new string('a', 64))).ToArray();
+        ArchiveConflictTreeViewModel tree = new();
+        tree.Load(ArchiveResourceIndexBuilder.Build(resources, archives, ["1.archive", "2.archive", "3.archive", "4.archive", "5.archive"]));
+        tree.Filter("2.archive", "1.archive", false);
+
+        ArchiveConflictNode middle = tree.VisibleArchives.Single();
+        Assert.AreEqual("Overrides: 5.archive", middle.Children.Single(value => value.Tone == ArchiveTreeTone.Winning).Children.Single().ProviderContext);
+        Assert.AreEqual("Winner: 1.archive", middle.Children.Single(value => value.Tone == ArchiveTreeTone.Losing).Children.Single().ProviderContext);
+
+        tree.Filter("1.archive", "", false);
+        Assert.AreEqual("Overrides: 2.archive, 5.archive", tree.VisibleArchives.Single().Children.Single().Children.Single().ProviderContext);
+        tree.Filter("5.archive", "", false);
+        Assert.AreEqual("Winner: 1.archive", tree.VisibleArchives.Single().Children.Single().Children.Single().ProviderContext);
+
+        tree.Load(ArchiveResourceIndexBuilder.Build(resources, archives, ["5.archive", "2.archive", "3.archive", "4.archive", "1.archive"]));
+        tree.Filter("2.archive", "", false);
+        middle = tree.VisibleArchives.Single();
+        Assert.AreEqual("Overrides: 1.archive", middle.Children.Single(value => value.Tone == ArchiveTreeTone.Winning).Children.Single().ProviderContext);
+        Assert.AreEqual("Winner: 5.archive", middle.Children.Single(value => value.Tone == ArchiveTreeTone.Losing).Children.Single().ProviderContext);
+    }
+
+    [TestMethod]
     public void TreeBuildsInlineWinningLosingSameAndUniqueGroups()
     {
         ArchiveResourceOutcome winning = Outcome(1, "base\\winning.mesh", ArchiveResourceDisposition.Winning, ArchivePayloadRelation.Different, "High.archive", ["Low.archive"]);

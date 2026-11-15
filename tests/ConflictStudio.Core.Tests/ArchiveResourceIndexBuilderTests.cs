@@ -6,6 +6,26 @@ namespace ConflictStudio.Core.Tests;
 public sealed class ArchiveResourceIndexBuilderTests
 {
     [TestMethod]
+    public void OverridesExcludeEveryHigherArchiveAndSurviveSerialization()
+    {
+        string[] order = ["1.archive", "2.archive", "3.archive", "4.archive", "5.archive"];
+        ResourceProvider[] resources = order.Select((name, index) => Provider(name, 9, "base\\chain.mesh", ((char)('a' + index)).ToString())).ToArray();
+        Mo2Archive[] archives = order.Select(name => new Mo2Archive(name, name, name, 1, new string('a', 64))).ToArray();
+        ArchiveConflictSummary[] summaries = ArchiveResourceIndexBuilder.Build(resources, archives, order);
+        ArchiveResourceOutcome middle = summaries.Single(value => value.ArchiveName == "3.archive").Winning.Single();
+
+        string[] expected = ["4.archive", "5.archive"];
+        CollectionAssert.AreEqual(expected, middle.OverriddenArchives);
+        CollectionAssert.AreEquivalent(order, middle.OtherArchives);
+        Assert.AreEqual("1.archive", middle.WinnerArchive);
+        ArchiveResourceOutcome restored = System.Text.Json.JsonSerializer.Deserialize<ArchiveResourceOutcome>(System.Text.Json.JsonSerializer.Serialize(middle))!;
+        CollectionAssert.AreEqual(middle.OverriddenArchives, restored.OverriddenArchives);
+
+        summaries = ArchiveResourceIndexBuilder.Build(resources, archives, []);
+        Assert.IsTrue(summaries.SelectMany(value => value.Unresolved).All(value => value.OverriddenArchives is null));
+    }
+
+    [TestMethod]
     public void BuildGroupsExactWinningLosingRedundantAndUniqueResourcesByArchive()
     {
         ResourceProvider[] resources =
