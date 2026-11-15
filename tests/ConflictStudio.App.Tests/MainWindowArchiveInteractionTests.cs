@@ -15,6 +15,54 @@ public sealed class MainWindowArchiveInteractionTests
     private static readonly string[] SelectedPair = ["A.archive", "B.archive"];
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void LoadOrderSelectionSurvivesMissingOrVisibleConflictResults(bool showUnique)
+    {
+        RunArchiveSelectionScenario((window, rail, order) =>
+        {
+            if (showUnique)
+            {
+                ((CheckBox)window.FindName("ShowNonConflictingFilesCheckBox")).IsChecked = true;
+                typeof(MainWindow).GetMethod("ApplyArchiveTreeFilter", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, []);
+            }
+            rail.SelectedItem = rail.Items.Cast<ArchiveRailItem>().First();
+            window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+            rail.Focus();
+            rail.SelectedItem = rail.Items.Cast<ArchiveRailItem>().Last();
+            window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+            Assert.AreEqual(order[2], ((ArchiveRailItem)rail.SelectedItem).ArchiveName);
+            string[] selected = (string[])typeof(MainWindow).GetField("_selectedArchiveNames", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+            Assert.AreEqual(order[2], selected.Single());
+            object? node = typeof(MainWindow).GetField("_selectedArchiveNode", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window);
+            if (showUnique) Assert.AreEqual(order[2], ((ArchiveConflictNode)node!).ArchiveName);
+            else Assert.IsNull(node);
+            Assert.IsTrue(rail.IsKeyboardFocusWithin);
+            CollectionAssert.AreEqual(order, ((ArchiveOrderWorkspaceViewModel)window.DataContext).ProposedOrder.ToArray());
+        });
+    }
+
+    [TestMethod]
+    public void DeferredFilterSelectionCannotReplaceANewerLoadOrderChoice()
+    {
+        RunArchiveSelectionScenario((window, rail, order) =>
+        {
+            rail.SelectedItem = rail.Items.Cast<ArchiveRailItem>().First();
+            typeof(MainWindow).GetMethod("ApplyArchiveTreeFilter", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, []);
+
+            rail.SelectedItem = rail.Items.Cast<ArchiveRailItem>().ElementAt(1);
+            window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+            Assert.AreEqual(order[1], ((ArchiveRailItem)rail.SelectedItem).ArchiveName);
+            string[] selected = (string[])typeof(MainWindow).GetField("_selectedArchiveNames", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+            Assert.AreEqual(order[1], selected.Single());
+            Assert.AreEqual(order[1], ((ArchiveConflictNode)((TreeView)window.FindName("ArchiveConflictTreeView")).SelectedItem).ArchiveName);
+        });
+    }
+
+    [TestMethod]
     public void NewArchiveGuidanceLocatesAdditionsWithoutMovingOrSavingThem()
     {
         Run(() =>
@@ -299,6 +347,38 @@ public sealed class MainWindowArchiveInteractionTests
         thread.Join();
 
         if (failure is not null) throw failure;
+    }
+
+    private static void RunArchiveSelectionScenario(Action<MainWindow, ListBox, string[]> scenario)
+    {
+        Run(() =>
+        {
+            string applicationData = Path.Combine(Path.GetTempPath(), "conflict-studio-archive-selection-" + Guid.NewGuid().ToString("N"));
+            MainWindow window = new(applicationData);
+            try
+            {
+                window.Show();
+                string[] order = ["NovaScanner.archive", "Other.archive", "NewUnique.archive"];
+                ResourceProvider[] resources = [new(order[0], 1, "shared.mesh", new string('a', 40)), new(order[1], 1, "shared.mesh", new string('b', 40)), new(order[2], 2, "unique.mesh", new string('c', 40))];
+                Mo2Archive[] archives = order.Select(name => new Mo2Archive(name, name, name, 1, new string('a', 64))).ToArray();
+                ArchiveConflictSummary[] summaries = ArchiveResourceIndexBuilder.Build(resources, archives, order);
+                ProfileScanReceipt receipt = new(2, "Profile", DateTimeOffset.UtcNow, [], order, [], [], [], [], [], [], [], [], [], [], ArchiveSummaries: summaries);
+                typeof(MainWindow).GetMethod("SetScanLocked", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [false]);
+                typeof(MainWindow).GetField("_receipt", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, receipt);
+                ((ArchiveOrderWorkspaceViewModel)window.DataContext).SetProposedOrder(order);
+                typeof(MainWindow).GetMethod("RefreshArchiveRail", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, []);
+                ArchiveConflictTreeViewModel tree = (ArchiveConflictTreeViewModel)typeof(MainWindow).GetField("_archiveTree", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+                tree.Load(summaries);
+                typeof(MainWindow).GetMethod("ApplyArchiveTreeFilter", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, []);
+                window.UpdateLayout();
+                scenario(window, (ListBox)window.FindName("ArchiveOrderListBox"), order);
+            }
+            finally
+            {
+                window.Close();
+                if (Directory.Exists(applicationData)) Directory.Delete(applicationData, true);
+            }
+        });
     }
 
     private static void Run(Action action)

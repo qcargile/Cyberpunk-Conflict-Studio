@@ -717,6 +717,7 @@ public partial class MainWindow : Window, IDisposable
 
     private void SelectArchiveInConflictTree(string archiveName)
     {
+        bool previous = _syncingArchiveSelection;
         _syncingArchiveSelection = true;
         try
         {
@@ -729,11 +730,11 @@ public partial class MainWindow : Window, IDisposable
                 archive = _archiveTree.Find(archiveName);
             }
             if (archive is null) return;
-            SelectVisibleArchive(archive, true);
+            SelectVisibleArchive(archive, false);
             SelectArchiveInLoadOrder(archiveName);
             SetOverviewSelection(archiveName);
         }
-        finally { _syncingArchiveSelection = false; }
+        finally { _syncingArchiveSelection = previous; }
     }
 
     private void SetOverviewSelection(string? archiveName) => SetOverviewSelection(archiveName is null ? [] : [archiveName]);
@@ -1091,9 +1092,8 @@ public partial class MainWindow : Window, IDisposable
         ArchiveConflictTreeView.ItemsSource = _archiveTree.VisibleArchives;
         string previewState = _archivePreviewUnavailable ? "Preview unavailable · applied results shown · " : _previewingArchiveOrder ? "Preview · not applied · " : string.Empty;
         ArchiveConflictCountTextBlock.Text = previewState + _archiveTree.ResultSummary + (ShowNonConflictingFilesCheckBox?.IsChecked == true ? string.Empty : " Non-conflicting files are hidden.");
-        ArchiveConflictNode? selected = selectedName is null ? null : _archiveTree.Find(selectedName);
-        if (selected is null && selectedNames.Length > 1) selected = _archiveTree.VisibleArchives.FirstOrDefault(value => selectedNames.Contains(value.ArchiveName, StringComparer.OrdinalIgnoreCase));
-        if (selected is null && selectedNames.Length == 1 && _archiveTree.VisibleArchives.Count > 0) selected = _archiveTree.VisibleArchives[0];
+        ArchiveConflictNode? selected = selectedName is not null && (selectedNames.Length == 0 || selectedNames.Contains(selectedName, StringComparer.OrdinalIgnoreCase)) ? _archiveTree.Find(selectedName) : null;
+        if (selected is null && selectedNames.Length > 0) selected = _archiveTree.VisibleArchives.FirstOrDefault(value => selectedNames.Contains(value.ArchiveName, StringComparer.OrdinalIgnoreCase));
         if (selected is null)
         {
             _selectedArchiveNode = null;
@@ -1106,8 +1106,8 @@ public partial class MainWindow : Window, IDisposable
             }
             SetOverviewSelection(selectedNames);
             bool hasResults = _archiveTree.VisibleArchives.Count > 0;
-            ArchiveSelectedTitleTextBlock.Text = hasResults ? "Select an archive" : "No matching archive";
-            ArchiveSelectedMeaningTextBlock.Text = hasResults ? "Select an archive to show only the archives it overrides and the archives that override it." : "Clear or change the filters to restore archive results.";
+            ArchiveSelectedTitleTextBlock.Text = selectedNames.Length == 1 ? selectedNames[0] : hasResults ? "Select an archive" : "No matching archive";
+            ArchiveSelectedMeaningTextBlock.Text = selectedNames.Length == 1 ? "This archive has no results in the current view. Change the filters or enable Show non-conflicting files to inspect it." : hasResults ? "Select an archive to show only the archives it overrides and the archives that override it." : "Clear or change the filters to restore archive results.";
             ArchiveSelectedTechnicalTextBlock.Text = string.Empty;
             return;
         }
@@ -1122,10 +1122,11 @@ public partial class MainWindow : Window, IDisposable
         string[] overviewSelection = selectedNames.Length > 1 ? selectedNames : [selected.ArchiveName];
         Dispatcher.BeginInvoke(() =>
         {
-            if (revision != _archiveFilterRevision) return;
+            if (revision != _archiveFilterRevision || !_selectedArchiveNames.SequenceEqual(overviewSelection, StringComparer.OrdinalIgnoreCase)) return;
+            bool previous = _syncingArchiveSelection;
             _syncingArchiveSelection = true;
             try { SelectVisibleArchive(selected, false); }
-            finally { _syncingArchiveSelection = false; }
+            finally { _syncingArchiveSelection = previous; }
             if (overviewSelection.Length > 1) SelectArchivesInLoadOrder(overviewSelection);
             SetOverviewSelection(overviewSelection);
         }, DispatcherPriority.Loaded);

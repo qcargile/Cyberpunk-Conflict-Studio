@@ -4,6 +4,8 @@ Made code results easier to read and moved the next step higher in finding detai
 Added a Find new archives button and New to order markers without moving or saving archives
 Shortened archive-order messages and moved filenames and diagnostics into expandable details
 Clarified that adding archives is reviewed before the order is saved
+Fixed load-order selection jumping to another archive when files are hidden
+Updated the unapplied-order dialog with clearer choices and matching controls
 Fixed Overrides lists including higher-priority archives
 Added predicted winning TweakXL assignments and RedScript replacements, with unresolved results when order cannot be established
 Added support for MO2 profile-specific archive orders and preserved inactive archive positions when saving
