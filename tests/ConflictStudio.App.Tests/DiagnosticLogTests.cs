@@ -144,7 +144,7 @@ catch {
     [TestMethod]
     public void ApplicationAssemblyUsesThePublishedProductVersion()
     {
-        Assert.AreEqual("1.0.1", typeof(MainWindow).Assembly.GetName().Version?.ToString(3));
+        Assert.AreEqual("1.0.2", typeof(MainWindow).Assembly.GetName().Version?.ToString(3));
     }
 
     private static string RepositoryRoot()

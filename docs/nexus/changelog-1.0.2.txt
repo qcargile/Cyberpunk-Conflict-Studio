@@ -1,4 +1,4 @@
-Unreleased
+Version 1.0.2
 Updated the interface with clearer buttons, filters, status messages and keyboard focus
 Made code results easier to read and moved the next step higher in finding details
 Renamed Changes to Compare scans and explained each tab's purpose and workflow

@@ -47,7 +47,7 @@ See [GitHub releases](https://github.com/qcargile/Cyberpunk-Conflict-Studio/rele
 
 ## Install
 
-The release ZIP is `Cyberpunk-Conflict-Studio-1.0.1.zip`. The same package supports MO2, Vortex and manual installations.
+The release ZIP is `Cyberpunk-Conflict-Studio-1.0.2.zip`. The same package supports MO2, Vortex and manual installations.
 
 ### Vortex
 
@@ -58,7 +58,7 @@ The release ZIP is `Cyberpunk-Conflict-Studio-1.0.1.zip`. The same package suppo
 
 If you open Conflict Studio directly, choose Vortex in the manager menu. It requests the active profile from the running Vortex extension and scans it automatically. Use Connect to retry after opening Vortex or enabling the extension. You do not need to find a `context.json` file.
 
-For 1.0.1, update the Vortex extension with the full ZIP and restart Vortex. Replacing only the executable leaves the old archive-order connection in place.
+When updating, install the Vortex extension with the full ZIP and restart Vortex. Replacing only the executable leaves the old archive-order connection in place.
 
 ### Mod Organizer 2
 
@@ -81,10 +81,10 @@ Run `ConflictStudio.exe` from the extracted folder, choose Manual, and select th
 The public package is a self-contained Windows x64 executable:
 
 ```powershell
-.\scripts\publish-win-x64.ps1 -Version 1.0.1
+.\scripts\publish-win-x64.ps1 -Version 1.0.2
 ```
 
-The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/1.0.1.json`.
+The script writes the release outside the repository and verifies the package manifest and ZIP contents. Release settings live in `release/1.0.2.json`.
 
 ## Credits
 
