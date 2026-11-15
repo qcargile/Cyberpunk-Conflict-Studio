@@ -17,7 +17,7 @@ Read the preview before changing archive order. The application backs up each ap
 - Previews archive-order changes before writing anything.
 - Backs up and verifies `modlist.txt`, then offers Undo.
 - Exports a privacy-filtered support report when something goes wrong.
-- Saves reviews, open notes and view preferences for each profile, and compares saved scans in Changes.
+- Saves reviews, open notes and view preferences for each profile, and compares findings in Compare scans.
 
 Conflict Studio does not decide that two mods are compatible or incompatible. A shared method or record is only a place to inspect. Compile results, the loaded game state, and an in-game reproduction still matter.
 

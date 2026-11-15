@@ -1,6 +1,8 @@
 Unreleased
 Updated the interface with clearer buttons, filters, status messages and keyboard focus
 Made code results easier to read and moved the next step higher in finding details
+Renamed Changes to Compare scans and explained each tab's purpose and workflow
+Clarified saved reference scans and made comparison summaries show new, changed and no-longer-detected findings
 Added a Find new archives button and New to order markers without moving or saving archives
 Shortened archive-order messages and moved filenames and diagnostics into expandable details
 Clarified that adding archives is reviewed before the order is saved

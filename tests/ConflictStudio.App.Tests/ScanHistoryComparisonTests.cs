@@ -34,6 +34,21 @@ public sealed class ScanHistoryComparisonTests
         Assert.IsFalse(removedEntry.CanOpenCurrent);
         Assert.AreEqual(ScanHistoryChangeKind.Unchanged, unchangedEntry.ChangeKind);
         Assert.AreEqual(unchangedEntry.Before?.EvidenceSha256, unchangedEntry.After?.EvidenceSha256);
+        string summary = ScanHistoryPresentation.Describe(comparison, 3);
+        StringAssert.Contains(summary, "1 new, 1 changed, 1 no longer detected");
+        StringAssert.Contains(summary, "Showing 3 of 4 compared findings");
+    }
+
+    [TestMethod]
+    public void ComparisonSummaryExplainsAnEmptyChangesView()
+    {
+        ProfileScanReceipt previous = Receipt([Resource(1, "Unchanged", "Alpha.archive")]);
+        ProfileScanReceipt current = previous with { ScannedAtUtc = previous.ScannedAtUtc.AddMinutes(1) };
+
+        string summary = ScanHistoryPresentation.Describe(ScanHistoryComparison.Create(previous, current), 0);
+
+        StringAssert.Contains(summary, "No finding changes detected.");
+        StringAssert.Contains(summary, "Showing 0 of 1 compared findings");
     }
 
     [TestMethod]

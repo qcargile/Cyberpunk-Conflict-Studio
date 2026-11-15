@@ -500,6 +500,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel>
                                 <TextBlock FontSize="22" FontWeight="SemiBold" Text="Archive conflicts" />
+                                <TextBlock x:Name="ArchivePurposeTextBlock" Margin="0,4,12,0" Foreground="{StaticResource Muted}" Text="Find which archive supplies a shared file. Select an archive to inspect its relationships, then preview an order change if you want a different winner." TextWrapping="Wrap" />
                                 <TextBlock x:Name="ArchiveConflictCountTextBlock" Margin="0,3,0,0" Foreground="{StaticResource Muted}" Text="Run a scan to inspect conflicts." />
                                 <TextBlock Margin="0,3,0,0" FontSize="11"><Run Foreground="#8EA2AD" Text="Select an archive:  " /><Run Foreground="#42E58B" Text="● it wins" /><Run Foreground="#8EA2AD" Text="   " /><Run Foreground="#FF4964" Text="● it loses" /><Run Foreground="#8EA2AD" Text="   " /><Run Foreground="#00C8FF" Text="● identical" /><Run Foreground="#8EA2AD" Text="   " /><Run Foreground="#B48CFF" Text="● can't determine" /></TextBlock>
                             </StackPanel>
@@ -588,12 +589,14 @@
                         <RowDefinition Height="6" />
                         <RowDefinition Height="3*" MinHeight="160" />
                     </Grid.RowDefinitions>
-                    <Expander x:Name="CodeSummaryExpander" IsExpanded="True" Header="Code interactions · what to check">
+                    <StackPanel>
+                    <TextBlock x:Name="CodePurposeTextBlock" Margin="0,0,0,8" Foreground="{StaticResource Muted}" Text="Investigate mod code and tweak overlaps. Select a finding, compare its sources, then decide whether it needs a compatibility fix or is an intentional override." TextWrapping="Wrap" />
+                    <Expander x:Name="CodeSummaryExpander" IsExpanded="True" Header="Result counts and view options">
                         <Grid Margin="0,6,0,0">
                             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <TextBlock Foreground="{StaticResource Muted}" Text="Confirmed conflicts are changes that cannot both take effect. Items marked Review may be intentional and are not confirmed problems. Select an item to see what differs and what you can do. Identical overlaps are hidden from the default view." TextWrapping="Wrap" />
+                                <TextBlock Foreground="{StaticResource Muted}" Text="Confirmed conflicts identify changes that cannot both take effect. Review items may be intentional. Identical overlaps are hidden from the default view." TextWrapping="Wrap" />
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="14,0,0,0">
                                     <Button x:Name="ColumnsButton" Content="Columns" Click="ColumnsClicked" ToolTip="Choose visible columns. Drag column dividers to resize." />
                                     <Button Margin="7,0,0,0" Content="Reset view" Click="ResetViewClicked" />
@@ -615,6 +618,7 @@
                             </UniformGrid>
                         </Grid>
                     </Expander>
+                    </StackPanel>
                     <Grid Grid.Row="2" Margin="0,10,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="2*" />
@@ -837,6 +841,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel>
                             <TextBlock FontSize="22" FontWeight="SemiBold" Text="Support" />
+                            <TextBlock x:Name="SupportPurposeTextBlock" Margin="0,4,14,0" Foreground="{StaticResource Muted}" Text="Share scan evidence when an action fails or you need help investigating a finding." TextWrapping="Wrap" />
                             <TextBlock x:Name="DiagnosticsSummaryTextBlock" Margin="0,3,0,0" Foreground="{StaticResource Muted}" Text="No scan has run. Reproduce a problem once, then copy the report below." />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -847,7 +852,7 @@
                         </StackPanel>
                     </Grid>
                     <Border Grid.Row="1" Margin="0,10,0,0" Padding="10,7" Background="#171F21" BorderBrush="#2A393C" BorderThickness="1">
-                        <TextBlock Text="The report includes the current scan, actions you took, and recorded errors. It does not include mod source files and removes local paths." Foreground="#B7C6C4" TextWrapping="Wrap" />
+                        <TextBlock Text="After reproducing an issue, copy the report for recorded actions and application errors. Export a support bundle for scan findings and saved reviews. Both exclude mod source files and remove local paths." Foreground="#B7C6C4" TextWrapping="Wrap" />
                     </Border>
                     <TextBox x:Name="DiagnosticsTextBox" Grid.Row="2" Margin="0,8,0,0" FontFamily="Consolas" FontSize="12" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AutomationProperties.Name="Current support report" />
                     <Expander Grid.Row="3" Margin="0,8,0,0" Header="Raw application error log">
@@ -855,22 +860,38 @@
                     </Expander>
                 </Grid>
             </TabItem>
-            <TabItem x:Name="HistoryTab" Header="Changes">
+            <TabItem x:Name="HistoryTab" Header="Compare scans">
                 <Grid Margin="14">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" MinHeight="80" />
+                        <RowDefinition>
+                            <RowDefinition.Style>
+                                <Style TargetType="RowDefinition">
+                                    <Setter Property="Height" Value="Auto" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsExpanded, ElementName=HistoryHelpExpander}" Value="True">
+                                            <Setter Property="Height" Value="*" />
+                                            <Setter Property="MinHeight" Value="60" />
+                                            <Setter Property="MaxHeight" Value="180" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </RowDefinition.Style>
+                        </RowDefinition>
+                        <RowDefinition Height="3*" MinHeight="80" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <TextBlock FontSize="22" FontWeight="SemiBold" Text="Changes between scans" />
+                    <StackPanel>
+                        <TextBlock FontSize="22" FontWeight="SemiBold" Text="See what changed after a mod or load-order update" TextWrapping="Wrap" />
+                        <TextBlock x:Name="HistoryPurposeTextBlock" Margin="0,4,0,0" Foreground="{StaticResource Muted}" Text="Compare new, changed and no-longer-detected findings against an earlier scan. Use this to narrow down what to investigate after changing your setup." TextWrapping="Wrap" />
+                    </StackPanel>
                     <WrapPanel Grid.Row="1" Margin="0,10,0,8" VerticalAlignment="Center">
                         <TextBlock Text="Compare with" VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <ComboBox x:Name="HistoryReferenceComboBox" Width="170" Margin="0,0,10,0" IsEnabled="False" SelectionChanged="HistoryReferenceChanged" AutomationProperties.Name="Comparison baseline">
+                        <ComboBox x:Name="HistoryReferenceComboBox" Width="190" Margin="0,0,10,0" IsEnabled="False" SelectionChanged="HistoryReferenceChanged" AutomationProperties.Name="Reference scan">
                             <ComboBoxItem Tag="previous" IsSelected="True">Previous scan</ComboBoxItem>
-                            <ComboBoxItem Tag="baseline">Pinned baseline</ComboBoxItem>
+                            <ComboBoxItem Tag="baseline">Saved reference scan</ComboBoxItem>
                         </ComboBox>
                         <ComboBox x:Name="HistoryFilterComboBox" Width="180" Margin="0,0,10,0" IsEnabled="False" SelectionChanged="HistoryFilterChanged" AutomationProperties.Name="Change status">
                             <ComboBoxItem Tag="Changes" IsSelected="True">Changes only</ComboBoxItem>
@@ -880,19 +901,25 @@
                             <ComboBoxItem Tag="NoLongerDetected">No longer detected</ComboBoxItem>
                             <ComboBoxItem Tag="Unchanged">Unchanged</ComboBoxItem>
                         </ComboBox>
-                        <Button x:Name="PinBaselineButton" Content="Pin current scan" IsEnabled="False" Click="PinBaselineClicked" ToolTip="Keep the current scan as your baseline. Clicking again replaces it with the current scan." />
-                        <Button x:Name="ClearBaselineButton" Margin="7,0,0,0" Content="Clear baseline" IsEnabled="False" Click="ClearBaselineClicked" />
+                        <Button x:Name="PinBaselineButton" Content="Save reference scan" IsEnabled="False" Click="PinBaselineClicked" ToolTip="Keep this scan as a comparison point before updating mods. It stays available across later scans; it does not back up or restore mods." />
+                        <Button x:Name="ClearBaselineButton" Margin="7,0,0,0" Content="Remove reference" IsEnabled="False" Click="ClearBaselineClicked" ToolTip="Remove the saved comparison point. This does not change your mods or current scan." />
                     </WrapPanel>
-                    <StackPanel Grid.Row="2" Margin="0,0,0,8">
-                        <TextBlock x:Name="HistorySummaryTextBlock" Text="Run a scan to compare recorded findings." TextWrapping="Wrap" />
+                    <ScrollViewer Grid.Row="2" Margin="0,0,0,8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <TextBlock x:Name="HistorySummaryTextBlock" Text="Scan before changing mods, then scan again to compare the findings." TextWrapping="Wrap" />
                         <TextBlock x:Name="BaselineStatusTextBlock" Margin="0,5,0,0" Foreground="{StaticResource Muted}" TextWrapping="Wrap" />
                         <TextBlock x:Name="HistoryAnalysisNoticeTextBlock" Margin="0,5,0,0" Foreground="#FFD166" TextWrapping="Wrap">
                             <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers></Style></TextBlock.Style>
                         </TextBlock>
-                        <Expander Header="Comparison context" Margin="0,5,0,0">
-                            <ScrollViewer MaxHeight="130" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="HistoryNoticeTextBlock" Margin="0,5,0,0" TextWrapping="Wrap" Foreground="{StaticResource Muted}" /></ScrollViewer>
+                        <Expander x:Name="HistoryHelpExpander" Header="How to compare scans and read the results" Margin="0,5,0,0">
+                                <StackPanel Margin="0,5,8,0">
+                                    <TextBlock Foreground="#CDDADF" TextWrapping="Wrap" Text="Scan this profile before making changes, then scan again afterward. Previous scan compares consecutive scans; Save reference scan keeps a comparison point across several updates. Select a row to read the earlier and current evidence, then open the current finding to investigate." />
+                                    <TextBlock Margin="0,7,0,0" Foreground="#CDDADF" TextWrapping="Wrap" Text="This compares detected findings, not every installed mod or file. It does not prove what caused a gameplay issue. A tool update or different scan coverage can also change the results." />
+                                    <TextBlock x:Name="HistoryNoticeTextBlock" Margin="0,7,0,0" TextWrapping="Wrap" Foreground="{StaticResource Muted}" />
+                                </StackPanel>
                         </Expander>
                     </StackPanel>
+                    </ScrollViewer>
                     <DataGrid x:Name="HistoryDataGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" SelectionUnit="FullRow" SelectionChanged="HistorySelectionChanged" EnableRowVirtualization="True" CellStyle="{Binding CellStyle, ElementName=WorkQueueDataGrid}">
                         <DataGrid.RowStyle>
                             <Style TargetType="DataGridRow">

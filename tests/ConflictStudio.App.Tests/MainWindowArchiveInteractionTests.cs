@@ -171,6 +171,28 @@ public sealed class MainWindowArchiveInteractionTests
                     Assert.IsTrue(control.IsVisible && bounds.Width >= 90 && bounds.Height >= 30, name);
                     Assert.IsTrue(bounds.Left >= 0 && bounds.Right <= root.ActualWidth && bounds.Top >= 0 && bounds.Bottom <= root.ActualHeight, name);
                 }
+                ((TabControl)window.FindName("MainTabControl")).SelectedIndex = 3;
+                ProfileScanReceipt previous = new(2, "Profile", DateTimeOffset.UtcNow.AddMinutes(-1), [], [], [], [], [], [], [], [], [], [], [], [], InstallationId: "layout");
+                ProfileScanReceipt current = previous with { ScannedAtUtc = DateTimeOffset.UtcNow };
+                ScanHistoryComparison comparison = ScanHistoryComparison.Create(previous, current);
+                typeof(MainWindow).GetField("_historyComparison", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, comparison);
+                typeof(MainWindow).GetMethod("FilterHistoryRows", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, []);
+                ((TextBlock)window.FindName("BaselineStatusTextBlock")).Text = "Saved reference scan from 2026-11-15 12:00:00Z";
+                ((TextBlock)window.FindName("HistoryNoticeTextBlock")).Text = string.Join(Environment.NewLine, comparison.ToolVersionNotice, comparison.AnalysisNotice, comparison.CoverageNotice);
+                string[] comparisonNames = ["HistoryReferenceComboBox", "PinBaselineButton", "HistoryDataGrid", "OpenHistoryFindingButton"];
+                bool[] helpStates = [false, true];
+                foreach (bool expanded in helpStates)
+                {
+                    ((Expander)window.FindName("HistoryHelpExpander")).IsExpanded = expanded;
+                    window.UpdateLayout();
+                    foreach (string name in comparisonNames)
+                    {
+                        FrameworkElement control = (FrameworkElement)window.FindName(name);
+                        Rect bounds = control.TransformToAncestor(root).TransformBounds(new Rect(control.RenderSize));
+                        Assert.IsTrue(control.IsVisible && bounds.Height >= 30, name);
+                        Assert.IsTrue(bounds.Left >= 0 && bounds.Right <= root.ActualWidth && bounds.Top >= 0 && bounds.Bottom <= root.ActualHeight, name);
+                    }
+                }
             }
             finally
             {

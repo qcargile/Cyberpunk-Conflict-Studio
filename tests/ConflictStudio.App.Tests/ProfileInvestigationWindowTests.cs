@@ -304,7 +304,7 @@ public sealed class ProfileInvestigationWindowTests
                 pendingWrite.SetResult();
                 await loading;
                 if (pendingField == "_noteSaveTask") Assert.AreEqual("Written during rescan", Get<TextBox>(window, "ReviewRationaleTextBox").Text);
-                else StringAssert.Contains(Get<TextBlock>(window, "BaselineStatusTextBlock").Text, "Pinned scan");
+                else StringAssert.Contains(Get<TextBlock>(window, "BaselineStatusTextBlock").Text, "Saved reference scan");
             }
             finally { pendingWrite.TrySetResult(); await Finish(window); }
         });
